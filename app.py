@@ -153,15 +153,15 @@ if analyze_button:
             Dữ liệu vận hành hôm nay: 
             - Tổng đơn: {tong_don}
             - Tỷ lệ GTC trung bình: {gtc_tb:.2f}%
-            - Tỷ lệ Tồn kho (ODR): {odr_tb:.2f}%
+            - Ontime TTS (ODR): {odr_tb:.2f}%
             - Sản lượng theo Bưu cục: {ns_hcm}
             
             Nhiệm vụ: Đóng vai chuyên gia Logistics. Hãy đưa ra cảnh báo rủi ro vận hành và đề xuất giải pháp.
-            Yêu cầu: Viết đúng 3 gạch đầu dòng ngắn gọn, súc tích. Dùng biểu tượng emoji phù hợp.
+            Yêu cầu: Viết ngắn gọn, súc tích. Dùng biểu tượng emoji phù hợp.
             """
             
             fast_config = genai.types.GenerationConfig(
-                max_output_tokens=150,
+                max_output_tokens=500,
                 temperature=0.2,
             )
             
