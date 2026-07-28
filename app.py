@@ -140,8 +140,8 @@ if analyze_button:
             # 1. CHỈ GỌI KẾT NỐI KHI BẤM NÚT -> CHỐNG LỖI NONETYPE
             genai.configure(api_key=GEMINI_API_KEY)
             
-            # Bạn có thể dùng 'gemini-1.5-pro' hoặc 'gemini-1.5-flash' tùy nhu cầu tốc độ
-            model = genai.GenerativeModel('gemini-1.5-flash') 
+            # Bạn có thể dùng 'gemini-3.1-pro' hoặc 'gemini-3.6-flash' tùy nhu cầu tốc độ
+            model = genai.GenerativeModel('gemini-3.6-flash') 
             
             # 2. Xử lý số liệu
             tong_don = df_vanhanh['Volume'].sum()
