@@ -156,13 +156,17 @@ if analyze_button:
             - Ontime TTS (ODR): {odr_tb:.2f}%
             - Sản lượng theo Bưu cục: {ns_hcm}
             
-            Nhiệm vụ: Đóng vai chuyên gia Logistics. Hãy đưa ra cảnh báo rủi ro vận hành và đề xuất giải pháp.
-            Yêu cầu: Viết ngắn gọn, súc tích. Dùng biểu tượng emoji phù hợp.
+            Nhiệm vụ: Đóng vai Giám đốc phân tích vận hành Logistics. Hãy phân tích CHUYÊN SÂU và CHI TIẾT các số liệu trên.
+            Vui lòng trình bày báo cáo rõ ràng, chuyên nghiệp theo 3 phần:
+            1. 📊 Đánh giá tổng quan (Tốt/Xấu ở điểm nào dựa trên Tỷ lệ GTC và ODR).
+            2. ⚠️ Phân tích Rủi ro (Chỉ rõ bưu cục nào đang gánh lượng đơn lớn hoặc có năng suất bất thường).
+            3. 💡 Đề xuất hành động (Các giải pháp điều phối nhân sự, xử lý tồn kho cụ thể ngay trong ca làm việc).
             """
             
-            fast_config = genai.types.GenerationConfig(
-                max_output_tokens=500,
-                temperature=0.5,
+            # Tăng giới hạn số chữ lên 800 và tăng độ tư duy (temperature) để AI viết dài, sâu và hay hơn
+            detailed_config = genai.types.GenerationConfig(
+                max_output_tokens=800, 
+                temperature=0.5
             )
             
             # 3. Gửi yêu cầu lên Google
