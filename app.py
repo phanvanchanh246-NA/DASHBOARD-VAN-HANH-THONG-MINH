@@ -94,96 +94,68 @@ def get_real_data():
 df_vanhanh, df_nhansu = get_real_data()
 
 # ==========================================
-# 3. GIAO DIỆN CHÍNH & TRỢ LÝ AI
+# 3. GIAO DIỆN CHÍNH & TRỢ LÝ AI (TỰ ĐỘNG 100%)
 # ==========================================
 st.markdown("""
     <div class="banner">
         <div>
             <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ VẬN HÀNH THÔNG MINH</h1>
-            <p style="font-size: 16px; opacity: 0.9;">Tích hợp AI Gemini Pro phân tích - Dữ liệu thời gian thực</p>
+            <p style="font-size: 16px; opacity: 0.9;">Tích hợp AI Gemini phân tích - Cập nhật tự động</p>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-st.markdown("### 🤖 TRỢ LÝ AI PHÂN TÍCH RỦI RO & ĐỒNG BỘ DỮ LIỆU")
-col_btn1, col_btn2, _ = st.columns([2, 2, 4])
+st.markdown("### 🤖 TRỢ LÝ AI PHÂN TÍCH RỦI RO (CẬP NHẬT TỰ ĐỘNG)")
 
-with col_btn1:
-    analyze_button = st.button("🔍 Nhờ AI Phân tích ngay", type="primary", use_container_width=True)
+if st.button("🔄 Làm mới dữ liệu thủ công", use_container_width=False):
+    st.cache_data.clear()
+    st.rerun()
 
-with col_btn2:
-    if st.button("🔄 Làm mới dữ liệu ngay", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-ai_placeholder = st.empty()
-
-if "ai_response" not in st.session_state:
-    st.session_state.ai_response = "Bấm nút **'🔍 Nhờ AI Phân tích ngay'** để AI Gemini Pro bắt đầu quét dữ liệu vận hành..."
-
-ai_placeholder.markdown(f'<div class="ai-warning">{st.session_state.ai_response}</div>', unsafe_allow_html=True)
-
-# XỬ LÝ KHI BẤM NÚT PHÂN TÍCH AI (KHỞI TẠO AI TRỰC TIẾP TẠI ĐÂY)
-if analyze_button:
-    # Tối ưu logic: Kiểm tra nếu biến bị None, rỗng, hoặc là chuỗi mặc định
+# HÀM TỰ ĐỘNG GỌI AI VÀ LƯU BỘ NHỚ ĐỆM 60 GIÂY
+@st.cache_data(ttl=60, show_spinner=False)
+def auto_run_ai_analysis(tong_don_val, gtc_tb_val, odr_tb_val, ns_hcm_val):
     if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
-        ai_placeholder.markdown("""
-        <div class="ai-warning" style="color:#d9534f; background-color:#f2dede; border-left: 5px solid #d9534f;">
-            <b>⚠️ CHƯA CẤU HÌNH API KEY:</b><br>
-            Bạn chưa cấu hình GEMINI_API_KEY trên máy chủ Render.<br>
-            <i>Vui lòng vào tab Environment Variables trên Render để điền mã của bạn!</i>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        ai_placeholder.markdown('<div class="ai-warning">🔄 AI đang kết nối và đọc dữ liệu...</div>', unsafe_allow_html=True)
-        try:
-            # 1. CHỈ GỌI KẾT NỐI KHI BẤM NÚT -> CHỐNG LỖI NONETYPE
-            genai.configure(api_key=GEMINI_API_KEY)
-            
-            # Bạn có thể dùng 'gemini-3.1-pro' hoặc 'gemini-3.6-flash' tùy nhu cầu tốc độ
-            model = genai.GenerativeModel('gemini-3.6-flash') 
-            
-            # 2. Xử lý số liệu
-            tong_don = df_vanhanh['Volume'].sum()
-            gtc_tb = df_vanhanh['GTC'].mean()
-            odr_tb = df_vanhanh['ODR'].mean()
-            ns_hcm = df_nhansu.groupby('Bưu Cục')['Số Đơn'].sum().to_string()
-            
-            prompt = f"""
-            Dữ liệu vận hành hôm nay: 
-            - Tổng đơn: {tong_don}
-            - Tỷ lệ GTC trung bình: {gtc_tb:.2f}%
-            - Ontime TTS (ODR): {odr_tb:.2f}%
-            - Sản lượng theo Bưu cục: {ns_hcm}
-            
-            Nhiệm vụ: Đóng vai Giám đốc phân tích vận hành Logistics. Hãy phân tích CHUYÊN SÂU và CHI TIẾT các số liệu trên.
-            Vui lòng trình bày báo cáo rõ ràng, chuyên nghiệp theo 3 phần:
-            1. 📊 Đánh giá tổng quan (Tốt/Xấu ở điểm nào dựa trên Tỷ lệ GTC và ODR).
-            2. ⚠️ Phân tích Rủi ro (Chỉ rõ bưu cục nào đang gánh lượng đơn lớn hoặc có năng suất bất thường).
-            3. 💡 Đề xuất hành động (Các giải pháp điều phối nhân sự, xử lý tồn kho cụ thể ngay trong ca làm việc).
-            """
-            
-            # Tăng giới hạn số chữ lên 800 và tăng độ tư duy (temperature) để AI viết dài, sâu và hay hơn
-            detailed_config = genai.types.GenerationConfig(
-                max_output_tokens=800, 
-                temperature=0.5
-            )
-            
-            # 3. Gửi yêu cầu lên Google
-            response = model.generate_content(prompt, generation_config=fast_config, stream=True)
-            
-            full_response = ""
-            for chunk in response:
-                chunk_text = chunk.text if hasattr(chunk, 'text') else str(chunk)
-                full_response += chunk_text
-                ai_placeholder.markdown(f'<div class="ai-warning"><b>🤖 AI Gemini Pro đang phân tích:</b><br>{full_response} ▌</div>', unsafe_allow_html=True)
-                
-            ai_placeholder.markdown(f'<div class="ai-warning"><b>🤖 AI Gemini Pro Cảnh Báo:</b><br>{full_response}</div>', unsafe_allow_html=True)
-            st.session_state.ai_response = f"<b>🤖 AI Gemini Pro Cảnh Báo:</b><br>{full_response}"
-            
-        except Exception as e:
-            error_msg = f"❌ Lỗi kết nối Google AI: Vui lòng kiểm tra lại API Key hoặc đảm bảo máy tính có kết nối mạng ổn định. (Chi tiết: {e})"
-            ai_placeholder.markdown(f'<div class="ai-warning" style="color:red;">{error_msg}</div>', unsafe_allow_html=True)
+        return "⚠️ **CHƯA CẤU HÌNH API KEY:** Vui lòng thêm biến môi trường GEMINI_API_KEY trên Render."
+    
+    try:
+        genai.configure(api_key=GEMINI_API_KEY.strip())
+        model = genai.GenerativeModel('gemini-1.5-flash') 
+        
+        prompt = f"""
+        Dữ liệu vận hành hôm nay: 
+        - Tổng đơn: {tong_don_val}
+        - Tỷ lệ GTC: {gtc_tb_val:.2f}%
+        - Tỷ lệ Tồn kho: {odr_tb_val:.2f}%
+        - Sản lượng bưu cục: \n{ns_hcm_val}
+        
+        Nhiệm vụ: Đóng vai Giám đốc vận hành. Hãy phân tích CHUYÊN SÂU.
+        Bố cục 3 phần:
+        1. 📊 Đánh giá tổng quan
+        2. ⚠️ Phân tích Rủi ro 
+        3. 💡 Đề xuất hành động
+        """
+        
+        detailed_config = genai.types.GenerationConfig(max_output_tokens=800, temperature=0.5)
+        # Gọi AI một lần (không dùng stream để lưu sẵn vào bộ nhớ tạm)
+        response = model.generate_content(prompt, generation_config=detailed_config)
+        return response.text
+    except Exception as e:
+        return f"❌ Lỗi từ máy chủ Google AI: {e}"
+
+# Tính toán số liệu hiện tại
+tong_don = df_vanhanh['Volume'].sum()
+gtc_tb = df_vanhanh['GTC'].mean()
+odr_tb = df_vanhanh['ODR'].mean()
+ns_hcm = df_nhansu.groupby('Bưu Cục')['Số Đơn'].sum().to_string()
+
+# TỰ ĐỘNG CHẠY PHÂN TÍCH NGAY KHI VÀO TRANG HOẶC CÓ SỐ MỚI
+with st.spinner("🔄 AI đang tự động phân tích dữ liệu mới nhất..."):
+    ai_result = auto_run_ai_analysis(tong_don, gtc_tb, odr_tb, ns_hcm)
+
+st.session_state.ai_response = ai_result
+
+# In báo cáo ra màn hình
+st.markdown(f'<div class="ai-warning"><b>🤖 Báo cáo tự động từ AI:</b><br><br>{ai_result}</div>', unsafe_allow_html=True)
 
 # NÚT BẮN TELEGRAM
 if st.button("📤 Bắn báo cáo này lên nhóm Telegram"):
@@ -202,7 +174,6 @@ if st.button("📤 Bắn báo cáo này lên nhóm Telegram"):
                 st.error("❌ Lỗi khi gửi Telegram: Vui lòng kiểm tra Token/Chat ID.")
         except Exception as e:
             st.error(f"Lỗi mạng khi kết nối Telegram: {e}")
-
 st.divider()
 
 # ==========================================
