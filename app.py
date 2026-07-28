@@ -119,7 +119,7 @@ def auto_run_ai_analysis(tong_don_val, gtc_tb_val, odr_tb_val, ns_hcm_val):
     
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        model = genai.GenerativeModel('gemini-3.6-flash') 
         
         prompt = f"""
         Dữ liệu vận hành hôm nay: 
