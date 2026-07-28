@@ -162,7 +162,7 @@ if analyze_button:
             
             fast_config = genai.types.GenerationConfig(
                 max_output_tokens=500,
-                temperature=0.2,
+                temperature=0.5,
             )
             
             # 3. Gửi yêu cầu lên Google
