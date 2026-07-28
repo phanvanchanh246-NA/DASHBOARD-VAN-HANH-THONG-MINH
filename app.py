@@ -141,7 +141,7 @@ if analyze_button:
             genai.configure(api_key=GEMINI_API_KEY)
             
             # Bạn có thể dùng 'gemini-3.1-pro' hoặc 'gemini-3.6-flash' tùy nhu cầu tốc độ
-            model = genai.GenerativeModel('gemini-3.6-flash') 
+            model = genai.GenerativeModel('gemini-3.1-pro') 
             
             # 2. Xử lý số liệu
             tong_don = df_vanhanh['Volume'].sum()
