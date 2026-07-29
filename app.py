@@ -34,7 +34,6 @@ st.markdown("""
         padding: 15px; border-radius: 5px; margin-bottom: 20px;
         font-size: 15px; line-height: 1.6;
     }
-    /* Giao diện Tab in đậm, đóng khung */
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
     .stTabs [data-baseweb="tab"] {
         font-weight: 800 !important; font-size: 16px !important; border: 2px solid #007BFF !important;
@@ -67,14 +66,46 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
     return fig
 
 # ==========================================
-# 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS (SIÊU BỘ LỌC CHỐNG LỖI)
+# 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS (SIÊU BỘ LỌC CHỐNG LỖI V2)
 # ==========================================
+
+# Hàm tự động sửa lỗi gõ số kiểu Việt Nam sang chuẩn máy tính
+def parse_vn_num(val):
+    val = str(val).replace('%', '').replace('đ', '').replace('VNĐ', '').replace(' ', '').strip()
+    if val in ['nan', 'None', '', '0', '0.0']: 
+        return 0.0
+    
+    # Nếu có cả phẩy và chấm (Ví dụ: 1.000,50 VN hoặc 1,000.50 US)
+    if ',' in val and '.' in val:
+        if val.rfind(',') > val.rfind('.'): # Dấu phẩy ở cuối -> Định dạng Việt Nam (1.000,50)
+            val = val.replace('.', '').replace(',', '.')
+        else: # Dấu phẩy ở đầu -> Định dạng US (1,000.50)
+            val = val.replace(',', '')
+            
+    # Nếu CHỈ CÓ dấu phẩy (Ví dụ: 81,25) -> Người Việt dùng phẩy làm số thập phân
+    elif ',' in val:
+        val = val.replace(',', '.')
+        
+    # Nếu CHỈ CÓ dấu chấm (Ví dụ: 81.25 hoặc 1.000.000)
+    elif '.' in val:
+        parts = val.split('.')
+        if len(parts) > 2: # 1.000.000
+            val = val.replace('.', '')
+        else:
+            if len(parts[1]) == 3: # 1.000 (3 số 0 ở cuối thường là hàng nghìn)
+                val = val.replace('.', '')
+            # Ngược lại: 81.25 (Giữ nguyên vì là thập phân chuẩn US)
+            
+    try:
+        return float(val)
+    except:
+        return 0.0
+
 def clean_dataframe_numbers(df, text_cols):
     df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
     for col in df.columns:
         if col not in text_cols:
-            s = df[col].astype(str).str.replace('%', '', regex=False).str.replace(',', '', regex=False).str.replace('đ', '', regex=False).str.replace('VNĐ', '', regex=False).str.strip()
-            df[col] = pd.to_numeric(s, errors='coerce').fillna(0.0)
+            df[col] = df[col].apply(parse_vn_num)
     return df
 
 @st.cache_data(ttl=60)
@@ -118,18 +149,22 @@ def get_real_data():
             'Đơn giá': 'Đơn Giá', 'Số đơn': 'Số Đơn'
         }
         df_ns = df_ns.rename(columns=ns_mapping)
+        
         df_vh = clean_dataframe_numbers(df_vh, text_cols=['Ngày', 'Bưu Cục', 'Ca'])
         df_ns = clean_dataframe_numbers(df_ns, text_cols=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
+        
         df_vh['Ngày'] = pd.to_datetime(df_vh['Ngày'], errors='coerce')
         df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'], errors='coerce')
         df_vh['Bưu Cục'] = df_vh['Bưu Cục'].astype(str)
         df_ns['Bưu Cục'] = df_ns['Bưu Cục'].astype(str)
         df_ns['Nhân Viên'] = df_ns['Nhân Viên'].astype(str)
         df_ns['Loại Hàng'] = df_ns['Loại Hàng'].astype(str)
+        
         for req in ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
             if req not in df_vh.columns: df_vh[req] = 0.0
         for req in ['Số Đơn', 'Đơn Giá', '%GTC']:
             if req not in df_ns.columns: df_ns[req] = 0.0
+            
         return df_vh.dropna(subset=['Ngày']), df_ns.dropna(subset=['Ngày'])
     except Exception as e:
         st.error(f"🚨 Lỗi kết nối Google Sheets: {e}")
@@ -143,7 +178,7 @@ df_vanhanh, df_nhansu = get_real_data()
 st.markdown("""
     <div class="banner">
         <div>
-            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ TỔNG THỂ GHN</h1>
+            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ VẬN HÀNH KINH DOANH </h1>
             <p style="font-size: 16px; opacity: 0.9;">Vận Hành - Năng Suất - KPI - Kinh Doanh | AI Tự động phân tích theo Tab</p>
         </div>
     </div>
@@ -204,7 +239,6 @@ with tab1:
         
     mask_vh = pd.Series(True, index=df_vanhanh.index)
     if len(date_range_vh) == 2:
-        # Cập nhật code lọc ngày chuẩn xác (Sửa lỗi convert bool)
         mask_vh &= (df_vanhanh['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vanhanh['Ngày'] <= pd.to_datetime(date_range_vh[1]))
     if buu_cuc_vh != "Tất cả":
         mask_vh &= (df_vanhanh['Bưu Cục'] == buu_cuc_vh)
@@ -271,7 +305,6 @@ with tab2:
 
     mask_ns = pd.Series(True, index=df_nhansu.index)
     if len(date_range_ns) == 2:
-        # Cập nhật code lọc ngày chuẩn xác
         mask_ns &= (df_nhansu['Ngày'] >= pd.to_datetime(date_range_ns[0])) & (df_nhansu['Ngày'] <= pd.to_datetime(date_range_ns[1]))
     if loai_hang_filter:
         mask_ns &= df_nhansu['Loại Hàng'].isin(loai_hang_filter)
@@ -335,7 +368,6 @@ with tab3:
 
     mask_kpi = pd.Series(True, index=df_vanhanh.index)
     if len(date_range_kpi) == 2:
-        # Cập nhật code lọc ngày chuẩn xác
         mask_kpi &= (df_vanhanh['Ngày'] >= pd.to_datetime(date_range_kpi[0])) & (df_vanhanh['Ngày'] <= pd.to_datetime(date_range_kpi[1]))
     if buu_cuc_kpi != "Tất cả":
         mask_kpi &= (df_vanhanh['Bưu Cục'] == buu_cuc_kpi)
@@ -424,7 +456,6 @@ with tab4:
     
     mask_kd_range = mask_kd.copy()
     if len(date_range_kd) == 2:
-        # Cập nhật code lọc ngày chuẩn xác
         mask_kd_range &= (df_kinhdoanh['Ngày'] >= pd.to_datetime(date_range_kd[0])) & (df_kinhdoanh['Ngày'] <= pd.to_datetime(date_range_kd[1]))
     
     df_plot_kd = df_kinhdoanh[mask_kd_range].groupby('Ngày').agg({
