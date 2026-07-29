@@ -34,9 +34,7 @@ st.markdown("""
         padding: 15px; border-radius: 5px; margin-bottom: 20px;
         font-size: 15px; line-height: 1.6;
     }
-    /* ========================================= */
-    /* HIỆU ỨNG LÀM ĐẸP TAB (IN ĐẬM, ĐÓNG KHUNG) */
-    /* ========================================= */
+    /* Giao diện Tab in đậm, đóng khung */
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
     .stTabs [data-baseweb="tab"] {
         font-weight: 800 !important; font-size: 16px !important; border: 2px solid #007BFF !important;
@@ -69,76 +67,70 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
     return fig
 
 # ==========================================
-# 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS (ĐÃ TÍCH HỢP BỘ LỌC CHỐNG LỖI TEXT)
+# 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS (SIÊU BỘ LỌC CHỐNG LỖI)
 # ==========================================
+def clean_dataframe_numbers(df, text_cols):
+    df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+    for col in df.columns:
+        if col not in text_cols:
+            s = df[col].astype(str).str.replace('%', '', regex=False).str.replace(',', '', regex=False).str.replace('đ', '', regex=False).str.replace('VNĐ', '', regex=False).str.strip()
+            df[col] = pd.to_numeric(s, errors='coerce').fillna(0.0)
+    return df
 
-# -- A. DỮ LIỆU KINH DOANH --
 @st.cache_data(ttl=60)
 def get_real_business_data():
-    # Điền link CSV file Kinh Doanh của bạn vào đây
     url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
         df_kd = pd.read_csv(url_kinhdoanh)
-        df_kd.columns = df_kd.columns.str.strip()
-        df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'])
+        kd_mapping = {
+            'Doanh thu': 'Doanh Thu', 'Khách hàng liên hệ': 'Khách Liên Hệ',
+            'Khách hàng lên đơn': 'Khách Lên Đơn', 'Doanh thu KH mới': 'Doanh Thu KH Mới'
+        }
+        df_kd = df_kd.rename(columns=kd_mapping)
+        df_kd = clean_dataframe_numbers(df_kd, text_cols=['Ngày', 'Bưu Cục'])
+        df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'], errors='coerce')
         df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str)
-        
-        # BỘ LỌC CHỐNG LỖI: Tự động gọt bỏ dấu phẩy, dấu %, khoảng trắng và ép về số
-        num_cols = ['Doanh Thu', 'Khách Liên Hệ', 'Khách Lên Đơn', 'Doanh Thu KH Mới']
-        for col in num_cols:
-            if col in df_kd.columns:
-                df_kd[col] = df_kd[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
-                df_kd[col] = pd.to_numeric(df_kd[col], errors='coerce').fillna(0)
-                
-        return df_kd
+        for req in ['Doanh Thu', 'Khách Liên Hệ', 'Khách Lên Đơn', 'Doanh Thu KH Mới']:
+            if req not in df_kd.columns: df_kd[req] = 0.0
+        return df_kd.dropna(subset=['Ngày'])
     except Exception as e:
         st.error(f"🚨 Lỗi kết nối Google Sheets Kinh Doanh: {e}")
         st.stop()
 
 df_kinhdoanh = get_real_business_data()
 
-# -- B. DỮ LIỆU VẬN HÀNH & NHÂN SỰ --
 @st.cache_data(ttl=60) 
 def get_real_data():
-    # Link Vận Hành và Nhân Sự (Nếu bạn đã có link thật thì thay vào biến này nhé)
-    url_vanhanh = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
+    url_vanhanh = "https://docs.google.com/spreadsheets/d/1oZ7U2HKEiywiGmtYU7Zuo5lWLVyjhGfZzWa31tzxdJk/export?format=csv&gid=0"
     url_nhansu = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=2000227799"
-    
     try:
         df_vh = pd.read_csv(url_vanhanh)
         df_ns = pd.read_csv(url_nhansu)
-        
-        df_vh.columns = df_vh.columns.str.strip()
-        df_ns.columns = df_ns.columns.str.strip()
-        
-        if 'Ngày' not in df_vh.columns:
-            st.error("🚨 Không đọc được dữ liệu. Vui lòng kiểm tra quyền chia sẻ 'Bất kỳ ai có đường liên kết'!")
-            st.stop()
-            
-        df_vh['Ngày'] = pd.to_datetime(df_vh['Ngày'])
-        df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'])
-        
+        vh_mapping = {
+            '%GTC': 'GTC', 'GTC (%)': 'GTC', 'Tỷ lệ GTC': 'GTC', '% GTC': 'GTC',
+            'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng',
+            'Volume_TTS': 'Volume TTS', 'GTC TTS': 'GTC_TTS', '%GTC_TTS': 'GTC_TTS',
+            'Ontime Giao TTS': 'ODR', 'ODR (%)': 'ODR'
+        }
+        df_vh = df_vh.rename(columns=vh_mapping)
+        ns_mapping = {
+            'GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', '% GTC': '%GTC',
+            'Đơn giá': 'Đơn Giá', 'Số đơn': 'Số Đơn'
+        }
+        df_ns = df_ns.rename(columns=ns_mapping)
+        df_vh = clean_dataframe_numbers(df_vh, text_cols=['Ngày', 'Bưu Cục', 'Ca'])
+        df_ns = clean_dataframe_numbers(df_ns, text_cols=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
+        df_vh['Ngày'] = pd.to_datetime(df_vh['Ngày'], errors='coerce')
+        df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'], errors='coerce')
         df_vh['Bưu Cục'] = df_vh['Bưu Cục'].astype(str)
         df_ns['Bưu Cục'] = df_ns['Bưu Cục'].astype(str)
         df_ns['Nhân Viên'] = df_ns['Nhân Viên'].astype(str)
         df_ns['Loại Hàng'] = df_ns['Loại Hàng'].astype(str)
-
-        # BỘ LỌC CHỐNG LỖI VẬN HÀNH
-        vh_num_cols = ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']
-        for col in vh_num_cols:
-            if col in df_vh.columns:
-                df_vh[col] = df_vh[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
-                df_vh[col] = pd.to_numeric(df_vh[col], errors='coerce').fillna(0)
-                
-        # BỘ LỌC CHỐNG LỖI NHÂN SỰ
-        ns_num_cols = ['Số Đơn', 'Đơn Giá', '%GTC']
-        for col in ns_num_cols:
-            if col in df_ns.columns:
-                df_ns[col] = df_ns[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
-                df_ns[col] = pd.to_numeric(df_ns[col], errors='coerce').fillna(0)
-        
-        return df_vh, df_ns
-        
+        for req in ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
+            if req not in df_vh.columns: df_vh[req] = 0.0
+        for req in ['Số Đơn', 'Đơn Giá', '%GTC']:
+            if req not in df_ns.columns: df_ns[req] = 0.0
+        return df_vh.dropna(subset=['Ngày']), df_ns.dropna(subset=['Ngày'])
     except Exception as e:
         st.error(f"🚨 Lỗi kết nối Google Sheets: {e}")
         st.stop()
@@ -146,7 +138,7 @@ def get_real_data():
 df_vanhanh, df_nhansu = get_real_data()
 
 # ==========================================
-# 3. HÀM TRỢ LÝ AI (TỰ ĐỘNG CHẠY THEO TAB)
+# 3. HÀM TRỢ LÝ AI
 # ==========================================
 st.markdown("""
     <div class="banner">
@@ -163,22 +155,19 @@ with col_rf1:
         st.cache_data.clear()
         st.rerun()
 
-# Hàm AI xử lý ngầm (dùng chung cho cả 4 Tab)
 @st.cache_data(ttl=60, show_spinner=False)
 def get_ai_analysis(prompt_text):
     if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
         return "⚠️ **CHƯA CẤU HÌNH API KEY:** Vui lòng thêm biến môi trường GEMINI_API_KEY trên Render."
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
-        # Đã sửa model thành gemini-3.6-flash để chống lỗi hệ thống
-        model = genai.GenerativeModel('gemini-3.6-flash') 
-        detailed_config = genai.types.GenerationConfig(max_output_tokens=4500, temperature=0.4)
+        model = genai.GenerativeModel('gemini-1.5-flash') 
+        detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
         response = model.generate_content(prompt_text, generation_config=detailed_config)
         return response.text
     except Exception as e:
         return f"❌ Lỗi từ máy chủ Google AI: {e}"
 
-# Hàm in khung báo cáo AI và nút bắn Telegram
 def render_ai_and_telegram(ai_result, tab_name, key_suffix):
     st.markdown(f'<div class="ai-warning"><b>🤖 Cố vấn AI ({tab_name}):</b><br><br>{ai_result}</div>', unsafe_allow_html=True)
     if st.button(f"📤 Bắn báo cáo {tab_name} lên nhóm Telegram", key=f"btn_tele_{key_suffix}"):
@@ -215,7 +204,8 @@ with tab1:
         
     mask_vh = pd.Series(True, index=df_vanhanh.index)
     if len(date_range_vh) == 2:
-        mask_vh &= (df_vanhanh['Ngày'].dt.date >= date_range_vh[0]) & (df_vanhanh['Ngày'].dt.date <= date_range_vh[1])
+        # Cập nhật code lọc ngày chuẩn xác (Sửa lỗi convert bool)
+        mask_vh &= (df_vanhanh['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vanhanh['Ngày'] <= pd.to_datetime(date_range_vh[1]))
     if buu_cuc_vh != "Tất cả":
         mask_vh &= (df_vanhanh['Bưu Cục'] == buu_cuc_vh)
     df_vh_filtered = df_vanhanh[mask_vh].copy()
@@ -250,7 +240,6 @@ with tab1:
     fig_ca.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)')
     st.plotly_chart(fig_ca, use_container_width=True)
 
-    # --- AI TỰ ĐỘNG CHO TAB 1 ---
     with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
         prompt_vh = f"""
         Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
@@ -282,7 +271,8 @@ with tab2:
 
     mask_ns = pd.Series(True, index=df_nhansu.index)
     if len(date_range_ns) == 2:
-        mask_ns &= (df_nhansu['Ngày'].dt.date >= date_range_ns[0]) & (df_nhansu['Ngày'].dt.date <= date_range_ns[1])
+        # Cập nhật code lọc ngày chuẩn xác
+        mask_ns &= (df_nhansu['Ngày'] >= pd.to_datetime(date_range_ns[0])) & (df_nhansu['Ngày'] <= pd.to_datetime(date_range_ns[1]))
     if loai_hang_filter:
         mask_ns &= df_nhansu['Loại Hàng'].isin(loai_hang_filter)
     if buu_cuc_ns != "Tất cả":
@@ -314,7 +304,6 @@ with tab2:
         fig_gtc_nv = draw_combo_chart(df_gtc_nv, 'Ngày', 'Số Đơn', '%GTC', title_gtc, bar_name="Số Đơn Đã Giao", line_name="% GTC")
         st.plotly_chart(fig_gtc_nv, use_container_width=True)
 
-    # --- AI TỰ ĐỘNG CHO TAB 2 ---
     with st.spinner("🔄 AI đang phân tích dữ liệu Năng Suất..."):
         prompt_ns = f"""
         Dữ liệu Năng suất Nhân sự (Đã lọc): 
@@ -346,7 +335,8 @@ with tab3:
 
     mask_kpi = pd.Series(True, index=df_vanhanh.index)
     if len(date_range_kpi) == 2:
-        mask_kpi &= (df_vanhanh['Ngày'].dt.date >= date_range_kpi[0]) & (df_vanhanh['Ngày'].dt.date <= date_range_kpi[1])
+        # Cập nhật code lọc ngày chuẩn xác
+        mask_kpi &= (df_vanhanh['Ngày'] >= pd.to_datetime(date_range_kpi[0])) & (df_vanhanh['Ngày'] <= pd.to_datetime(date_range_kpi[1]))
     if buu_cuc_kpi != "Tất cả":
         mask_kpi &= (df_vanhanh['Bưu Cục'] == buu_cuc_kpi)
     df_kpi_filtered = df_vanhanh[mask_kpi].copy()
@@ -387,7 +377,6 @@ with tab3:
     df_kpi_table['% Đạt KPI GTC'] = (df_kpi_table['GTC'] / kpi_gtc_target) * 100
     st.dataframe(df_kpi_table.style.format({"GTC": "{:.2f}%", "GTC_TTS": "{:.2f}%", "ODR": "{:.2f}%", "% Đạt KPI GTC": "{:.1f}%"}), use_container_width=True)
 
-    # --- AI TỰ ĐỘNG CHO TAB 3 ---
     with st.spinner("🔄 AI đang đánh giá mức độ đạt KPI..."):
         prompt_kpi = f"""
         Mục tiêu: GTC > {kpi_gtc_target}%, GTC TikTok > {kpi_tts_target}%, Tồn kho < {kpi_odr_target}%.
@@ -435,7 +424,8 @@ with tab4:
     
     mask_kd_range = mask_kd.copy()
     if len(date_range_kd) == 2:
-        mask_kd_range &= (df_kinhdoanh['Ngày'].dt.date >= date_range_kd[0]) & (df_kinhdoanh['Ngày'].dt.date <= date_range_kd[1])
+        # Cập nhật code lọc ngày chuẩn xác
+        mask_kd_range &= (df_kinhdoanh['Ngày'] >= pd.to_datetime(date_range_kd[0])) & (df_kinhdoanh['Ngày'] <= pd.to_datetime(date_range_kd[1]))
     
     df_plot_kd = df_kinhdoanh[mask_kd_range].groupby('Ngày').agg({
         'Doanh Thu': 'sum', 'Khách Liên Hệ': 'sum', 'Khách Lên Đơn': 'sum', 'Doanh Thu KH Mới': 'sum'
@@ -459,7 +449,6 @@ with tab4:
         fig_funnel.update_layout(title=f"Phễu chuyển đổi KH Mới (Tổng DT: {total_rev_new:,.0f} đ)")
         st.plotly_chart(fig_funnel, use_container_width=True)
 
-    # --- AI TỰ ĐỘNG CHO TAB 4 ---
     with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
         prompt_kd = f"""
         Phân tích Kinh doanh: KPI ngày {kpi_dt_target:,.0f}. Thực tế (N): {rev_n:,.0f}. So với hôm qua (N-1): {rev_n1:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
