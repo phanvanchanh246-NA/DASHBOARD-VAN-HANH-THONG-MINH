@@ -8,6 +8,7 @@ from plotly.subplots import make_subplots
 import google.generativeai as genai
 import requests
 from datetime import datetime, timedelta
+import dateutil.relativedelta
 
 # ==========================================
 # 0. CẤU HÌNH API KEY
@@ -17,8 +18,9 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "ĐIỀN_TOKEN_BOT_TELEGRAM_V�
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "ĐIỀN_CHAT_ID_NHÓM_VÀO_ĐÂY")
 
 # ==========================================
-# KHỞI TẠO BỘ NHỚ LƯU TRỮ (SESSION STATE) CHO KPI TỪNG KHU VỰC & AI
+# KHỞI TẠO BỘ NHỚ LƯU TRỮ (SESSION STATE)
 # ==========================================
+if "authenticated" not in st.session_state: st.session_state.authenticated = False
 if "kpi_gtc_dict" not in st.session_state: st.session_state.kpi_gtc_dict = {"Tất cả": 70.0}
 if "kpi_tts_dict" not in st.session_state: st.session_state.kpi_tts_dict = {"Tất cả": 80.0}
 if "kpi_odr_dict" not in st.session_state: st.session_state.kpi_odr_dict = {"Tất cả": 5.0} 
@@ -28,6 +30,9 @@ if "ai_vh_result" not in st.session_state: st.session_state.ai_vh_result = "Bấ
 if "ai_ns_result" not in st.session_state: st.session_state.ai_ns_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
 if "ai_kpi_result" not in st.session_state: st.session_state.ai_kpi_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
 if "ai_kd_result" not in st.session_state: st.session_state.ai_kd_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
+
+# Bộ nhớ cho Chatbot
+if "chat_history" not in st.session_state: st.session_state.chat_history = []
 
 # ==========================================
 # 1. CẤU HÌNH TRANG & GIAO DIỆN CHUNG (CSS)
@@ -60,6 +65,59 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# BẢO MẬT ĐĂNG NHẬP
+# ==========================================
+def check_login():
+    st.markdown("<h2 style='text-align: center; color: #007BFF;'>🔐 HỆ THỐNG QUẢN TRỊ NỘI BỘ GHN</h2>", unsafe_allow_html=True)
+    with st.form("login_form"):
+        st.write("Vui lòng đăng nhập để xem báo cáo")
+        user_id = st.text_input("ID Đăng nhập")
+        password = st.text_input("Mật khẩu", type="password")
+        submitted = st.form_submit_button("Đăng Nhập")
+        
+        if submitted:
+            if user_id == "GHNQB" and password == "999":
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("❌ ID hoặc Mật khẩu không chính xác!")
+
+if not st.session_state.authenticated:
+    check_login()
+    st.stop() # Dừng hệ thống tại đây nếu chưa đăng nhập thành công
+
+# Nút Đăng xuất ở thanh bên
+with st.sidebar:
+    if st.button("🚪 Đăng xuất", use_container_width=True):
+        st.session_state.authenticated = False
+        st.rerun()
+        
+    st.divider()
+    # CHATBOT AI DẠY VIỆC
+    st.markdown("### 🤖 Trợ lý AI Riêng")
+    for chat in st.session_state.chat_history:
+        with st.chat_message(chat["role"]):
+            st.markdown(chat["content"])
+            
+    if prompt_chat := st.chat_input("Dạy AI hoặc đặt câu hỏi..."):
+        st.session_state.chat_history.append({"role": "user", "content": prompt_chat})
+        with st.chat_message("user"): st.markdown(prompt_chat)
+        
+        with st.chat_message("assistant"):
+            if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
+                st.error("Chưa cấu hình API Key.")
+            else:
+                try:
+                    genai.configure(api_key=GEMINI_API_KEY.strip())
+                    model_chat = genai.GenerativeModel('gemini-3.6-flash')
+                    response_chat = model_chat.generate_content(f"Người dùng nói: {prompt_chat}. Hãy trả lời ngắn gọn, tập trung vào logistics.")
+                    st.markdown(response_chat.text)
+                    st.session_state.chat_history.append({"role": "assistant", "content": response_chat.text})
+                except Exception as e:
+                    st.error(f"Lỗi AI: {e}")
+
+
 def styled_header(text, icon=""):
     st.markdown(f"""
         <div style="background-color: #e6f2ff; color: #0056b3; padding: 12px 20px;
@@ -74,7 +132,7 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
     fig.add_trace(go.Bar(x=df[x_col], y=df[bar_y], name=bar_name, marker_color='rgba(0, 123, 255, 0.4)'), secondary_y=False)
     fig.add_trace(go.Scatter(x=df[x_col], y=df[line_y], name=line_name, mode='lines+markers', line=dict(color='#FF8C00', width=3), marker=dict(size=6)), secondary_y=True)
     fig.update_layout(title=title, plot_bgcolor='rgba(240, 248, 255, 0.5)', hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-    fig.update_yaxes(title_text="Sản lượng (Đơn)", secondary_y=False, showgrid=False)
+    fig.update_yaxes(title_text="Sản lượng", secondary_y=False, showgrid=False)
     fig.update_yaxes(title_text="Tỷ lệ (%)", secondary_y=True, showgrid=True, gridcolor='rgba(0,0,0,0.05)', range=[0, 100])
     return fig
 
@@ -198,7 +256,7 @@ def get_ai_analysis(prompt_text):
         return "⚠️ **CHƯA CẤU HÌNH API KEY:** Vui lòng thêm biến môi trường GEMINI_API_KEY trên Render."
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
-        model = genai.GenerativeModel('gemini-3.6-flash') 
+        model = genai.GenerativeModel('gemini-1.5-flash') 
         detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
         response = model.generate_content(prompt_text, generation_config=detailed_config)
         return response.text
@@ -247,13 +305,46 @@ with tab1:
     df_vh_filtered = df_vanhanh[mask_vh].copy()
 
     styled_header("1. TỔNG QUAN GTC VÀ TỶ LỆ TRẢ HÀNG", "🌍")
+    
+    # BỘ LỌC VIEW (Ngày/Tuần/Tháng) CHO TAB 1
+    view_mode_vh = st.radio("Chế độ xem Tổng quan:", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], horizontal=True, key="view_mode_vh")
+    
+    # Chuẩn bị dữ liệu hiển thị theo View Mode
+    df_trend_display = df_vh_filtered.copy()
+    if view_mode_vh == "Theo Tuần":
+        df_trend_display['Period'] = df_trend_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
+        df_trend_display = df_trend_display.groupby('Period').agg({'Volume': 'sum', 'GTC': 'mean', 'Trả Hàng': 'mean'}).reset_index()
+        df_trend_display = df_trend_display.rename(columns={'Period': 'Ngày'})
+    elif view_mode_vh == "Theo Tháng":
+        df_trend_display['Period'] = df_trend_display['Ngày'].dt.to_period('M').apply(lambda r: r.start_time)
+        df_trend_display = df_trend_display.groupby('Period').agg({'Volume': 'sum', 'GTC': 'mean', 'Trả Hàng': 'mean'}).reset_index()
+        df_trend_display = df_trend_display.rename(columns={'Period': 'Ngày'})
+    else:
+        df_trend_display = df_trend_display.groupby('Ngày').agg({'Volume': 'sum', 'GTC': 'mean', 'Trả Hàng': 'mean'}).reset_index()
+
+    # METRIC SO SÁNH N-1, W-1, M-1
+    if not df_trend_display.empty:
+        df_trend_display = df_trend_display.sort_values('Ngày')
+        latest_vol = df_trend_display.iloc[-1]['Volume']
+        latest_gtc = df_trend_display.iloc[-1]['GTC']
+        
+        prev_vol = 0
+        prev_gtc = 0
+        if len(df_trend_display) > 1:
+            prev_vol = df_trend_display.iloc[-2]['Volume']
+            prev_gtc = df_trend_display.iloc[-2]['GTC']
+            
+        st.markdown(f"**So sánh kỳ gần nhất so với kỳ trước ({view_mode_vh}):**")
+        m_col1, m_col2 = st.columns(2)
+        m_col1.metric("Tổng Sản Lượng", f"{latest_vol:,.0f} đơn", f"{latest_vol - prev_vol:,.0f} đơn")
+        m_col2.metric("Tỷ lệ GTC", f"{latest_gtc:.2f}%", f"{latest_gtc - prev_gtc:.2f}%")
+
     chart_col1, chart_col2 = st.columns(2)
-    df_trend_daily = df_vh_filtered.groupby('Ngày').agg({'Volume': 'sum', 'GTC': 'mean', 'Trả Hàng': 'mean'}).reset_index()
     with chart_col1:
-        fig_gtc = draw_combo_chart(df_trend_daily, 'Ngày', 'Volume', 'GTC', "Tỷ lệ Giao Thành Công (%GTC) và Sản Lượng")
+        fig_gtc = draw_combo_chart(df_trend_display, 'Ngày', 'Volume', 'GTC', f"Tỷ lệ GTC và Sản Lượng ({view_mode_vh})")
         st.plotly_chart(fig_gtc, use_container_width=True)
     with chart_col2:
-        fig_return = px.line(df_trend_daily, x='Ngày', y='Trả Hàng', markers=True, title="Tỷ lệ Trả Hàng Theo Ngày (%)")
+        fig_return = px.line(df_trend_display, x='Ngày', y='Trả Hàng', markers=True, title=f"Tỷ lệ Trả Hàng ({view_mode_vh}) (%)")
         fig_return.update_traces(line=dict(color='#FF3333', width=3), marker=dict(size=8))
         fig_return.update_layout(plot_bgcolor='rgba(255, 240, 240, 0.5)')
         st.plotly_chart(fig_return, use_container_width=True)
@@ -272,8 +363,20 @@ with tab1:
 
     styled_header("3. NĂNG SUẤT GIAO THEO CA LÀM VIỆC", "🕒")
     df_ca = df_vh_filtered.groupby(['Ngày', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
-    fig_ca = px.bar(df_ca, x='Ngày', y='Volume', color='Ca', barmode='group', title="Sản lượng theo Ca làm việc")
-    fig_ca.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)')
+    
+    # CHUYỂN ĐỔI BIỂU ĐỒ CỘT THÀNH COMBO CHART CHO CA LÀM VIỆC
+    # Vì x-axis đang là Ngày và có nhóm Ca, ta gộp Ngày+Ca thành chuỗi hoặc dùng Plotly đa trục
+    df_ca['TrụcX'] = df_ca['Ngày'].dt.strftime('%d/%m') + " - " + df_ca['Ca']
+    
+    fig_ca = make_subplots(specs=[[{"secondary_y": True}]])
+    for ca_name in df_ca['Ca'].unique():
+        df_ca_sub = df_ca[df_ca['Ca'] == ca_name]
+        fig_ca.add_trace(go.Bar(x=df_ca_sub['TrụcX'], y=df_ca_sub['Volume'], name=f"Volume {ca_name}", opacity=0.7), secondary_y=False)
+        fig_ca.add_trace(go.Scatter(x=df_ca_sub['TrụcX'], y=df_ca_sub['GTC'], name=f"%GTC {ca_name}", mode='lines+markers', marker=dict(size=8)), secondary_y=True)
+
+    fig_ca.update_layout(title="Sản Lượng và Tỷ Lệ GTC Theo Ca Làm Việc", plot_bgcolor='rgba(240, 248, 255, 0.5)', hovermode="x unified", barmode='group')
+    fig_ca.update_yaxes(title_text="Sản lượng", secondary_y=False)
+    fig_ca.update_yaxes(title_text="% GTC", secondary_y=True, range=[0, 100])
     st.plotly_chart(fig_ca, use_container_width=True)
 
     if st.button("🔍 Nhờ AI Phân tích Vận Hành", type="primary", key="btn_ai_vh"):
@@ -357,15 +460,12 @@ with tab3:
     styled_header("CÀI ĐẶT & THEO DÕI KPI VẬN HÀNH", "🎯")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        # 1. Thêm bộ chọn Bưu Cục riêng cho việc set KPI
         target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
         
-        # 2. Khởi tạo mặc định nếu bưu cục này chưa từng được set KPI
-        if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 90.0
+        if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 80.0
         if target_bc_kpi not in st.session_state.kpi_tts_dict: st.session_state.kpi_tts_dict[target_bc_kpi] = 85.0
-        if target_bc_kpi not in st.session_state.kpi_odr_dict: st.session_state.kpi_odr_dict[target_bc_kpi] = 5.0
+        if target_bc_kpi not in st.session_state.kpi_odr_dict: st.session_state.kpi_odr_dict[target_bc_kpi] = 98.0
 
-        # 3. Form điều chỉnh KPI được lưu thẳng vào Bộ nhớ (Dictionary)
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         with kpi_col1:
             st.session_state.kpi_gtc_dict[target_bc_kpi] = st.number_input(f"Mục tiêu KPI %GTC ({target_bc_kpi})", min_value=0.0, max_value=100.0, value=float(st.session_state.kpi_gtc_dict[target_bc_kpi]), step=0.5)
@@ -374,7 +474,6 @@ with tab3:
         with kpi_col3:
             st.session_state.kpi_odr_dict[target_bc_kpi] = st.number_input(f"KPI Ontime Giao TTS (ODR) ({target_bc_kpi})", min_value=0.0, max_value=100.0, value=float(st.session_state.kpi_odr_dict[target_bc_kpi]), step=0.5)
 
-    # Bộ lọc biểu đồ của Tab 3
     t3_col1, t3_col2 = st.columns(2)
     with t3_col1:
         date_range_kpi = st.date_input("Chọn thời gian", [df_vanhanh['Ngày'].min(), df_vanhanh['Ngày'].max()], key="date_kpi")
@@ -392,7 +491,6 @@ with tab3:
     actual_tts = df_kpi_filtered['GTC_TTS'].mean() if not df_kpi_filtered.empty else 0
     actual_odr = df_kpi_filtered['ODR'].mean() if not df_kpi_filtered.empty else 0
     
-    # 4. Trích xuất mục tiêu KPI CỦA BƯU CỤC ĐANG XEM (Không phải bưu cục đang set)
     current_kpi_gtc = st.session_state.kpi_gtc_dict.get(buu_cuc_kpi, 90.0)
     current_kpi_tts = st.session_state.kpi_tts_dict.get(buu_cuc_kpi, 85.0)
     current_kpi_odr = st.session_state.kpi_odr_dict.get(buu_cuc_kpi, 5.0)
@@ -445,13 +543,10 @@ with tab4:
     styled_header("BÁO CÁO DOANH THU & KHÁCH HÀNG MỚI", "💰")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        # 1. Thêm bộ chọn Bưu Cục riêng cho việc set KPI
         target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="set_bc_kd_tab4")
         
-        # Khởi tạo mặc định
         if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 30000000.0
         
-        # Lưu KPI Doanh thu vào Bộ nhớ
         st.session_state.kpi_dt_dict[target_bc_kd] = st.number_input(f"Mục tiêu Doanh thu VNĐ/Ngày ({target_bc_kd})", min_value=0.0, value=float(st.session_state.kpi_dt_dict[target_bc_kd]), step=1000000.0)
     
     t4_col1, t4_col2, t4_col3 = st.columns(3)
@@ -460,6 +555,7 @@ with tab4:
     with t4_col2:
         buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="bc_kd")
     with t4_col3:
+        # TÍNH NĂNG XEM THEO TUẦN THÁNG SẼ ẢNH HƯỞNG ĐẾN METRIC SO SÁNH
         view_type = st.selectbox("Góc nhìn báo cáo", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], key="view_kd")
 
     current_date = df_kinhdoanh['Ngày'].max()
@@ -471,52 +567,81 @@ with tab4:
         mask_kd &= (df_kinhdoanh['Bưu Cục'] == buu_cuc_kd)
     df_filtered_kd = df_kinhdoanh[mask_kd]
     
-    rev_n = df_filtered_kd[df_filtered_kd['Ngày'] == current_date]['Doanh Thu'].sum()
-    rev_n1 = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=1))]['Doanh Thu'].sum()
-    rev_w1 = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=7))]['Doanh Thu'].sum()
-    rev_m1 = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=30))]['Doanh Thu'].sum()
+    # Tính toán Metric Doanh thu dựa trên Góc nhìn
+    if view_type == "Theo Ngày":
+        rev_n = df_filtered_kd[df_filtered_kd['Ngày'] == current_date]['Doanh Thu'].sum()
+        rev_prev = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=1))]['Doanh Thu'].sum()
+        label_prev = "So với N-1 (Hôm qua)"
+    elif view_type == "Theo Tuần":
+        start_w = current_date - timedelta(days=current_date.weekday())
+        end_w = start_w + timedelta(days=6)
+        rev_n = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_w) & (df_filtered_kd['Ngày'] <= end_w)]['Doanh Thu'].sum()
+        
+        start_w_prev = start_w - timedelta(days=7)
+        end_w_prev = start_w_prev + timedelta(days=6)
+        rev_prev = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_w_prev) & (df_filtered_kd['Ngày'] <= end_w_prev)]['Doanh Thu'].sum()
+        label_prev = "So với W-1 (Tuần trước)"
+    else: # Theo Tháng
+        start_m = current_date.replace(day=1)
+        # Tìm ngày cuối tháng
+        next_month = start_m.replace(day=28) + timedelta(days=4)
+        end_m = next_month - timedelta(days=next_month.day)
+        rev_n = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m) & (df_filtered_kd['Ngày'] <= end_m)]['Doanh Thu'].sum()
+        
+        start_m_prev = (start_m - timedelta(days=1)).replace(day=1)
+        end_m_prev = start_m - timedelta(days=1)
+        rev_prev = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m_prev) & (df_filtered_kd['Ngày'] <= end_m_prev)]['Doanh Thu'].sum()
+        label_prev = "So với M-1 (Tháng trước)"
 
-    # 4. Trích xuất mục tiêu KPI Doanh thu CỦA BƯU CỤC ĐANG XEM
     kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 30000000.0)
     
-    st.markdown(f"**Hiệu suất Doanh thu ngày {current_date.strftime('%d-%m-%Y')}**")
-    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-    m_col1.metric("Doanh Thu Hiện Tại (N)", f"{rev_n:,.0f} đ", f"{(rev_n - kpi_dt_val)/kpi_dt_val*100:.1f}% vs KPI" if kpi_dt_val > 0 else "0%")
-    m_col2.metric("So với N-1 (Hôm qua)", f"{rev_n1:,.0f} đ", f"{rev_n - rev_n1:,.0f} đ")
-    m_col3.metric("So với W-1 (Tuần trước)", f"{rev_w1:,.0f} đ", f"{rev_n - rev_w1:,.0f} đ")
-    m_col4.metric("So với M-1 (Tháng trước)", f"{rev_m1:,.0f} đ", f"{rev_n - rev_m1:,.0f} đ")
+    # Nhân KPI lên nếu xem theo Tuần/Tháng để biểu đồ cân đối
+    if view_type == "Theo Tuần": kpi_dt_val = kpi_dt_val * 7
+    if view_type == "Theo Tháng": kpi_dt_val = kpi_dt_val * 30
+
+    st.markdown(f"**Hiệu suất Doanh thu ({view_type})**")
+    m_col1, m_col2, m_col3 = st.columns(3)
+    m_col1.metric("Doanh Thu Hiện Tại", f"{rev_n:,.0f} đ", f"{(rev_n - kpi_dt_val)/kpi_dt_val*100:.1f}% vs KPI" if kpi_dt_val > 0 else "0%")
+    m_col2.metric(label_prev, f"{rev_prev:,.0f} đ", f"{rev_n - rev_prev:,.0f} đ so với kỳ trước")
     
     mask_kd_range = mask_kd.copy()
     if len(date_range_kd) == 2:
         mask_kd_range &= (df_kinhdoanh['Ngày'] >= pd.to_datetime(date_range_kd[0])) & (df_kinhdoanh['Ngày'] <= pd.to_datetime(date_range_kd[1]))
     
-    df_plot_kd = df_kinhdoanh[mask_kd_range].groupby('Ngày').agg({
+    # Biểu đồ gom nhóm theo View Mode
+    df_plot_kd_display = df_kinhdoanh[mask_kd_range].copy()
+    if view_type == "Theo Tuần":
+        df_plot_kd_display['Ngày'] = df_plot_kd_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
+    elif view_type == "Theo Tháng":
+        df_plot_kd_display['Ngày'] = df_plot_kd_display['Ngày'].dt.to_period('M').apply(lambda r: r.start_time)
+        
+    df_plot_kd_grouped = df_plot_kd_display.groupby('Ngày').agg({
         'Doanh Thu': 'sum', 'Khách Liên Hệ': 'sum', 'Khách Lên Đơn': 'sum', 'Doanh Thu KH Mới': 'sum'
     }).reset_index()
 
     chart_kd1, chart_kd2 = st.columns(2)
     with chart_kd1:
-        fig_rev = px.bar(df_plot_kd, x='Ngày', y='Doanh Thu', title=f"Biểu đồ Doanh Thu & KPI ({buu_cuc_kd})", color_discrete_sequence=['#28a745'])
+        fig_rev = px.bar(df_plot_kd_grouped, x='Ngày', y='Doanh Thu', title=f"Biểu đồ Doanh Thu & KPI ({buu_cuc_kd})", color_discrete_sequence=['#28a745'])
         fig_rev.add_hline(y=kpi_dt_val, line_dash="dash", line_color="red", annotation_text="KPI Mục Tiêu")
         fig_rev.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)')
         st.plotly_chart(fig_rev, use_container_width=True)
 
     with chart_kd2:
-        total_lh = df_plot_kd['Khách Liên Hệ'].sum()
-        total_ld = df_plot_kd['Khách Lên Đơn'].sum()
-        total_rev_new = df_plot_kd['Doanh Thu KH Mới'].sum()
+        total_lh = df_plot_kd_grouped['Khách Liên Hệ'].sum()
+        total_ld = df_plot_kd_grouped['Khách Lên Đơn'].sum()
+        total_rev_new = df_plot_kd_grouped['Doanh Thu KH Mới'].sum()
         fig_funnel = go.Figure(go.Funnel(
             y=["Khách Liên Hệ", "Khách Lên Đơn (Chuyển đổi)"],
             x=[total_lh, total_ld], textinfo="value+percent initial"
         ))
-        fig_funnel.update_layout(title=f"Phễu chuyển đổi KH Mới (Tổng DT: {total_rev_new:,.0f} đ)")
+        fig_funnel.update_layout(title=f"Phễu chuyển đổi KH Mới ({view_type})")
         st.plotly_chart(fig_funnel, use_container_width=True)
 
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
             prompt_kd = f"""
-            Khu vực: {buu_cuc_kd}.
-            Phân tích Kinh doanh: KPI ngày {kpi_dt_val:,.0f}. Thực tế (N): {rev_n:,.0f}. So với hôm qua (N-1): {rev_n1:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
+            Khu vực: {buu_cuc_kd}. Chế độ xem: {view_type}
+            Phân tích Kinh doanh: KPI: {kpi_dt_val:,.0f}. Thực tế: {rev_n:,.0f}. So với kỳ trước: {rev_prev:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
             Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
             """
             st.session_state.ai_kd_result = get_ai_analysis(prompt_kd)
