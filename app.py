@@ -306,10 +306,8 @@ with tab1:
 
     styled_header("1. TỔNG QUAN GTC VÀ TỶ LỆ TRẢ HÀNG", "🌍")
     
-    # BỘ LỌC VIEW (Ngày/Tuần/Tháng) CHO TAB 1
     view_mode_vh = st.radio("Chế độ xem Tổng quan:", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], horizontal=True, key="view_mode_vh")
     
-    # Chuẩn bị dữ liệu hiển thị theo View Mode
     df_trend_display = df_vh_filtered.copy()
     if view_mode_vh == "Theo Tuần":
         df_trend_display['Period'] = df_trend_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
@@ -322,7 +320,6 @@ with tab1:
     else:
         df_trend_display = df_trend_display.groupby('Ngày').agg({'Volume': 'sum', 'GTC': 'mean', 'Trả Hàng': 'mean'}).reset_index()
 
-    # METRIC SO SÁNH N-1, W-1, M-1
     if not df_trend_display.empty:
         df_trend_display = df_trend_display.sort_values('Ngày')
         latest_vol = df_trend_display.iloc[-1]['Volume']
@@ -364,8 +361,6 @@ with tab1:
     styled_header("3. NĂNG SUẤT GIAO THEO CA LÀM VIỆC", "🕒")
     df_ca = df_vh_filtered.groupby(['Ngày', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
     
-    # CHUYỂN ĐỔI BIỂU ĐỒ CỘT THÀNH COMBO CHART CHO CA LÀM VIỆC
-    # Vì x-axis đang là Ngày và có nhóm Ca, ta gộp Ngày+Ca thành chuỗi hoặc dùng Plotly đa trục
     df_ca['TrụcX'] = df_ca['Ngày'].dt.strftime('%d/%m') + " - " + df_ca['Ca']
     
     fig_ca = make_subplots(specs=[[{"secondary_y": True}]])
@@ -421,6 +416,47 @@ with tab2:
     df_ns_filtered = df_nhansu[mask_ns].copy()
 
     styled_header("PHÂN TÍCH ĐƠN GIÁ & NĂNG SUẤT GIAO", "📈")
+    
+    # === BỔ SUNG LOGIC SO SÁNH KỲ LƯƠNG ===
+    mask_ns_no_date = pd.Series(True, index=df_nhansu.index)
+    if loai_hang_filter: mask_ns_no_date &= df_nhansu['Loại Hàng'].isin(loai_hang_filter)
+    if buu_cuc_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Bưu Cục'] == buu_cuc_ns)
+    if nhan_vien_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Nhân Viên'] == nhan_vien_ns)
+    df_ns_base = df_nhansu[mask_ns_no_date]
+    
+    max_date_ns = pd.to_datetime(date_range_ns[1]) if len(date_range_ns) == 2 else pd.to_datetime(date_range_ns[0])
+    
+    if max_date_ns.day <= 15:
+        curr_start = max_date_ns.replace(day=1)
+        curr_end = max_date_ns.replace(day=15)
+        prev_end = curr_start - timedelta(days=1)
+        prev_start = prev_end.replace(day=16)
+        curr_name = f"Kỳ 20 ({curr_start.month}/{curr_start.year})"
+        prev_name = f"Kỳ 05 ({prev_start.month}/{prev_start.year})"
+    else:
+        curr_start = max_date_ns.replace(day=16)
+        next_m = (curr_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        curr_end = next_m - timedelta(days=1)
+        prev_start = max_date_ns.replace(day=1)
+        prev_end = max_date_ns.replace(day=15)
+        curr_name = f"Kỳ 05 ({curr_start.month}/{curr_start.year})"
+        prev_name = f"Kỳ 20 ({prev_start.month}/{prev_start.year})"
+        
+    df_curr = df_ns_base[(df_ns_base['Ngày'] >= curr_start) & (df_ns_base['Ngày'] <= curr_end)]
+    df_prev = df_ns_base[(df_ns_base['Ngày'] >= prev_start) & (df_ns_base['Ngày'] <= prev_end)]
+    
+    avg_price_curr = df_curr['Đơn Giá'].mean() if not df_curr.empty else 0
+    avg_price_prev = df_prev['Đơn Giá'].mean() if not df_prev.empty else 0
+    diff_price = avg_price_curr - avg_price_prev
+    
+    st.markdown(f"**So sánh Đơn Giá Trung Bình (Logic Kỳ Lương: Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})**")
+    m_ns1, m_ns2, m_ns3 = st.columns(3)
+    m_ns1.metric(f"Hiện tại: {curr_name}", f"{avg_price_curr:,.0f} đ")
+    m_ns2.metric(f"Kỳ trước: {prev_name}", f"{avg_price_prev:,.0f} đ")
+    m_ns3.metric("Tăng/Giảm so với kỳ trước", f"{diff_price:,.0f} đ", f"{diff_price:,.0f} đ")
+    
+    # ==============================
+
     chart_ns1, chart_ns2 = st.columns(2)
     with chart_ns1:
         if nhan_vien_ns != "Tất cả":
@@ -449,6 +485,7 @@ with tab2:
             Dữ liệu Năng suất Nhân sự (Đã lọc): 
             - Tổng đơn đã giao: {df_ns_filtered['Số Đơn'].sum()}
             - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
+            - Kỳ lương: Hiện tại {curr_name} đang là {avg_price_curr:,.0f} đ (Tăng/giảm {diff_price:,.0f} so với kỳ trước).
             Nhiệm vụ: Đóng vai Quản lý nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất, 2. Rủi ro chi phí, 3. Đề xuất nhân sự.
             """
             st.session_state.ai_ns_result = get_ai_analysis(prompt_ns)
@@ -462,9 +499,9 @@ with tab3:
     with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
         target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
         
-        if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 80.0
+        if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 90.0
         if target_bc_kpi not in st.session_state.kpi_tts_dict: st.session_state.kpi_tts_dict[target_bc_kpi] = 85.0
-        if target_bc_kpi not in st.session_state.kpi_odr_dict: st.session_state.kpi_odr_dict[target_bc_kpi] = 98.0
+        if target_bc_kpi not in st.session_state.kpi_odr_dict: st.session_state.kpi_odr_dict[target_bc_kpi] = 5.0
 
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         with kpi_col1:
@@ -555,7 +592,6 @@ with tab4:
     with t4_col2:
         buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="bc_kd")
     with t4_col3:
-        # TÍNH NĂNG XEM THEO TUẦN THÁNG SẼ ẢNH HƯỞNG ĐẾN METRIC SO SÁNH
         view_type = st.selectbox("Góc nhìn báo cáo", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], key="view_kd")
 
     current_date = df_kinhdoanh['Ngày'].max()
@@ -567,7 +603,6 @@ with tab4:
         mask_kd &= (df_kinhdoanh['Bưu Cục'] == buu_cuc_kd)
     df_filtered_kd = df_kinhdoanh[mask_kd]
     
-    # Tính toán Metric Doanh thu dựa trên Góc nhìn
     if view_type == "Theo Ngày":
         rev_n = df_filtered_kd[df_filtered_kd['Ngày'] == current_date]['Doanh Thu'].sum()
         rev_prev = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=1))]['Doanh Thu'].sum()
@@ -583,7 +618,6 @@ with tab4:
         label_prev = "So với W-1 (Tuần trước)"
     else: # Theo Tháng
         start_m = current_date.replace(day=1)
-        # Tìm ngày cuối tháng
         next_month = start_m.replace(day=28) + timedelta(days=4)
         end_m = next_month - timedelta(days=next_month.day)
         rev_n = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m) & (df_filtered_kd['Ngày'] <= end_m)]['Doanh Thu'].sum()
@@ -595,7 +629,6 @@ with tab4:
 
     kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 30000000.0)
     
-    # Nhân KPI lên nếu xem theo Tuần/Tháng để biểu đồ cân đối
     if view_type == "Theo Tuần": kpi_dt_val = kpi_dt_val * 7
     if view_type == "Theo Tháng": kpi_dt_val = kpi_dt_val * 30
 
@@ -608,7 +641,6 @@ with tab4:
     if len(date_range_kd) == 2:
         mask_kd_range &= (df_kinhdoanh['Ngày'] >= pd.to_datetime(date_range_kd[0])) & (df_kinhdoanh['Ngày'] <= pd.to_datetime(date_range_kd[1]))
     
-    # Biểu đồ gom nhóm theo View Mode
     df_plot_kd_display = df_kinhdoanh[mask_kd_range].copy()
     if view_type == "Theo Tuần":
         df_plot_kd_display['Ngày'] = df_plot_kd_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
