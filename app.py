@@ -19,10 +19,10 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "ĐIỀN_CHAT_ID_NHÓM_VÀ
 # ==========================================
 # KHỞI TẠO BỘ NHỚ LƯU TRỮ (SESSION STATE) CHO KPI & AI
 # ==========================================
-if "kpi_gtc" not in st.session_state: st.session_state.kpi_gtc = 90.0
-if "kpi_tts" not in st.session_state: st.session_state.kpi_tts = 85.0
-if "kpi_odr" not in st.session_state: st.session_state.kpi_odr = 5.0
-if "kpi_dt" not in st.session_state: st.session_state.kpi_dt = 30000000.0
+if "kpi_gtc" not in st.session_state: st.session_state.kpi_gtc = 70.0
+if "kpi_tts" not in st.session_state: st.session_state.kpi_tts = 80.0
+if "kpi_odr" not in st.session_state: st.session_state.kpi_odr = 96.0
+if "kpi_dt" not in st.session_state: st.session_state.kpi_dt = 71000000.0
 
 if "ai_vh_result" not in st.session_state: st.session_state.ai_vh_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
 if "ai_ns_result" not in st.session_state: st.session_state.ai_ns_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
@@ -135,7 +135,7 @@ df_kinhdoanh = get_real_business_data()
 
 @st.cache_data(ttl=60) 
 def get_real_data():
-    url_vanhanh = "https://docs.google.com/spreadsheets/d/1oZ7U2HKEiywiGmtYU7Zuo5lWLVyjhGfZzWa31tzxdJk/export?format=csv&gid=0"
+    url_vanhanh = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
     url_nhansu = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=2000227799"
     try:
         df_vh = pd.read_csv(url_vanhanh)
@@ -181,7 +181,7 @@ df_vanhanh, df_nhansu = get_real_data()
 st.markdown("""
     <div class="banner">
         <div>
-            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ TỔNG THỂ GHN</h1>
+            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ VẬN HÀNH KINH DOANH GHN</h1>
             <p style="font-size: 16px; opacity: 0.9;">Vận Hành - Năng Suất - KPI - Kinh Doanh</p>
         </div>
     </div>
