@@ -256,7 +256,7 @@ def get_ai_analysis(prompt_text):
         return "⚠️ **CHƯA CẤU HÌNH API KEY:** Vui lòng thêm biến môi trường GEMINI_API_KEY trên Render."
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        model = genai.GenerativeModel('gemini-3.6-flash') 
         detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
         response = model.generate_content(prompt_text, generation_config=detailed_config)
         return response.text
