@@ -17,6 +17,19 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "ĐIỀN_TOKEN_BOT_TELEGRAM_V�
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "ĐIỀN_CHAT_ID_NHÓM_VÀO_ĐÂY")
 
 # ==========================================
+# KHỞI TẠO BỘ NHỚ LƯU TRỮ (SESSION STATE) CHO KPI & AI
+# ==========================================
+if "kpi_gtc" not in st.session_state: st.session_state.kpi_gtc = 90.0
+if "kpi_tts" not in st.session_state: st.session_state.kpi_tts = 85.0
+if "kpi_odr" not in st.session_state: st.session_state.kpi_odr = 5.0
+if "kpi_dt" not in st.session_state: st.session_state.kpi_dt = 30000000.0
+
+if "ai_vh_result" not in st.session_state: st.session_state.ai_vh_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
+if "ai_ns_result" not in st.session_state: st.session_state.ai_ns_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
+if "ai_kpi_result" not in st.session_state: st.session_state.ai_kpi_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
+if "ai_kd_result" not in st.session_state: st.session_state.ai_kd_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
+
+# ==========================================
 # 1. CẤU HÌNH TRANG & GIAO DIỆN CHUNG (CSS)
 # ==========================================
 st.set_page_config(page_title="Dashboard Vận Hành & Kinh Doanh", layout="wide", page_icon="📈")
@@ -68,34 +81,24 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
 # ==========================================
 # 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS (SIÊU BỘ LỌC CHỐNG LỖI V2)
 # ==========================================
-
-# Hàm tự động sửa lỗi gõ số kiểu Việt Nam sang chuẩn máy tính
 def parse_vn_num(val):
     val = str(val).replace('%', '').replace('đ', '').replace('VNĐ', '').replace(' ', '').strip()
     if val in ['nan', 'None', '', '0', '0.0']: 
         return 0.0
-    
-    # Nếu có cả phẩy và chấm (Ví dụ: 1.000,50 VN hoặc 1,000.50 US)
     if ',' in val and '.' in val:
-        if val.rfind(',') > val.rfind('.'): # Dấu phẩy ở cuối -> Định dạng Việt Nam (1.000,50)
+        if val.rfind(',') > val.rfind('.'): 
             val = val.replace('.', '').replace(',', '.')
-        else: # Dấu phẩy ở đầu -> Định dạng US (1,000.50)
+        else: 
             val = val.replace(',', '')
-            
-    # Nếu CHỈ CÓ dấu phẩy (Ví dụ: 81,25) -> Người Việt dùng phẩy làm số thập phân
     elif ',' in val:
         val = val.replace(',', '.')
-        
-    # Nếu CHỈ CÓ dấu chấm (Ví dụ: 81.25 hoặc 1.000.000)
     elif '.' in val:
         parts = val.split('.')
-        if len(parts) > 2: # 1.000.000
+        if len(parts) > 2: 
             val = val.replace('.', '')
         else:
-            if len(parts[1]) == 3: # 1.000 (3 số 0 ở cuối thường là hàng nghìn)
+            if len(parts[1]) == 3: 
                 val = val.replace('.', '')
-            # Ngược lại: 81.25 (Giữ nguyên vì là thập phân chuẩn US)
-            
     try:
         return float(val)
     except:
@@ -132,7 +135,7 @@ df_kinhdoanh = get_real_business_data()
 
 @st.cache_data(ttl=60) 
 def get_real_data():
-    url_vanhanh = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
+    url_vanhanh = "https://docs.google.com/spreadsheets/d/1oZ7U2HKEiywiGmtYU7Zuo5lWLVyjhGfZzWa31tzxdJk/export?format=csv&gid=0"
     url_nhansu = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=2000227799"
     try:
         df_vh = pd.read_csv(url_vanhanh)
@@ -178,8 +181,8 @@ df_vanhanh, df_nhansu = get_real_data()
 st.markdown("""
     <div class="banner">
         <div>
-            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ VẬN HÀNH KINH DOANH </h1>
-            <p style="font-size: 16px; opacity: 0.9;">Vận Hành - Năng Suất - KPI - Kinh Doanh | AI Tự động phân tích theo Tab</p>
+            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ TỔNG THỂ GHN</h1>
+            <p style="font-size: 16px; opacity: 0.9;">Vận Hành - Năng Suất - KPI - Kinh Doanh</p>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -190,7 +193,6 @@ with col_rf1:
         st.cache_data.clear()
         st.rerun()
 
-@st.cache_data(ttl=60, show_spinner=False)
 def get_ai_analysis(prompt_text):
     if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
         return "⚠️ **CHƯA CẤU HÌNH API KEY:** Vui lòng thêm biến môi trường GEMINI_API_KEY trên Render."
@@ -263,7 +265,7 @@ with tab1:
         fig_tts = draw_combo_chart(df_tts, 'Ngày', 'Volume TTS', 'GTC_TTS', "Tỷ lệ GTC TiktokShop (TTS)", bar_name="Sản lượng TTS", line_name="% GTC TTS")
         st.plotly_chart(fig_tts, use_container_width=True)
     with chart_col4:
-        fig_odr = px.line(df_tts, x='Ngày', y='ODR', markers=True, title="Tỷ lệ Đơn Hàng Tồn (ODR TikTokShop)")
+        fig_odr = px.line(df_tts, x='Ngày', y='ODR', markers=True, title="Tỷ lệ Ontime TTS (ODR TikTokShop)")
         fig_odr.update_traces(line=dict(color='#007BFF', width=3), marker=dict(size=8, color='#FF8C00'))
         fig_odr.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)', yaxis=dict(range=[70, 100]))
         st.plotly_chart(fig_odr, use_container_width=True)
@@ -274,16 +276,18 @@ with tab1:
     fig_ca.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)')
     st.plotly_chart(fig_ca, use_container_width=True)
 
-    with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
-        prompt_vh = f"""
-        Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
-        - Tổng đơn: {df_vh_filtered['Volume'].sum()}
-        - Tỷ lệ GTC: {df_vh_filtered['GTC'].mean():.2f}%
-        - Tỷ lệ Tồn kho: {df_vh_filtered['ODR'].mean():.2f}%
-        Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
-        """
-        ai_vh_result = get_ai_analysis(prompt_vh)
-    render_ai_and_telegram(ai_vh_result, "Vận Hành", "vh")
+    # ĐỔI THÀNH NÚT BẤM
+    if st.button("🔍 Nhờ AI Phân tích Vận Hành", type="primary", key="btn_ai_vh"):
+        with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
+            prompt_vh = f"""
+            Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
+            - Tổng đơn: {df_vh_filtered['Volume'].sum()}
+            - Tỷ lệ GTC: {df_vh_filtered['GTC'].mean():.2f}%
+            - Tỷ lệ Tồn kho: {df_vh_filtered['ODR'].mean():.2f}%
+            Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
+            """
+            st.session_state.ai_vh_result = get_ai_analysis(prompt_vh)
+    render_ai_and_telegram(st.session_state.ai_vh_result, "Vận Hành", "vh")
 
 
 # ----------------- TAB 2: NĂNG SUẤT & LƯƠNG -----------------
@@ -337,28 +341,30 @@ with tab2:
         fig_gtc_nv = draw_combo_chart(df_gtc_nv, 'Ngày', 'Số Đơn', '%GTC', title_gtc, bar_name="Số Đơn Đã Giao", line_name="% GTC")
         st.plotly_chart(fig_gtc_nv, use_container_width=True)
 
-    with st.spinner("🔄 AI đang phân tích dữ liệu Năng Suất..."):
-        prompt_ns = f"""
-        Dữ liệu Năng suất Nhân sự (Đã lọc): 
-        - Tổng đơn đã giao: {df_ns_filtered['Số Đơn'].sum()}
-        - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
-        Nhiệm vụ: Đóng vai Quản lý nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất, 2. Rủi ro chi phí, 3. Đề xuất nhân sự.
-        """
-        ai_ns_result = get_ai_analysis(prompt_ns)
-    render_ai_and_telegram(ai_ns_result, "Năng Suất & Nhân Sự", "ns")
+    # ĐỔI THÀNH NÚT BẤM
+    if st.button("🔍 Nhờ AI Phân tích Nhân sự & Chi phí", type="primary", key="btn_ai_ns"):
+        with st.spinner("🔄 AI đang phân tích dữ liệu Năng Suất..."):
+            prompt_ns = f"""
+            Dữ liệu Năng suất Nhân sự (Đã lọc): 
+            - Tổng đơn đã giao: {df_ns_filtered['Số Đơn'].sum()}
+            - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
+            Nhiệm vụ: Đóng vai Quản lý nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất, 2. Rủi ro chi phí, 3. Đề xuất nhân sự.
+            """
+            st.session_state.ai_ns_result = get_ai_analysis(prompt_ns)
+    render_ai_and_telegram(st.session_state.ai_ns_result, "Năng Suất & Nhân Sự", "ns")
 
 
 # ----------------- TAB 3: BÁO CÁO VẬN HÀNH THEO KPI -----------------
 with tab3:
     styled_header("CÀI ĐẶT & THEO DÕI KPI VẬN HÀNH", "🎯")
-    with st.expander("⚙️ ĐIỀU CHỈNH KPI (Khu vực / Bưu cục)", expanded=True):
+    with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại)", expanded=True):
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         with kpi_col1:
-            kpi_gtc_target = st.number_input("Mục tiêu KPI %GTC Chung", min_value=0.0, max_value=100.0, value=90.0, step=0.5, key="kpi_gtc")
+            st.session_state.kpi_gtc = st.number_input("Mục tiêu KPI %GTC Chung", min_value=0.0, max_value=100.0, value=st.session_state.kpi_gtc, step=0.5)
         with kpi_col2:
-            kpi_tts_target = st.number_input("Mục tiêu KPI %GTC TikTokShop", min_value=0.0, max_value=100.0, value=85.0, step=0.5, key="kpi_tts")
+            st.session_state.kpi_tts = st.number_input("Mục tiêu KPI %GTC TikTokShop", min_value=0.0, max_value=100.0, value=st.session_state.kpi_tts, step=0.5)
         with kpi_col3:
-            kpi_odr_target = st.number_input("KPI Ontime Giao TTS (ODR) tối đa", min_value=0.0, max_value=100.0, value=5.0, step=0.5, key="kpi_odr")
+            st.session_state.kpi_odr = st.number_input("KPI Ontime Giao TTS (ODR) tối đa", min_value=0.0, max_value=100.0, value=st.session_state.kpi_odr, step=0.5)
 
     t3_col1, t3_col2 = st.columns(2)
     with t3_col1:
@@ -397,33 +403,36 @@ with tab3:
         return fig
 
     with gauge_col1:
-        st.plotly_chart(create_gauge("Tỷ lệ GTC Chung (%)", actual_gtc, kpi_gtc_target), use_container_width=True)
+        st.plotly_chart(create_gauge("Tỷ lệ GTC Chung (%)", actual_gtc, st.session_state.kpi_gtc), use_container_width=True)
     with gauge_col2:
-        st.plotly_chart(create_gauge("Tỷ lệ GTC TikTokShop (%)", actual_tts, kpi_tts_target), use_container_width=True)
+        st.plotly_chart(create_gauge("Tỷ lệ GTC TikTokShop (%)", actual_tts, st.session_state.kpi_tts), use_container_width=True)
     with gauge_col3:
-        st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, kpi_odr_target, inverse_color=True), use_container_width=True)
+        st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, st.session_state.kpi_odr, inverse_color=True), use_container_width=True)
 
     st.markdown("**BẢNG THEO DÕI HOÀN THÀNH KPI THEO NGÀY**")
     df_kpi_table = df_kpi_filtered.groupby('Ngày').agg({'GTC':'mean', 'GTC_TTS':'mean', 'ODR':'mean'}).reset_index()
     df_kpi_table['Ngày'] = df_kpi_table['Ngày'].dt.strftime('%d-%m-%Y')
-    df_kpi_table['% Đạt KPI GTC'] = (df_kpi_table['GTC'] / kpi_gtc_target) * 100
+    # Chia cho biến session_state.kpi_gtc để tính phần trăm
+    df_kpi_table['% Đạt KPI GTC'] = (df_kpi_table['GTC'] / st.session_state.kpi_gtc) * 100 if st.session_state.kpi_gtc > 0 else 0
     st.dataframe(df_kpi_table.style.format({"GTC": "{:.2f}%", "GTC_TTS": "{:.2f}%", "ODR": "{:.2f}%", "% Đạt KPI GTC": "{:.1f}%"}), use_container_width=True)
 
-    with st.spinner("🔄 AI đang đánh giá mức độ đạt KPI..."):
-        prompt_kpi = f"""
-        Mục tiêu: GTC > {kpi_gtc_target}%, GTC TikTok > {kpi_tts_target}%, Tồn kho < {kpi_odr_target}%.
-        Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Tồn kho: {actual_odr:.2f}%.
-        Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
-        """
-        ai_kpi_result = get_ai_analysis(prompt_kpi)
-    render_ai_and_telegram(ai_kpi_result, "KPI Vận Hành", "kpi")
+    # ĐỔI THÀNH NÚT BẤM
+    if st.button("🔍 AI Đánh giá mức độ đạt KPI", type="primary", key="btn_ai_kpi"):
+        with st.spinner("🔄 AI đang đối chiếu số liệu với mục tiêu KPI..."):
+            prompt_kpi = f"""
+            Mục tiêu: GTC > {st.session_state.kpi_gtc}%, GTC TikTok > {st.session_state.kpi_tts}%, Tồn kho < {st.session_state.kpi_odr}%.
+            Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Tồn kho: {actual_odr:.2f}%.
+            Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
+            """
+            st.session_state.ai_kpi_result = get_ai_analysis(prompt_kpi)
+    render_ai_and_telegram(st.session_state.ai_kpi_result, "KPI Vận Hành", "kpi")
 
 
 # ----------------- TAB 4: KINH DOANH -----------------
 with tab4:
     styled_header("BÁO CÁO DOANH THU & KHÁCH HÀNG MỚI", "💰")
-    with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU", expanded=True):
-        kpi_dt_target = st.number_input("Mục tiêu Doanh thu (VNĐ / Ngày)", min_value=0, value=30000000, step=1000000, key="kpi_dt")
+    with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại)", expanded=True):
+        st.session_state.kpi_dt = st.number_input("Mục tiêu Doanh thu (VNĐ / Ngày)", min_value=0.0, value=float(st.session_state.kpi_dt), step=1000000.0)
     
     t4_col1, t4_col2, t4_col3 = st.columns(3)
     with t4_col1:
@@ -447,9 +456,11 @@ with tab4:
     rev_w1 = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=7))]['Doanh Thu'].sum()
     rev_m1 = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=30))]['Doanh Thu'].sum()
 
+    kpi_dt_val = st.session_state.kpi_dt
+    
     st.markdown(f"**Hiệu suất Doanh thu ngày {current_date.strftime('%d-%m-%Y')}**")
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-    m_col1.metric("Doanh Thu Hiện Tại (N)", f"{rev_n:,.0f} đ", f"{(rev_n - kpi_dt_target)/kpi_dt_target*100:.1f}% vs KPI")
+    m_col1.metric("Doanh Thu Hiện Tại (N)", f"{rev_n:,.0f} đ", f"{(rev_n - kpi_dt_val)/kpi_dt_val*100:.1f}% vs KPI" if kpi_dt_val > 0 else "0%")
     m_col2.metric("So với N-1 (Hôm qua)", f"{rev_n1:,.0f} đ", f"{rev_n - rev_n1:,.0f} đ")
     m_col3.metric("So với W-1 (Tuần trước)", f"{rev_w1:,.0f} đ", f"{rev_n - rev_w1:,.0f} đ")
     m_col4.metric("So với M-1 (Tháng trước)", f"{rev_m1:,.0f} đ", f"{rev_n - rev_m1:,.0f} đ")
@@ -465,7 +476,7 @@ with tab4:
     chart_kd1, chart_kd2 = st.columns(2)
     with chart_kd1:
         fig_rev = px.bar(df_plot_kd, x='Ngày', y='Doanh Thu', title="Biểu đồ Doanh Thu & KPI", color_discrete_sequence=['#28a745'])
-        fig_rev.add_hline(y=kpi_dt_target, line_dash="dash", line_color="red", annotation_text="KPI Mục Tiêu")
+        fig_rev.add_hline(y=kpi_dt_val, line_dash="dash", line_color="red", annotation_text="KPI Mục Tiêu")
         fig_rev.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)')
         st.plotly_chart(fig_rev, use_container_width=True)
 
@@ -480,10 +491,12 @@ with tab4:
         fig_funnel.update_layout(title=f"Phễu chuyển đổi KH Mới (Tổng DT: {total_rev_new:,.0f} đ)")
         st.plotly_chart(fig_funnel, use_container_width=True)
 
-    with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
-        prompt_kd = f"""
-        Phân tích Kinh doanh: KPI ngày {kpi_dt_target:,.0f}. Thực tế (N): {rev_n:,.0f}. So với hôm qua (N-1): {rev_n1:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
-        Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
-        """
-        ai_kd_result = get_ai_analysis(prompt_kd)
-    render_ai_and_telegram(ai_kd_result, "Kinh Doanh", "kd")
+    # ĐỔI THÀNH NÚT BẤM
+    if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
+        with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
+            prompt_kd = f"""
+            Phân tích Kinh doanh: KPI ngày {kpi_dt_val:,.0f}. Thực tế (N): {rev_n:,.0f}. So với hôm qua (N-1): {rev_n1:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
+            Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
+            """
+            st.session_state.ai_kd_result = get_ai_analysis(prompt_kd)
+    render_ai_and_telegram(st.session_state.ai_kd_result, "Kinh Doanh", "kd")
