@@ -79,7 +79,7 @@ def clean_dataframe_numbers(df, text_cols):
 
 @st.cache_data(ttl=60)
 def get_real_business_data():
-    url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
+url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
         df_kd = pd.read_csv(url_kinhdoanh)
         kd_mapping = {
@@ -101,7 +101,7 @@ df_kinhdoanh = get_real_business_data()
 
 @st.cache_data(ttl=60) 
 def get_real_data():
-    url_vanhanh = "https://docs.google.com/spreadsheets/d/1oZ7U2HKEiywiGmtYU7Zuo5lWLVyjhGfZzWa31tzxdJk/export?format=csv&gid=0"
+    url_vanhanh = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
     url_nhansu = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=2000227799"
     try:
         df_vh = pd.read_csv(url_vanhanh)
@@ -161,7 +161,7 @@ def get_ai_analysis(prompt_text):
         return "⚠️ **CHƯA CẤU HÌNH API KEY:** Vui lòng thêm biến môi trường GEMINI_API_KEY trên Render."
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        model = genai.GenerativeModel('gemini-3.6-flash') 
         detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
         response = model.generate_content(prompt_text, generation_config=detailed_config)
         return response.text
