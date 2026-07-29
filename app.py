@@ -119,7 +119,7 @@ def auto_run_ai_analysis(tong_don_val, gtc_tb_val, odr_tb_val, ns_hcm_val):
     
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
-        model = genai.GenerativeModel('gemini-3.6-flash') 
+        model = genai.GenerativeModel('gemini-1.5-flash') 
         
         prompt = f"""
         Dữ liệu vận hành hôm nay: 
@@ -129,14 +129,17 @@ def auto_run_ai_analysis(tong_don_val, gtc_tb_val, odr_tb_val, ns_hcm_val):
         - Sản lượng bưu cục: \n{ns_hcm_val}
         
         Nhiệm vụ: Đóng vai Giám đốc vận hành. Hãy phân tích CHUYÊN SÂU.
-        Bố cục 3 phần:
+        Yêu cầu BẮT BUỘC: 
+        - Viết 100% bằng Tiếng Việt chuẩn, có dấu đầy đủ, câu văn mạch lạc.
+        - Tuyệt đối không được bỏ dở câu.
+        - Bố cục 3 phần rõ ràng:
         1. 📊 Đánh giá tổng quan
         2. ⚠️ Phân tích Rủi ro 
         3. 💡 Đề xuất hành động
         """
         
-        detailed_config = genai.types.GenerationConfig(max_output_tokens=800, temperature=0.5)
-        # Gọi AI một lần (không dùng stream để lưu sẵn vào bộ nhớ tạm)
+        # TĂNG GIỚI HẠN LÊN 2048 ĐỂ AI VIẾT THOẢI MÁI KHÔNG BỊ CỤT CÂU
+        detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
         response = model.generate_content(prompt, generation_config=detailed_config)
         return response.text
     except Exception as e:
@@ -157,21 +160,28 @@ st.session_state.ai_response = ai_result
 # In báo cáo ra màn hình
 st.markdown(f'<div class="ai-warning"><b>🤖 Báo cáo tự động từ AI:</b><br><br>{ai_result}</div>', unsafe_allow_html=True)
 
-# NÚT BẮN TELEGRAM
+# NÚT BẮN TELEGRAM ĐÃ ĐƯỢC TỐI ƯU HIỂN THỊ
 if st.button("📤 Bắn báo cáo này lên nhóm Telegram"):
-    if TELEGRAM_TOKEN == "ĐIỀN_TOKEN_BOT_TELEGRAM_VÀO_ĐÂY":
+    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "ĐIỀN_TOKEN_BOT_TELEGRAM_VÀO_ĐÂY":
         st.warning("Bạn chưa cấu hình TELEGRAM_TOKEN trên máy chủ Render!")
     else:
         try:
-            clean_text = st.session_state.ai_response.replace('<b>', '').replace('</b>', '').replace('<br>', '\n')
+            # Làm sạch các ký tự Markdown thừa của AI (ví dụ: **, *) để Telegram hiển thị mượt mà hơn
+            clean_text = st.session_state.ai_response.replace('**', '').replace('*', '')
+            
             message = f"🚨 BÁO CÁO VẬN HÀNH TỪ AI 🚨\n\n{clean_text}"
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+            
+            payload = {
+                "chat_id": TELEGRAM_CHAT_ID, 
+                "text": message
+            }
+            
             req = requests.post(url, json=payload)
             if req.status_code == 200:
                 st.success("✅ Đã bắn báo cáo thành công lên nhóm Telegram!")
             else:
-                st.error("❌ Lỗi khi gửi Telegram: Vui lòng kiểm tra Token/Chat ID.")
+                st.error(f"❌ Lỗi khi gửi Telegram (Mã lỗi {req.status_code}): Vui lòng kiểm tra Token/Chat ID.")
         except Exception as e:
             st.error(f"Lỗi mạng khi kết nối Telegram: {e}")
 st.divider()
