@@ -69,45 +69,76 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
     return fig
 
 # ==========================================
-# 2. LẤY DỮ LIỆU KINH DOANH TỪ GOOGLE SHEETS
+# 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS (ĐÃ TÍCH HỢP BỘ LỌC CHỐNG LỖI TEXT)
 # ==========================================
+
+# -- A. DỮ LIỆU KINH DOANH --
 @st.cache_data(ttl=60)
 def get_real_business_data():
     # Điền link CSV file Kinh Doanh của bạn vào đây
     url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
         df_kd = pd.read_csv(url_kinhdoanh)
-        df_kd.columns = df_kd.columns.str.strip() # Xóa khoảng trắng thừa
+        df_kd.columns = df_kd.columns.str.strip()
         df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'])
         df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str)
-        return df_kd.fillna(0)
+        
+        # BỘ LỌC CHỐNG LỖI: Tự động gọt bỏ dấu phẩy, dấu %, khoảng trắng và ép về số
+        num_cols = ['Doanh Thu', 'Khách Liên Hệ', 'Khách Lên Đơn', 'Doanh Thu KH Mới']
+        for col in num_cols:
+            if col in df_kd.columns:
+                df_kd[col] = df_kd[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
+                df_kd[col] = pd.to_numeric(df_kd[col], errors='coerce').fillna(0)
+                
+        return df_kd
     except Exception as e:
         st.error(f"🚨 Lỗi kết nối Google Sheets Kinh Doanh: {e}")
         st.stop()
 
 df_kinhdoanh = get_real_business_data()
 
+# -- B. DỮ LIỆU VẬN HÀNH & NHÂN SỰ --
 @st.cache_data(ttl=60) 
 def get_real_data():
-    url_vanhanh = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
+    # Link Vận Hành và Nhân Sự (Nếu bạn đã có link thật thì thay vào biến này nhé)
+    url_vanhanh = "https://docs.google.com/spreadsheets/d/1oZ7U2HKEiywiGmtYU7Zuo5lWLVyjhGfZzWa31tzxdJk/export?format=csv&gid=0"
     url_nhansu = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=2000227799"
+    
     try:
         df_vh = pd.read_csv(url_vanhanh)
         df_ns = pd.read_csv(url_nhansu)
+        
         df_vh.columns = df_vh.columns.str.strip()
         df_ns.columns = df_ns.columns.str.strip()
+        
         if 'Ngày' not in df_vh.columns:
             st.error("🚨 Không đọc được dữ liệu. Vui lòng kiểm tra quyền chia sẻ 'Bất kỳ ai có đường liên kết'!")
             st.stop()
+            
         df_vh['Ngày'] = pd.to_datetime(df_vh['Ngày'])
         df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'])
-        df_vh = df_vh.fillna(0)
-        df_ns = df_ns.fillna(0)
+        
         df_vh['Bưu Cục'] = df_vh['Bưu Cục'].astype(str)
         df_ns['Bưu Cục'] = df_ns['Bưu Cục'].astype(str)
         df_ns['Nhân Viên'] = df_ns['Nhân Viên'].astype(str)
         df_ns['Loại Hàng'] = df_ns['Loại Hàng'].astype(str)
+
+        # BỘ LỌC CHỐNG LỖI VẬN HÀNH
+        vh_num_cols = ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']
+        for col in vh_num_cols:
+            if col in df_vh.columns:
+                df_vh[col] = df_vh[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
+                df_vh[col] = pd.to_numeric(df_vh[col], errors='coerce').fillna(0)
+                
+        # BỘ LỌC CHỐNG LỖI NHÂN SỰ
+        ns_num_cols = ['Số Đơn', 'Đơn Giá', '%GTC']
+        for col in ns_num_cols:
+            if col in df_ns.columns:
+                df_ns[col] = df_ns[col].astype(str).str.replace(',', '').str.replace('%', '').str.strip()
+                df_ns[col] = pd.to_numeric(df_ns[col], errors='coerce').fillna(0)
+        
         return df_vh, df_ns
+        
     except Exception as e:
         st.error(f"🚨 Lỗi kết nối Google Sheets: {e}")
         st.stop()
