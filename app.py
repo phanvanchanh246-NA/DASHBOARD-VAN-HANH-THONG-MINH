@@ -79,7 +79,7 @@ def clean_dataframe_numbers(df, text_cols):
 
 @st.cache_data(ttl=60)
 def get_real_business_data():
-url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
+    url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
         df_kd = pd.read_csv(url_kinhdoanh)
         kd_mapping = {
