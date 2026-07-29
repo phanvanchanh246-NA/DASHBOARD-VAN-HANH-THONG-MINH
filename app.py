@@ -69,26 +69,23 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
     return fig
 
 # ==========================================
-# DỮ LIỆU GIẢ LẬP VÀ THẬT
+# 2. LẤY DỮ LIỆU KINH DOANH TỪ GOOGLE SHEETS
 # ==========================================
-@st.cache_data
-def get_mock_business_data():
-    dates = pd.date_range(start=datetime.now() - timedelta(days=60), end=datetime.now())
-    hubs = ["BC Quận 1", "BC Quận 3", "BC Tân Bình", "BC Gò Vấp", "BC Thủ Đức"]
-    data = []
-    for d in dates:
-        for h in hubs:
-            kh_lien_he = np.random.randint(10, 50)
-            kh_len_don = int(kh_lien_he * np.random.uniform(0.3, 0.8))
-            data.append({
-                "Ngày": d, "Bưu Cục": h,
-                "Doanh Thu": np.random.randint(10000000, 50000000), 
-                "Khách Liên Hệ": kh_lien_he, "Khách Lên Đơn": kh_len_don,
-                "Doanh Thu KH Mới": kh_len_don * np.random.randint(50000, 200000)
-            })
-    return pd.DataFrame(data)
+@st.cache_data(ttl=60)
+def get_real_business_data():
+    # Điền link CSV file Kinh Doanh của bạn vào đây
+    url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
+    try:
+        df_kd = pd.read_csv(url_kinhdoanh)
+        df_kd.columns = df_kd.columns.str.strip() # Xóa khoảng trắng thừa
+        df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'])
+        df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str)
+        return df_kd.fillna(0)
+    except Exception as e:
+        st.error(f"🚨 Lỗi kết nối Google Sheets Kinh Doanh: {e}")
+        st.stop()
 
-df_kinhdoanh = get_mock_business_data()
+df_kinhdoanh = get_real_business_data()
 
 @st.cache_data(ttl=60) 
 def get_real_data():
