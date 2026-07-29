@@ -17,12 +17,12 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "ĐIỀN_TOKEN_BOT_TELEGRAM_V�
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "ĐIỀN_CHAT_ID_NHÓM_VÀO_ĐÂY")
 
 # ==========================================
-# KHỞI TẠO BỘ NHỚ LƯU TRỮ (SESSION STATE) CHO KPI & AI
+# KHỞI TẠO BỘ NHỚ LƯU TRỮ (SESSION STATE) CHO KPI TỪNG KHU VỰC & AI
 # ==========================================
-if "kpi_gtc" not in st.session_state: st.session_state.kpi_gtc = 70.0
-if "kpi_tts" not in st.session_state: st.session_state.kpi_tts = 80.0
-if "kpi_odr" not in st.session_state: st.session_state.kpi_odr = 96.0
-if "kpi_dt" not in st.session_state: st.session_state.kpi_dt = 71000000.0
+if "kpi_gtc_dict" not in st.session_state: st.session_state.kpi_gtc_dict = {"Tất cả": 70.0}
+if "kpi_tts_dict" not in st.session_state: st.session_state.kpi_tts_dict = {"Tất cả": 80.0}
+if "kpi_odr_dict" not in st.session_state: st.session_state.kpi_odr_dict = {"Tất cả": 5.0} 
+if "kpi_dt_dict" not in st.session_state: st.session_state.kpi_dt_dict = {"Tất cả": 71000000.0}
 
 if "ai_vh_result" not in st.session_state: st.session_state.ai_vh_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
 if "ai_ns_result" not in st.session_state: st.session_state.ai_ns_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
@@ -276,7 +276,6 @@ with tab1:
     fig_ca.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)')
     st.plotly_chart(fig_ca, use_container_width=True)
 
-    # ĐỔI THÀNH NÚT BẤM
     if st.button("🔍 Nhờ AI Phân tích Vận Hành", type="primary", key="btn_ai_vh"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
             prompt_vh = f"""
@@ -341,7 +340,6 @@ with tab2:
         fig_gtc_nv = draw_combo_chart(df_gtc_nv, 'Ngày', 'Số Đơn', '%GTC', title_gtc, bar_name="Số Đơn Đã Giao", line_name="% GTC")
         st.plotly_chart(fig_gtc_nv, use_container_width=True)
 
-    # ĐỔI THÀNH NÚT BẤM
     if st.button("🔍 Nhờ AI Phân tích Nhân sự & Chi phí", type="primary", key="btn_ai_ns"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Năng Suất..."):
             prompt_ns = f"""
@@ -357,20 +355,31 @@ with tab2:
 # ----------------- TAB 3: BÁO CÁO VẬN HÀNH THEO KPI -----------------
 with tab3:
     styled_header("CÀI ĐẶT & THEO DÕI KPI VẬN HÀNH", "🎯")
-    with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại)", expanded=True):
+    
+    with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
+        # 1. Thêm bộ chọn Bưu Cục riêng cho việc set KPI
+        target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
+        
+        # 2. Khởi tạo mặc định nếu bưu cục này chưa từng được set KPI
+        if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 90.0
+        if target_bc_kpi not in st.session_state.kpi_tts_dict: st.session_state.kpi_tts_dict[target_bc_kpi] = 85.0
+        if target_bc_kpi not in st.session_state.kpi_odr_dict: st.session_state.kpi_odr_dict[target_bc_kpi] = 5.0
+
+        # 3. Form điều chỉnh KPI được lưu thẳng vào Bộ nhớ (Dictionary)
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         with kpi_col1:
-            st.session_state.kpi_gtc = st.number_input("Mục tiêu KPI %GTC Chung", min_value=0.0, max_value=100.0, value=st.session_state.kpi_gtc, step=0.5)
+            st.session_state.kpi_gtc_dict[target_bc_kpi] = st.number_input(f"Mục tiêu KPI %GTC ({target_bc_kpi})", min_value=0.0, max_value=100.0, value=float(st.session_state.kpi_gtc_dict[target_bc_kpi]), step=0.5)
         with kpi_col2:
-            st.session_state.kpi_tts = st.number_input("Mục tiêu KPI %GTC TikTokShop", min_value=0.0, max_value=100.0, value=st.session_state.kpi_tts, step=0.5)
+            st.session_state.kpi_tts_dict[target_bc_kpi] = st.number_input(f"Mục tiêu KPI %GTC TikTokShop ({target_bc_kpi})", min_value=0.0, max_value=100.0, value=float(st.session_state.kpi_tts_dict[target_bc_kpi]), step=0.5)
         with kpi_col3:
-            st.session_state.kpi_odr = st.number_input("KPI Ontime Giao TTS (ODR) tối đa", min_value=0.0, max_value=100.0, value=st.session_state.kpi_odr, step=0.5)
+            st.session_state.kpi_odr_dict[target_bc_kpi] = st.number_input(f"KPI Ontime Giao TTS (ODR) ({target_bc_kpi})", min_value=0.0, max_value=100.0, value=float(st.session_state.kpi_odr_dict[target_bc_kpi]), step=0.5)
 
+    # Bộ lọc biểu đồ của Tab 3
     t3_col1, t3_col2 = st.columns(2)
     with t3_col1:
         date_range_kpi = st.date_input("Chọn thời gian", [df_vanhanh['Ngày'].min(), df_vanhanh['Ngày'].max()], key="date_kpi")
     with t3_col2:
-        buu_cuc_kpi = st.selectbox("Chọn Bưu cục", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="bc_kpi")
+        buu_cuc_kpi = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="bc_kpi")
 
     mask_kpi = pd.Series(True, index=df_vanhanh.index)
     if len(date_range_kpi) == 2:
@@ -383,6 +392,11 @@ with tab3:
     actual_tts = df_kpi_filtered['GTC_TTS'].mean() if not df_kpi_filtered.empty else 0
     actual_odr = df_kpi_filtered['ODR'].mean() if not df_kpi_filtered.empty else 0
     
+    # 4. Trích xuất mục tiêu KPI CỦA BƯU CỤC ĐANG XEM (Không phải bưu cục đang set)
+    current_kpi_gtc = st.session_state.kpi_gtc_dict.get(buu_cuc_kpi, 90.0)
+    current_kpi_tts = st.session_state.kpi_tts_dict.get(buu_cuc_kpi, 85.0)
+    current_kpi_odr = st.session_state.kpi_odr_dict.get(buu_cuc_kpi, 5.0)
+
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target, inverse_color=False):
         color = "green" if (value >= target and not inverse_color) or (value <= target and inverse_color) else "red"
@@ -403,24 +417,22 @@ with tab3:
         return fig
 
     with gauge_col1:
-        st.plotly_chart(create_gauge("Tỷ lệ GTC Chung (%)", actual_gtc, st.session_state.kpi_gtc), use_container_width=True)
+        st.plotly_chart(create_gauge("Tỷ lệ GTC Chung (%)", actual_gtc, current_kpi_gtc), use_container_width=True)
     with gauge_col2:
-        st.plotly_chart(create_gauge("Tỷ lệ GTC TikTokShop (%)", actual_tts, st.session_state.kpi_tts), use_container_width=True)
+        st.plotly_chart(create_gauge("Tỷ lệ GTC TikTokShop (%)", actual_tts, current_kpi_tts), use_container_width=True)
     with gauge_col3:
-        st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, st.session_state.kpi_odr, inverse_color=True), use_container_width=True)
+        st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr, inverse_color=True), use_container_width=True)
 
     st.markdown("**BẢNG THEO DÕI HOÀN THÀNH KPI THEO NGÀY**")
     df_kpi_table = df_kpi_filtered.groupby('Ngày').agg({'GTC':'mean', 'GTC_TTS':'mean', 'ODR':'mean'}).reset_index()
     df_kpi_table['Ngày'] = df_kpi_table['Ngày'].dt.strftime('%d-%m-%Y')
-    # Chia cho biến session_state.kpi_gtc để tính phần trăm
-    df_kpi_table['% Đạt KPI GTC'] = (df_kpi_table['GTC'] / st.session_state.kpi_gtc) * 100 if st.session_state.kpi_gtc > 0 else 0
+    df_kpi_table['% Đạt KPI GTC'] = (df_kpi_table['GTC'] / current_kpi_gtc) * 100 if current_kpi_gtc > 0 else 0
     st.dataframe(df_kpi_table.style.format({"GTC": "{:.2f}%", "GTC_TTS": "{:.2f}%", "ODR": "{:.2f}%", "% Đạt KPI GTC": "{:.1f}%"}), use_container_width=True)
 
-    # ĐỔI THÀNH NÚT BẤM
     if st.button("🔍 AI Đánh giá mức độ đạt KPI", type="primary", key="btn_ai_kpi"):
         with st.spinner("🔄 AI đang đối chiếu số liệu với mục tiêu KPI..."):
             prompt_kpi = f"""
-            Mục tiêu: GTC > {st.session_state.kpi_gtc}%, GTC TikTok > {st.session_state.kpi_tts}%, Tồn kho < {st.session_state.kpi_odr}%.
+            Khu vực ({buu_cuc_kpi}) - Mục tiêu: GTC > {current_kpi_gtc}%, GTC TikTok > {current_kpi_tts}%, Tồn kho < {current_kpi_odr}%.
             Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Tồn kho: {actual_odr:.2f}%.
             Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
             """
@@ -431,14 +443,22 @@ with tab3:
 # ----------------- TAB 4: KINH DOANH -----------------
 with tab4:
     styled_header("BÁO CÁO DOANH THU & KHÁCH HÀNG MỚI", "💰")
-    with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại)", expanded=True):
-        st.session_state.kpi_dt = st.number_input("Mục tiêu Doanh thu (VNĐ / Ngày)", min_value=0.0, value=float(st.session_state.kpi_dt), step=1000000.0)
+    
+    with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
+        # 1. Thêm bộ chọn Bưu Cục riêng cho việc set KPI
+        target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="set_bc_kd_tab4")
+        
+        # Khởi tạo mặc định
+        if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 30000000.0
+        
+        # Lưu KPI Doanh thu vào Bộ nhớ
+        st.session_state.kpi_dt_dict[target_bc_kd] = st.number_input(f"Mục tiêu Doanh thu VNĐ/Ngày ({target_bc_kd})", min_value=0.0, value=float(st.session_state.kpi_dt_dict[target_bc_kd]), step=1000000.0)
     
     t4_col1, t4_col2, t4_col3 = st.columns(3)
     with t4_col1:
         date_range_kd = st.date_input("Chọn thời gian", [df_kinhdoanh['Ngày'].max() - timedelta(days=7), df_kinhdoanh['Ngày'].max()], key="date_kd")
     with t4_col2:
-        buu_cuc_kd = st.selectbox("Chọn Bưu cục", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="bc_kd")
+        buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="bc_kd")
     with t4_col3:
         view_type = st.selectbox("Góc nhìn báo cáo", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], key="view_kd")
 
@@ -456,7 +476,8 @@ with tab4:
     rev_w1 = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=7))]['Doanh Thu'].sum()
     rev_m1 = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=30))]['Doanh Thu'].sum()
 
-    kpi_dt_val = st.session_state.kpi_dt
+    # 4. Trích xuất mục tiêu KPI Doanh thu CỦA BƯU CỤC ĐANG XEM
+    kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 30000000.0)
     
     st.markdown(f"**Hiệu suất Doanh thu ngày {current_date.strftime('%d-%m-%Y')}**")
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
@@ -475,7 +496,7 @@ with tab4:
 
     chart_kd1, chart_kd2 = st.columns(2)
     with chart_kd1:
-        fig_rev = px.bar(df_plot_kd, x='Ngày', y='Doanh Thu', title="Biểu đồ Doanh Thu & KPI", color_discrete_sequence=['#28a745'])
+        fig_rev = px.bar(df_plot_kd, x='Ngày', y='Doanh Thu', title=f"Biểu đồ Doanh Thu & KPI ({buu_cuc_kd})", color_discrete_sequence=['#28a745'])
         fig_rev.add_hline(y=kpi_dt_val, line_dash="dash", line_color="red", annotation_text="KPI Mục Tiêu")
         fig_rev.update_layout(plot_bgcolor='rgba(240, 248, 255, 0.5)')
         st.plotly_chart(fig_rev, use_container_width=True)
@@ -491,10 +512,10 @@ with tab4:
         fig_funnel.update_layout(title=f"Phễu chuyển đổi KH Mới (Tổng DT: {total_rev_new:,.0f} đ)")
         st.plotly_chart(fig_funnel, use_container_width=True)
 
-    # ĐỔI THÀNH NÚT BẤM
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
             prompt_kd = f"""
+            Khu vực: {buu_cuc_kd}.
             Phân tích Kinh doanh: KPI ngày {kpi_dt_val:,.0f}. Thực tế (N): {rev_n:,.0f}. So với hôm qua (N-1): {rev_n1:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
             Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
             """
