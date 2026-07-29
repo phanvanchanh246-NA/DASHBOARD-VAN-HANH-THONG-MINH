@@ -143,7 +143,7 @@ df_vanhanh, df_nhansu = get_real_data()
 st.markdown("""
     <div class="banner">
         <div>
-            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ TỔNG THỂ GHN</h1>
+            <h1 style="color: white; margin-bottom: 0;">DASHBOARD QUẢN LÝ VẬN HÀNH KINH DOANH THÔNG MINH</h1>
             <p style="font-size: 16px; opacity: 0.9;">Vận Hành - Năng Suất - KPI - Kinh Doanh | AI Tự động phân tích theo Tab</p>
         </div>
     </div>
