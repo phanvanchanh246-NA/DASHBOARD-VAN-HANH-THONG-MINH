@@ -23,7 +23,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "ĐIỀN_CHAT_ID_NHÓM_VÀ
 if "authenticated" not in st.session_state: st.session_state.authenticated = False
 if "kpi_gtc_dict" not in st.session_state: st.session_state.kpi_gtc_dict = {"Tất cả": 70.0}
 if "kpi_tts_dict" not in st.session_state: st.session_state.kpi_tts_dict = {"Tất cả": 80.0}
-if "kpi_odr_dict" not in st.session_state: st.session_state.kpi_odr_dict = {"Tất cả": 5.0} 
+if "kpi_odr_dict" not in st.session_state: st.session_state.kpi_odr_dict = {"Tất cả": 98.0} 
 if "kpi_dt_dict" not in st.session_state: st.session_state.kpi_dt_dict = {"Tất cả": 71000000.0}
 
 if "ai_vh_result" not in st.session_state: st.session_state.ai_vh_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
@@ -577,9 +577,9 @@ with tab3:
         # Chọn Bưu Cục từ Sheet Tổng Quan
         target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
         
-        if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 90.0
-        if target_bc_kpi not in st.session_state.kpi_tts_dict: st.session_state.kpi_tts_dict[target_bc_kpi] = 85.0
-        if target_bc_kpi not in st.session_state.kpi_odr_dict: st.session_state.kpi_odr_dict[target_bc_kpi] = 5.0
+        if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 70.0
+        if target_bc_kpi not in st.session_state.kpi_tts_dict: st.session_state.kpi_tts_dict[target_bc_kpi] = 80.0
+        if target_bc_kpi not in st.session_state.kpi_odr_dict: st.session_state.kpi_odr_dict[target_bc_kpi] = 98.0
 
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         with kpi_col1:
@@ -606,9 +606,9 @@ with tab3:
     actual_tts = df_kpi_filtered['GTC_TTS'].mean() if not df_kpi_filtered.empty else 0
     actual_odr = df_kpi_filtered['ODR'].mean() if not df_kpi_filtered.empty else 0
     
-    current_kpi_gtc = st.session_state.kpi_gtc_dict.get(buu_cuc_kpi, 90.0)
-    current_kpi_tts = st.session_state.kpi_tts_dict.get(buu_cuc_kpi, 85.0)
-    current_kpi_odr = st.session_state.kpi_odr_dict.get(buu_cuc_kpi, 5.0)
+    current_kpi_gtc = st.session_state.kpi_gtc_dict.get(buu_cuc_kpi, 70.0)
+    current_kpi_tts = st.session_state.kpi_tts_dict.get(buu_cuc_kpi, 80.0)
+    current_kpi_odr = st.session_state.kpi_odr_dict.get(buu_cuc_kpi, 98.0)
 
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target, inverse_color=False):
