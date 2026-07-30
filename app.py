@@ -289,7 +289,7 @@ def get_ai_analysis(prompt_text):
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
         model = genai.GenerativeModel('gemini-3.6-flash') 
-        detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
+        detailed_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.4)
         response = model.generate_content(prompt_text, generation_config=detailed_config)
         return response.text
     except Exception as e:
@@ -423,7 +423,8 @@ with tab1:
             - Tổng đơn: {df_vh_filtered['Volume'].sum()}
             - Tỷ lệ GTC: {df_vh_filtered['GTC'].mean():.2f}%
             - Tỷ lệ Tồn kho: {df_vh_filtered['ODR'].mean():.2f}%
-            Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
+            Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
             """
             st.session_state.ai_vh_result = get_ai_analysis(prompt_vh)
     render_ai_and_telegram(st.session_state.ai_vh_result, "Vận Hành", "vh")
@@ -530,6 +531,7 @@ with tab2:
             - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
             - Kỳ lương: Hiện tại {curr_name} đang là {avg_price_curr:,.0f} đ (Tăng/giảm {diff_price:,.0f} so với kỳ trước).
             Nhiệm vụ: Đóng vai Quản lý nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất, 2. Rủi ro chi phí, 3. Đề xuất nhân sự.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
             """
             st.session_state.ai_ns_result = get_ai_analysis(prompt_ns)
     render_ai_and_telegram(st.session_state.ai_ns_result, "Năng Suất & Nhân Sự", "ns")
@@ -630,6 +632,7 @@ with tab3:
             Khu vực ({buu_cuc_kpi}) - Mục tiêu: GTC > {current_kpi_gtc}%, GTC TikTok > {current_kpi_tts}%, Tồn kho < {current_kpi_odr}%.
             Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Tồn kho: {actual_odr:.2f}%.
             Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
             """
             st.session_state.ai_kpi_result = get_ai_analysis(prompt_kpi)
     render_ai_and_telegram(st.session_state.ai_kpi_result, "KPI Vận Hành", "kpi")
@@ -738,6 +741,7 @@ with tab4:
             Khu vực: {buu_cuc_kd}. Chế độ xem: {view_type}
             Phân tích Kinh doanh: KPI: {kpi_dt_val:,.0f}. Thực tế: {rev_n:,.0f}. So với kỳ trước: {rev_prev:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
             Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
             """
             st.session_state.ai_kd_result = get_ai_analysis(prompt_kd)
     render_ai_and_telegram(st.session_state.ai_kd_result, "Kinh Doanh", "kd")
