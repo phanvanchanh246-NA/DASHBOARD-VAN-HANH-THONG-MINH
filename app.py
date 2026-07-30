@@ -39,7 +39,6 @@ if "chat_history" not in st.session_state: st.session_state.chat_history = []
 # ==========================================
 st.set_page_config(page_title="Dashboard Vận Hành & Kinh Doanh", layout="wide", page_icon="📈")
 
-# NÂNG CẤP CSS: Thêm font chữ mạnh mẽ, màu sắc sắc nét
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
@@ -139,13 +138,12 @@ with st.sidebar:
             else:
                 try:
                     genai.configure(api_key=GEMINI_API_KEY.strip())
-                    model_chat = genai.GenerativeModel('gemini-3.6-flash')
+                    model_chat = genai.GenerativeModel('gemini-1.5-flash')
                     response_chat = model_chat.generate_content(f"Người dùng nói: {prompt_chat}. Hãy trả lời ngắn gọn, tập trung vào logistics.")
                     st.markdown(response_chat.text)
                     st.session_state.chat_history.append({"role": "assistant", "content": response_chat.text})
                 except Exception as e:
                     st.error(f"Lỗi AI: {e}")
-
 
 def styled_header(text, icon=""):
     st.markdown(f"""
@@ -157,7 +155,6 @@ def styled_header(text, icon=""):
         </div>
     """, unsafe_allow_html=True)
 
-# NÂNG CẤP BIỂU ĐỒ COMBO MÀU SẮC ĐẬM ĐÀ
 def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng", line_name="% GTC"):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=df[x_col], y=df[bar_y], name=bar_name, marker_color='#007BFF', opacity=0.85), secondary_y=False)
@@ -225,45 +222,66 @@ df_kinhdoanh = get_real_business_data()
 
 @st.cache_data(ttl=60) 
 def get_real_data():
-    url_vanhanh = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
+    # Cập nhật lấy nguồn dữ liệu từ 2 Sheet (GID) khác nhau theo yêu cầu
+    url_vh_tongquan = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=1548015845"
+    url_vh_ca = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
     url_nhansu = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=2000227799"
+    
     try:
-        df_vh = pd.read_csv(url_vanhanh)
+        df_vh_tq = pd.read_csv(url_vh_tongquan)
+        df_vh_c = pd.read_csv(url_vh_ca)
         df_ns = pd.read_csv(url_nhansu)
+        
         vh_mapping = {
             '%GTC': 'GTC', 'GTC (%)': 'GTC', 'Tỷ lệ GTC': 'GTC', '% GTC': 'GTC',
             'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng',
             'Volume_TTS': 'Volume TTS', 'GTC TTS': 'GTC_TTS', '%GTC_TTS': 'GTC_TTS',
             'Ontime Giao TTS': 'ODR', 'ODR (%)': 'ODR'
         }
-        df_vh = df_vh.rename(columns=vh_mapping)
+        df_vh_tq = df_vh_tq.rename(columns=vh_mapping)
+        df_vh_c = df_vh_c.rename(columns=vh_mapping)
+        
         ns_mapping = {
             'GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', '% GTC': '%GTC',
             'Đơn giá': 'Đơn Giá', 'Số đơn': 'Số Đơn'
         }
         df_ns = df_ns.rename(columns=ns_mapping)
         
-        df_vh = clean_dataframe_numbers(df_vh, text_cols=['Ngày', 'Bưu Cục', 'Ca'])
-        df_ns = clean_dataframe_numbers(df_ns, text_cols=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
+        text_cols_vh = ['Ngày', 'Bưu Cục', 'Ca', 'Loại Hàng']
+        df_vh_tq = clean_dataframe_numbers(df_vh_tq, text_cols_vh)
+        df_vh_c = clean_dataframe_numbers(df_vh_c, text_cols_vh)
+        df_ns = clean_dataframe_numbers(df_ns, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
-        df_vh['Ngày'] = pd.to_datetime(df_vh['Ngày'], errors='coerce')
+        df_vh_tq['Ngày'] = pd.to_datetime(df_vh_tq['Ngày'], errors='coerce')
+        df_vh_c['Ngày'] = pd.to_datetime(df_vh_c['Ngày'], errors='coerce')
         df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'], errors='coerce')
-        df_vh['Bưu Cục'] = df_vh['Bưu Cục'].astype(str)
+        
+        for df in [df_vh_tq, df_vh_c]:
+            df['Bưu Cục'] = df['Bưu Cục'].astype(str)
+            if 'Loại Hàng' not in df.columns: df['Loại Hàng'] = "FULL"
+            df['Loại Hàng'] = df['Loại Hàng'].astype(str)
+            if 'Ca' not in df.columns: df['Ca'] = "Ca 1"
+            df['Ca'] = df['Ca'].astype(str)
+            
         df_ns['Bưu Cục'] = df_ns['Bưu Cục'].astype(str)
         df_ns['Nhân Viên'] = df_ns['Nhân Viên'].astype(str)
+        if 'Loại Hàng' not in df_ns.columns: df_ns['Loại Hàng'] = "FULL"
         df_ns['Loại Hàng'] = df_ns['Loại Hàng'].astype(str)
         
+        # Bù các cột thiếu để tránh lỗi
         for req in ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
-            if req not in df_vh.columns: df_vh[req] = 0.0
+            if req not in df_vh_tq.columns: df_vh_tq[req] = 0.0
+            if req not in df_vh_c.columns: df_vh_c[req] = 0.0
         for req in ['Số Đơn', 'Đơn Giá', '%GTC']:
             if req not in df_ns.columns: df_ns[req] = 0.0
             
-        return df_vh.dropna(subset=['Ngày']), df_ns.dropna(subset=['Ngày'])
+        return df_vh_tq.dropna(subset=['Ngày']), df_vh_c.dropna(subset=['Ngày']), df_ns.dropna(subset=['Ngày'])
     except Exception as e:
         st.error(f"🚨 Lỗi kết nối Google Sheets: {e}")
         st.stop()
 
-df_vanhanh, df_nhansu = get_real_data()
+# Đã thay đổi trả về 3 Dataframe
+df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
 # ==========================================
 # 3. HÀM TRỢ LÝ AI
@@ -288,8 +306,8 @@ def get_ai_analysis(prompt_text):
         return "⚠️ **CHƯA CẤU HÌNH API KEY:** Vui lòng thêm biến môi trường GEMINI_API_KEY trên Render."
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
-        model = genai.GenerativeModel('gemini-3.6-flash') 
-        detailed_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.4)
+        model = genai.GenerativeModel('gemini-1.5-flash') 
+        detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
         response = model.generate_content(prompt_text, generation_config=detailed_config)
         return response.text
     except Exception as e:
@@ -323,24 +341,40 @@ tab1, tab2, tab3, tab4 = st.tabs(["🚚 VẬN HÀNH CHI TIẾT", "👥 NĂNG SU�
 
 # ----------------- TAB 1: VẬN HÀNH -----------------
 with tab1:
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        date_range_vh = st.date_input("Khoảng thời gian (Vận hành)", [df_vanhanh['Ngày'].min(), df_vanhanh['Ngày'].max()], key="date_vh")
+        date_range_vh = st.date_input("Khoảng thời gian (Vận hành)", [df_vh_tongquan['Ngày'].min(), df_vh_tongquan['Ngày'].max()], key="date_vh")
     with col2:
-        buu_cuc_vh = st.selectbox("Chọn Bưu cục", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="bc_vh")
-        
-    mask_vh = pd.Series(True, index=df_vanhanh.index)
+        buu_cuc_vh = st.selectbox("Chọn Bưu cục", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="bc_vh")
+    with col3:
+        # BỔ SUNG LỌC LOẠI HÀNG CA 1, CA 2, FULL CHO TAB 1
+        loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng ca 1", "Hàng ca 2", "FULL"], default=["Hàng ca 1", "Hàng ca 2", "FULL"], key="lh_vh")
+
+    # Lọc DataFrame Tổng Quan
+    mask_vh_tq = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_vh) == 2:
-        mask_vh &= (df_vanhanh['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vanhanh['Ngày'] <= pd.to_datetime(date_range_vh[1]))
+        mask_vh_tq &= (df_vh_tongquan['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_tongquan['Ngày'] <= pd.to_datetime(date_range_vh[1]))
     if buu_cuc_vh != "Tất cả":
-        mask_vh &= (df_vanhanh['Bưu Cục'] == buu_cuc_vh)
-    df_vh_filtered = df_vanhanh[mask_vh].copy()
+        mask_vh_tq &= (df_vh_tongquan['Bưu Cục'] == buu_cuc_vh)
+    if loai_hang_vh:
+        mask_vh_tq &= df_vh_tongquan['Loại Hàng'].isin(loai_hang_vh)
+    df_vh_tq_filtered = df_vh_tongquan[mask_vh_tq].copy()
+    
+    # Lọc DataFrame Theo Ca
+    mask_vh_ca = pd.Series(True, index=df_vh_ca.index)
+    if len(date_range_vh) == 2:
+        mask_vh_ca &= (df_vh_ca['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_ca['Ngày'] <= pd.to_datetime(date_range_vh[1]))
+    if buu_cuc_vh != "Tất cả":
+        mask_vh_ca &= (df_vh_ca['Bưu Cục'] == buu_cuc_vh)
+    if loai_hang_vh:
+        mask_vh_ca &= df_vh_ca['Loại Hàng'].isin(loai_hang_vh)
+    df_vh_ca_filtered = df_vh_ca[mask_vh_ca].copy()
 
     styled_header("1. TỔNG QUAN GTC VÀ TỶ LỆ TRẢ HÀNG", "🌍")
     
     view_mode_vh = st.radio("Chế độ xem Tổng quan:", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], horizontal=True, key="view_mode_vh")
     
-    df_trend_display = df_vh_filtered.copy()
+    df_trend_display = df_vh_tq_filtered.copy()
     if view_mode_vh == "Theo Tuần":
         df_trend_display['Period'] = df_trend_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
         df_trend_display = df_trend_display.groupby('Period').agg({'Volume': 'sum', 'GTC': 'mean', 'Trả Hàng': 'mean'}).reset_index()
@@ -373,7 +407,6 @@ with tab1:
         fig_gtc = draw_combo_chart(df_trend_display, 'Ngày', 'Volume', 'GTC', f"Tỷ lệ GTC và Sản Lượng ({view_mode_vh})")
         st.plotly_chart(fig_gtc, use_container_width=True)
     with chart_col2:
-        # Nâng cấp đường biểu diễn màu Đỏ rực
         fig_return = px.line(df_trend_display, x='Ngày', y='Trả Hàng', markers=True, title=f"Tỷ lệ Trả Hàng ({view_mode_vh}) (%)")
         fig_return.update_traces(line=dict(color='#FF3333', width=4), marker=dict(size=10, color='#FF3333', line=dict(width=2, color='white')))
         fig_return.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified")
@@ -383,7 +416,7 @@ with tab1:
 
     styled_header("2. PHÂN TÍCH TIKTOK SHOP & ONTIME GIAO TTS (ODR)", "🛒")
     chart_col3, chart_col4 = st.columns(2)
-    df_tts = df_vh_filtered.groupby('Ngày').agg({'Volume TTS': 'sum', 'GTC_TTS': 'mean', 'ODR': 'mean'}).reset_index()
+    df_tts = df_vh_tq_filtered.groupby('Ngày').agg({'Volume TTS': 'sum', 'GTC_TTS': 'mean', 'ODR': 'mean'}).reset_index()
     with chart_col3:
         fig_tts = draw_combo_chart(df_tts, 'Ngày', 'Volume TTS', 'GTC_TTS', "Tỷ lệ GTC TiktokShop (TTS)", bar_name="Sản lượng TTS", line_name="% GTC TTS")
         st.plotly_chart(fig_tts, use_container_width=True)
@@ -396,7 +429,8 @@ with tab1:
         st.plotly_chart(fig_odr, use_container_width=True)
 
     styled_header("3. NĂNG SUẤT GIAO THEO CA LÀM VIỆC", "🕒")
-    df_ca = df_vh_filtered.groupby(['Ngày', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
+    # Lấy từ Sheet riêng df_vh_ca_filtered
+    df_ca = df_vh_ca_filtered.groupby(['Ngày', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
     
     df_ca['TrụcX'] = df_ca['Ngày'].dt.strftime('%d/%m') + " - " + df_ca['Ca']
     
@@ -420,11 +454,10 @@ with tab1:
         with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
             prompt_vh = f"""
             Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
-            - Tổng đơn: {df_vh_filtered['Volume'].sum()}
-            - Tỷ lệ GTC: {df_vh_filtered['GTC'].mean():.2f}%
-            - Tỷ lệ Tồn kho: {df_vh_filtered['ODR'].mean():.2f}%
-            Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn.
-            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
+            - Tổng đơn: {df_vh_tq_filtered['Volume'].sum()}
+            - Tỷ lệ GTC: {df_vh_tq_filtered['GTC'].mean():.2f}%
+            - Tỷ lệ Tồn kho: {df_vh_tq_filtered['ODR'].mean():.2f}%
+            Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
             """
             st.session_state.ai_vh_result = get_ai_analysis(prompt_vh)
     render_ai_and_telegram(st.session_state.ai_vh_result, "Vận Hành", "vh")
@@ -531,7 +564,6 @@ with tab2:
             - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
             - Kỳ lương: Hiện tại {curr_name} đang là {avg_price_curr:,.0f} đ (Tăng/giảm {diff_price:,.0f} so với kỳ trước).
             Nhiệm vụ: Đóng vai Quản lý nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất, 2. Rủi ro chi phí, 3. Đề xuất nhân sự.
-            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
             """
             st.session_state.ai_ns_result = get_ai_analysis(prompt_ns)
     render_ai_and_telegram(st.session_state.ai_ns_result, "Năng Suất & Nhân Sự", "ns")
@@ -542,7 +574,8 @@ with tab3:
     styled_header("CÀI ĐẶT & THEO DÕI KPI VẬN HÀNH", "🎯")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
+        # Chọn Bưu Cục từ Sheet Tổng Quan
+        target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
         
         if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 90.0
         if target_bc_kpi not in st.session_state.kpi_tts_dict: st.session_state.kpi_tts_dict[target_bc_kpi] = 85.0
@@ -558,16 +591,16 @@ with tab3:
 
     t3_col1, t3_col2 = st.columns(2)
     with t3_col1:
-        date_range_kpi = st.date_input("Chọn thời gian", [df_vanhanh['Ngày'].min(), df_vanhanh['Ngày'].max()], key="date_kpi")
+        date_range_kpi = st.date_input("Chọn thời gian", [df_vh_tongquan['Ngày'].min(), df_vh_tongquan['Ngày'].max()], key="date_kpi")
     with t3_col2:
-        buu_cuc_kpi = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_vanhanh['Bưu Cục'].unique()), key="bc_kpi")
+        buu_cuc_kpi = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="bc_kpi")
 
-    mask_kpi = pd.Series(True, index=df_vanhanh.index)
+    mask_kpi = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_kpi) == 2:
-        mask_kpi &= (df_vanhanh['Ngày'] >= pd.to_datetime(date_range_kpi[0])) & (df_vanhanh['Ngày'] <= pd.to_datetime(date_range_kpi[1]))
+        mask_kpi &= (df_vh_tongquan['Ngày'] >= pd.to_datetime(date_range_kpi[0])) & (df_vh_tongquan['Ngày'] <= pd.to_datetime(date_range_kpi[1]))
     if buu_cuc_kpi != "Tất cả":
-        mask_kpi &= (df_vanhanh['Bưu Cục'] == buu_cuc_kpi)
-    df_kpi_filtered = df_vanhanh[mask_kpi].copy()
+        mask_kpi &= (df_vh_tongquan['Bưu Cục'] == buu_cuc_kpi)
+    df_kpi_filtered = df_vh_tongquan[mask_kpi].copy()
 
     actual_gtc = df_kpi_filtered['GTC'].mean() if not df_kpi_filtered.empty else 0
     actual_tts = df_kpi_filtered['GTC_TTS'].mean() if not df_kpi_filtered.empty else 0
@@ -577,7 +610,6 @@ with tab3:
     current_kpi_tts = st.session_state.kpi_tts_dict.get(buu_cuc_kpi, 85.0)
     current_kpi_odr = st.session_state.kpi_odr_dict.get(buu_cuc_kpi, 5.0)
 
-    # NÂNG CẤP ĐỒNG HỒ TỐC ĐỘ (CHUYỂN MÀU THEO VÙNG)
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target, inverse_color=False):
         if not inverse_color:
@@ -632,7 +664,6 @@ with tab3:
             Khu vực ({buu_cuc_kpi}) - Mục tiêu: GTC > {current_kpi_gtc}%, GTC TikTok > {current_kpi_tts}%, Tồn kho < {current_kpi_odr}%.
             Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Tồn kho: {actual_odr:.2f}%.
             Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
-            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
             """
             st.session_state.ai_kpi_result = get_ai_analysis(prompt_kpi)
     render_ai_and_telegram(st.session_state.ai_kpi_result, "KPI Vận Hành", "kpi")
@@ -741,7 +772,6 @@ with tab4:
             Khu vực: {buu_cuc_kd}. Chế độ xem: {view_type}
             Phân tích Kinh doanh: KPI: {kpi_dt_val:,.0f}. Thực tế: {rev_n:,.0f}. So với kỳ trước: {rev_prev:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
             Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
-            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT].
             """
             st.session_state.ai_kd_result = get_ai_analysis(prompt_kd)
     render_ai_and_telegram(st.session_state.ai_kd_result, "Kinh Doanh", "kd")
