@@ -674,11 +674,14 @@ with tab4:
     styled_header("BÁO CÁO DOANH THU & KHÁCH HÀNG MỚI", "💰")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
+        # Chọn Bưu Cục riêng cho việc set KPI
         target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="set_bc_kd_tab4")
         
-        if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 30000000.0
+        # Khởi tạo mặc định
+        if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 2100000000.0
         
-        st.session_state.kpi_dt_dict[target_bc_kd] = st.number_input(f"Mục tiêu Doanh thu VNĐ/Ngày ({target_bc_kd})", min_value=0.0, value=float(st.session_state.kpi_dt_dict[target_bc_kd]), step=1000000.0)
+        # Lưu KPI Doanh thu vào Bộ nhớ với đơn vị là Tháng
+        st.session_state.kpi_dt_dict[target_bc_kd] = st.number_input(f"Mục tiêu Doanh thu VNĐ/Tháng ({target_bc_kd})", min_value=0.0, value=float(st.session_state.kpi_dt_dict[target_bc_kd]), step=10000000.0)
     
     t4_col1, t4_col2, t4_col3 = st.columns(3)
     with t4_col1:
@@ -686,6 +689,7 @@ with tab4:
     with t4_col2:
         buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="bc_kd")
     with t4_col3:
+        # TÍNH NĂNG XEM THEO TUẦN THÁNG SẼ ẢNH HƯỞNG ĐẾN METRIC SO SÁNH
         view_type = st.selectbox("Góc nhìn báo cáo", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], key="view_kd")
 
     current_date = df_kinhdoanh['Ngày'].max()
@@ -697,6 +701,7 @@ with tab4:
         mask_kd &= (df_kinhdoanh['Bưu Cục'] == buu_cuc_kd)
     df_filtered_kd = df_kinhdoanh[mask_kd]
     
+    # Tính toán Metric Doanh thu dựa trên Góc nhìn
     if view_type == "Theo Ngày":
         rev_n = df_filtered_kd[df_filtered_kd['Ngày'] == current_date]['Doanh Thu'].sum()
         rev_prev = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=1))]['Doanh Thu'].sum()
@@ -712,6 +717,7 @@ with tab4:
         label_prev = "So với W-1 (Tuần trước)"
     else: # Theo Tháng
         start_m = current_date.replace(day=1)
+        # Tìm ngày cuối tháng
         next_month = start_m.replace(day=28) + timedelta(days=4)
         end_m = next_month - timedelta(days=next_month.day)
         rev_n = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m) & (df_filtered_kd['Ngày'] <= end_m)]['Doanh Thu'].sum()
@@ -721,10 +727,13 @@ with tab4:
         rev_prev = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m_prev) & (df_filtered_kd['Ngày'] <= end_m_prev)]['Doanh Thu'].sum()
         label_prev = "So với M-1 (Tháng trước)"
 
-    kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 30000000.0)
+    # Trích xuất mục tiêu KPI Doanh thu CỦA BƯU CỤC ĐANG XEM (KPI đang là mốc Tháng)
+    kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 2100000000.0)
     
-    if view_type == "Theo Tuần": kpi_dt_val = kpi_dt_val * 7
-    if view_type == "Theo Tháng": kpi_dt_val = kpi_dt_val * 30
+    # Scale KPI từ mốc Tháng xuống Tuần hoặc Ngày để so sánh cho khớp biểu đồ
+    if view_type == "Theo Ngày": kpi_dt_val = kpi_dt_val / 30
+    elif view_type == "Theo Tuần": kpi_dt_val = (kpi_dt_val / 30) * 7
+    # Nếu "Theo Tháng" thì giữ nguyên kpi_dt_val
 
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333;'>Hiệu suất Doanh thu ({view_type})</div>", unsafe_allow_html=True)
     m_col1, m_col2, m_col3 = st.columns(3)
@@ -735,6 +744,7 @@ with tab4:
     if len(date_range_kd) == 2:
         mask_kd_range &= (df_kinhdoanh['Ngày'] >= pd.to_datetime(date_range_kd[0])) & (df_kinhdoanh['Ngày'] <= pd.to_datetime(date_range_kd[1]))
     
+    # Biểu đồ gom nhóm theo View Mode
     df_plot_kd_display = df_kinhdoanh[mask_kd_range].copy()
     if view_type == "Theo Tuần":
         df_plot_kd_display['Ngày'] = df_plot_kd_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
@@ -765,7 +775,6 @@ with tab4:
         ))
         fig_funnel.update_layout(title=dict(text=f"Phễu chuyển đổi KH Mới ({view_type})", font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
         st.plotly_chart(fig_funnel, use_container_width=True)
-
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
             prompt_kd = f"""
