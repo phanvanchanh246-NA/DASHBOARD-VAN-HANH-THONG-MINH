@@ -307,7 +307,7 @@ def get_ai_analysis(prompt_text):
     try:
         genai.configure(api_key=GEMINI_API_KEY.strip())
         model = genai.GenerativeModel('gemini-3.6-flash') 
-        detailed_config = genai.types.GenerationConfig(max_output_tokens=2048, temperature=0.4)
+        detailed_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.4)
         response = model.generate_content(prompt_text, generation_config=detailed_config)
         return response.text
     except Exception as e:
