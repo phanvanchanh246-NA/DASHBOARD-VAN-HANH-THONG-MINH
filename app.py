@@ -222,7 +222,6 @@ df_kinhdoanh = get_real_business_data()
 
 @st.cache_data(ttl=60) 
 def get_real_data():
-    # Cập nhật lấy nguồn dữ liệu từ 2 Sheet (GID) khác nhau theo yêu cầu
     url_vh_tongquan = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=1548015845"
     url_vh_ca = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/export?format=csv&gid=501687087"
     url_nhansu = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=2000227799"
@@ -268,7 +267,6 @@ def get_real_data():
         if 'Loại Hàng' not in df_ns.columns: df_ns['Loại Hàng'] = "FULL"
         df_ns['Loại Hàng'] = df_ns['Loại Hàng'].astype(str)
         
-        # Bù các cột thiếu để tránh lỗi
         for req in ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
             if req not in df_vh_tq.columns: df_vh_tq[req] = 0.0
             if req not in df_vh_c.columns: df_vh_c[req] = 0.0
@@ -280,7 +278,6 @@ def get_real_data():
         st.error(f"🚨 Lỗi kết nối Google Sheets: {e}")
         st.stop()
 
-# Đã thay đổi trả về 3 Dataframe
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
 # ==========================================
@@ -347,10 +344,8 @@ with tab1:
     with col2:
         buu_cuc_vh = st.selectbox("Chọn Bưu cục", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="bc_vh")
     with col3:
-        # BỔ SUNG LỌC LOẠI HÀNG CA 1, CA 2, FULL CHO TAB 1
         loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng ca 1", "Hàng ca 2", "FULL"], default=["Hàng ca 1", "Hàng ca 2", "FULL"], key="lh_vh")
 
-    # Lọc DataFrame Tổng Quan
     mask_vh_tq = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_vh) == 2:
         mask_vh_tq &= (df_vh_tongquan['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_tongquan['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -360,7 +355,6 @@ with tab1:
         mask_vh_tq &= df_vh_tongquan['Loại Hàng'].isin(loai_hang_vh)
     df_vh_tq_filtered = df_vh_tongquan[mask_vh_tq].copy()
     
-    # Lọc DataFrame Theo Ca
     mask_vh_ca = pd.Series(True, index=df_vh_ca.index)
     if len(date_range_vh) == 2:
         mask_vh_ca &= (df_vh_ca['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_ca['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -429,7 +423,6 @@ with tab1:
         st.plotly_chart(fig_odr, use_container_width=True)
 
     styled_header("3. NĂNG SUẤT GIAO THEO CA LÀM VIỆC", "🕒")
-    # Lấy từ Sheet riêng df_vh_ca_filtered
     df_ca = df_vh_ca_filtered.groupby(['Ngày', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
     
     df_ca['TrụcX'] = df_ca['Ngày'].dt.strftime('%d/%m') + " - " + df_ca['Ca']
@@ -458,6 +451,7 @@ with tab1:
             - Tỷ lệ GTC: {df_vh_tq_filtered['GTC'].mean():.2f}%
             - Tỷ lệ Tồn kho: {df_vh_tq_filtered['ODR'].mean():.2f}%
             Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_vh_result = get_ai_analysis(prompt_vh)
     render_ai_and_telegram(st.session_state.ai_vh_result, "Vận Hành", "vh")
@@ -531,6 +525,37 @@ with tab2:
     m_ns2.metric(f"Kỳ trước: {prev_name}", f"{avg_price_prev:,.0f} đ")
     m_ns3.metric("Tăng/Giảm so với kỳ trước", f"{diff_price:,.0f} đ", f"{diff_price:,.0f} đ")
     
+    # === BỔ SUNG SO SÁNH %GTC ===
+    df_n = df_ns_base[df_ns_base['Ngày'] == max_date_ns]
+    df_n_prev = df_ns_base[df_ns_base['Ngày'] == (max_date_ns - timedelta(days=1))]
+    gtc_n = df_n['%GTC'].mean() if not df_n.empty else 0
+    gtc_n_prev = df_n_prev['%GTC'].mean() if not df_n_prev.empty else 0
+
+    start_w_ns = max_date_ns - timedelta(days=max_date_ns.weekday())
+    end_w_ns = start_w_ns + timedelta(days=6)
+    df_w = df_ns_base[(df_ns_base['Ngày'] >= start_w_ns) & (df_ns_base['Ngày'] <= end_w_ns)]
+    start_w_prev_ns = start_w_ns - timedelta(days=7)
+    end_w_prev_ns = start_w_prev_ns + timedelta(days=6)
+    df_w_prev = df_ns_base[(df_ns_base['Ngày'] >= start_w_prev_ns) & (df_ns_base['Ngày'] <= end_w_prev_ns)]
+    gtc_w = df_w['%GTC'].mean() if not df_w.empty else 0
+    gtc_w_prev = df_w_prev['%GTC'].mean() if not df_w_prev.empty else 0
+
+    start_m_ns = max_date_ns.replace(day=1)
+    next_m_ns = start_m_ns.replace(day=28) + timedelta(days=4)
+    end_m_ns = next_m_ns - timedelta(days=next_m_ns.day)
+    df_m = df_ns_base[(df_ns_base['Ngày'] >= start_m_ns) & (df_ns_base['Ngày'] <= end_m_ns)]
+    start_m_prev_ns = (start_m_ns - timedelta(days=1)).replace(day=1)
+    end_m_prev_ns = start_m_ns - timedelta(days=1)
+    df_m_prev = df_ns_base[(df_ns_base['Ngày'] >= start_m_prev_ns) & (df_ns_base['Ngày'] <= end_m_prev_ns)]
+    gtc_m = df_m['%GTC'].mean() if not df_m.empty else 0
+    gtc_m_prev = df_m_prev['%GTC'].mean() if not df_m_prev.empty else 0
+
+    st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 25px;'>So sánh Năng suất %GTC (Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
+    m_gtc1, m_gtc2, m_gtc3 = st.columns(3)
+    m_gtc1.metric("Ngày (N vs N-1)", f"{gtc_n:.2f}%", f"{gtc_n - gtc_n_prev:.2f}% so với N-1")
+    m_gtc2.metric("Tuần (W vs W-1)", f"{gtc_w:.2f}%", f"{gtc_w - gtc_w_prev:.2f}% so với W-1")
+    m_gtc3.metric("Tháng (M vs M-1)", f"{gtc_m:.2f}%", f"{gtc_m - gtc_m_prev:.2f}% so với M-1")
+
     chart_ns1, chart_ns2 = st.columns(2)
     with chart_ns1:
         if nhan_vien_ns != "Tất cả":
@@ -564,6 +589,7 @@ with tab2:
             - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
             - Kỳ lương: Hiện tại {curr_name} đang là {avg_price_curr:,.0f} đ (Tăng/giảm {diff_price:,.0f} so với kỳ trước).
             Nhiệm vụ: Đóng vai Quản lý nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất, 2. Rủi ro chi phí, 3. Đề xuất nhân sự.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_ns_result = get_ai_analysis(prompt_ns)
     render_ai_and_telegram(st.session_state.ai_ns_result, "Năng Suất & Nhân Sự", "ns")
@@ -574,7 +600,6 @@ with tab3:
     styled_header("CÀI ĐẶT & THEO DÕI KPI VẬN HÀNH", "🎯")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        # Chọn Bưu Cục từ Sheet Tổng Quan
         target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
         
         if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 70.0
@@ -614,21 +639,20 @@ with tab3:
     def create_gauge(title, value, target, inverse_color=False):
         if not inverse_color:
             steps = [
-                {'range': [0, target * 0.8], 'color': "#ffeaeb"},        # Nền Đỏ nhạt
-                {'range': [target * 0.8, target], 'color': "#fff3cd"},   # Nền Cam/Vàng nhạt
-                {'range': [target, 100], 'color': "#d4edda"}             # Nền Xanh lá nhạt
+                {'range': [0, target * 0.8], 'color': "#ffeaeb"},
+                {'range': [target * 0.8, target], 'color': "#fff3cd"},
+                {'range': [target, 100], 'color': "#d4edda"}
             ]
-            delta_inc = "#28a745" # Xanh
-            delta_dec = "#FF3333" # Đỏ
+            delta_inc = "#28a745"
+            delta_dec = "#FF3333"
         else:
-            # ODR Càng thấp càng tốt
             steps = [
                 {'range': [0, target], 'color': "#d4edda"},
                 {'range': [target, target * 1.5], 'color': "#fff3cd"},
                 {'range': [target * 1.5, 100], 'color': "#ffeaeb"}
             ]
-            delta_inc = "#FF3333" # Đỏ (Tăng là xấu)
-            delta_dec = "#28a745" # Xanh (Giảm là tốt)
+            delta_inc = "#FF3333"
+            delta_dec = "#28a745"
             
         fig = go.Figure(go.Indicator(
             mode = "gauge+number+delta", value = value, domain = {'x': [0, 1], 'y': [0, 1]},
@@ -636,7 +660,7 @@ with tab3:
             delta = {'reference': target, 'increasing': {'color': delta_inc}, 'decreasing': {'color': delta_dec}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#333", 'tickfont': dict(weight="bold")},
-                'bar': {'color': "#007BFF", 'thickness': 0.25}, # Kim đo màu Xanh da trời
+                'bar': {'color': "#007BFF", 'thickness': 0.25},
                 'steps': steps,
                 'borderwidth': 2,
                 'bordercolor': "#e2e2e2",
@@ -664,6 +688,7 @@ with tab3:
             Khu vực ({buu_cuc_kpi}) - Mục tiêu: GTC > {current_kpi_gtc}%, GTC TikTok > {current_kpi_tts}%, Tồn kho < {current_kpi_odr}%.
             Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Tồn kho: {actual_odr:.2f}%.
             Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_kpi_result = get_ai_analysis(prompt_kpi)
     render_ai_and_telegram(st.session_state.ai_kpi_result, "KPI Vận Hành", "kpi")
@@ -674,13 +699,10 @@ with tab4:
     styled_header("BÁO CÁO DOANH THU & KHÁCH HÀNG MỚI", "💰")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        # Chọn Bưu Cục riêng cho việc set KPI
         target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="set_bc_kd_tab4")
         
-        # Khởi tạo mặc định
         if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 2100000000.0
         
-        # Lưu KPI Doanh thu vào Bộ nhớ với đơn vị là Tháng
         st.session_state.kpi_dt_dict[target_bc_kd] = st.number_input(f"Mục tiêu Doanh thu VNĐ/Tháng ({target_bc_kd})", min_value=0.0, value=float(st.session_state.kpi_dt_dict[target_bc_kd]), step=10000000.0)
     
     t4_col1, t4_col2, t4_col3 = st.columns(3)
@@ -689,7 +711,6 @@ with tab4:
     with t4_col2:
         buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="bc_kd")
     with t4_col3:
-        # TÍNH NĂNG XEM THEO TUẦN THÁNG SẼ ẢNH HƯỞNG ĐẾN METRIC SO SÁNH
         view_type = st.selectbox("Góc nhìn báo cáo", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], key="view_kd")
 
     current_date = df_kinhdoanh['Ngày'].max()
@@ -701,7 +722,6 @@ with tab4:
         mask_kd &= (df_kinhdoanh['Bưu Cục'] == buu_cuc_kd)
     df_filtered_kd = df_kinhdoanh[mask_kd]
     
-    # Tính toán Metric Doanh thu dựa trên Góc nhìn
     if view_type == "Theo Ngày":
         rev_n = df_filtered_kd[df_filtered_kd['Ngày'] == current_date]['Doanh Thu'].sum()
         rev_prev = df_filtered_kd[df_filtered_kd['Ngày'] == (current_date - timedelta(days=1))]['Doanh Thu'].sum()
@@ -717,7 +737,6 @@ with tab4:
         label_prev = "So với W-1 (Tuần trước)"
     else: # Theo Tháng
         start_m = current_date.replace(day=1)
-        # Tìm ngày cuối tháng
         next_month = start_m.replace(day=28) + timedelta(days=4)
         end_m = next_month - timedelta(days=next_month.day)
         rev_n = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m) & (df_filtered_kd['Ngày'] <= end_m)]['Doanh Thu'].sum()
@@ -727,13 +746,10 @@ with tab4:
         rev_prev = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m_prev) & (df_filtered_kd['Ngày'] <= end_m_prev)]['Doanh Thu'].sum()
         label_prev = "So với M-1 (Tháng trước)"
 
-    # Trích xuất mục tiêu KPI Doanh thu CỦA BƯU CỤC ĐANG XEM (KPI đang là mốc Tháng)
     kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 2100000000.0)
     
-    # Scale KPI từ mốc Tháng xuống Tuần hoặc Ngày để so sánh cho khớp biểu đồ
     if view_type == "Theo Ngày": kpi_dt_val = kpi_dt_val / 30
     elif view_type == "Theo Tuần": kpi_dt_val = (kpi_dt_val / 30) * 7
-    # Nếu "Theo Tháng" thì giữ nguyên kpi_dt_val
 
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333;'>Hiệu suất Doanh thu ({view_type})</div>", unsafe_allow_html=True)
     m_col1, m_col2, m_col3 = st.columns(3)
@@ -744,7 +760,6 @@ with tab4:
     if len(date_range_kd) == 2:
         mask_kd_range &= (df_kinhdoanh['Ngày'] >= pd.to_datetime(date_range_kd[0])) & (df_kinhdoanh['Ngày'] <= pd.to_datetime(date_range_kd[1]))
     
-    # Biểu đồ gom nhóm theo View Mode
     df_plot_kd_display = df_kinhdoanh[mask_kd_range].copy()
     if view_type == "Theo Tuần":
         df_plot_kd_display['Ngày'] = df_plot_kd_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
@@ -771,16 +786,18 @@ with tab4:
         fig_funnel = go.Figure(go.Funnel(
             y=["Khách Liên Hệ", "Khách Lên Đơn (Chuyển đổi)"],
             x=[total_lh, total_ld], textinfo="value+percent initial",
-            marker={"color": ["#FF8C00", "#28a745"]} # Cam -> Xanh lá
+            marker={"color": ["#FF8C00", "#28a745"]} 
         ))
         fig_funnel.update_layout(title=dict(text=f"Phễu chuyển đổi KH Mới ({view_type})", font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
         st.plotly_chart(fig_funnel, use_container_width=True)
+
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
             prompt_kd = f"""
             Khu vực: {buu_cuc_kd}. Chế độ xem: {view_type}
             Phân tích Kinh doanh: KPI: {kpi_dt_val:,.0f}. Thực tế: {rev_n:,.0f}. So với kỳ trước: {rev_prev:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
             Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
+            Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_kd_result = get_ai_analysis(prompt_kd)
     render_ai_and_telegram(st.session_state.ai_kd_result, "Kinh Doanh", "kd")
