@@ -280,14 +280,29 @@ def get_real_data():
 
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
+# Lấy dữ liệu danh sách khách hàng tiềm năng
+@st.cache_data(ttl=60)
+def get_customer_data():
+    url_kh = "https://docs.google.com/spreadsheets/d/16ywqMY_QxFcRvOXEFsZGAxz0PGRiB1OPELzaUq-Whq8/export?format=csv&gid=942640433"
+    try:
+        df_kh = pd.read_csv(url_kh)
+        return df_kh
+    except Exception as e:
+        return pd.DataFrame()
+
+df_khachhang = get_customer_data()
+
+
 # ==========================================
 # 3. HÀM TRỢ LÝ AI
 # ==========================================
+# BỔ SUNG YÊU CẦU 1: Thêm dòng chữ Designed by AM Phan Van Chanh
 st.markdown("""
     <div class="banner">
         <div>
             <h1 style="color: white; margin-bottom: 5px;">DASHBOARD QUẢN LÝ VẬN HÀNH & KINH DOANH GHN</h1>
             <p style="font-size: 18px; font-weight: 600; opacity: 0.95; margin-bottom: 0;">Hiệu Suất Thực - Quyết Định Nhanh - AI Cố Vấn</p>
+            <p style="font-size: 14px; font-style: italic; opacity: 0.8; margin-top: 5px; margin-bottom: 0;">Designed by AM Phan Van Chanh</p>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -342,7 +357,9 @@ with tab1:
     with col1:
         date_range_vh = st.date_input("Khoảng thời gian (Vận hành)", [df_vh_tongquan['Ngày'].min(), df_vh_tongquan['Ngày'].max()], key="date_vh")
     with col2:
-        buu_cuc_vh = st.selectbox("Chọn Bưu cục", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="bc_vh")
+        # BỔ SUNG YÊU CẦU 2: Thêm "Grand Total" vào chọn Bưu cục ở Tab Vận hành
+        bc_list_vh = ["Tất cả", "Grand Total"] + [x for x in df_vh_tongquan['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
+        buu_cuc_vh = st.selectbox("Chọn Bưu cục", bc_list_vh, key="bc_vh")
     with col3:
         loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng ca 1", "Hàng ca 2", "FULL"], default=["Hàng ca 1", "Hàng ca 2", "FULL"], key="lh_vh")
 
@@ -790,6 +807,11 @@ with tab4:
         ))
         fig_funnel.update_layout(title=dict(text=f"Phễu chuyển đổi KH Mới ({view_type})", font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
         st.plotly_chart(fig_funnel, use_container_width=True)
+
+    # BỔ SUNG YÊU CẦU 3: Bảng danh sách khách hàng tiềm năng
+    st.markdown("---")
+    styled_header("DANH SÁCH KHÁCH HÀNG TIỀM NĂNG", "📋")
+    st.dataframe(df_khachhang, use_container_width=True)
 
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
