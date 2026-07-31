@@ -205,7 +205,9 @@ def get_real_business_data():
     url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
         df_kd = pd.read_csv(url_kinhdoanh)
+        # NÂNG CẤP: Map cột Thời gian thành Ngày để giữ nguyên logic code mượt mà
         kd_mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
             'Doanh thu': 'Doanh Thu', 'Khách hàng liên hệ': 'Khách Liên Hệ',
             'Khách hàng lên đơn': 'Khách Lên Đơn', 'Doanh thu KH mới': 'Doanh Thu KH Mới'
         }
@@ -233,7 +235,9 @@ def get_real_data():
         df_vh_c = pd.read_csv(url_vh_ca)
         df_ns = pd.read_csv(url_nhansu)
         
+        # NÂNG CẤP: Map cột Thời gian thành Ngày để giữ nguyên logic code
         vh_mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
             '%GTC': 'GTC', 'GTC (%)': 'GTC', 'Tỷ lệ GTC': 'GTC', '% GTC': 'GTC',
             'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng',
             'Volume_TTS': 'Volume TTS', 'GTC TTS': 'GTC_TTS', '%GTC_TTS': 'GTC_TTS',
@@ -243,6 +247,7 @@ def get_real_data():
         df_vh_c = df_vh_c.rename(columns=vh_mapping)
         
         ns_mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
             'GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', '% GTC': '%GTC',
             'Đơn giá': 'Đơn Giá', 'Số đơn': 'Số Đơn'
         }
@@ -272,8 +277,11 @@ def get_real_data():
         for req in ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
             if req not in df_vh_tq.columns: df_vh_tq[req] = 0.0
             if req not in df_vh_c.columns: df_vh_c[req] = 0.0
-        for req in ['Số Đơn', 'Đơn Giá', '%GTC']:
+        for req in ['Số Đơn', 'Đơn Giá', '%GTC', 'LHH LTC', 'LHH GTC', 'LHH GTBTT']:
             if req not in df_ns.columns: df_ns[req] = 0.0
+            
+        # NÂNG CẤP: Tính toán TỔNG LƯƠNG
+        df_ns['Tổng Lương'] = df_ns['LHH LTC'] + df_ns['LHH GTC'] + df_ns['LHH GTBTT']
             
         return df_vh_tq.dropna(subset=['Ngày']), df_vh_c.dropna(subset=['Ngày']), df_ns.dropna(subset=['Ngày'])
     except Exception as e:
@@ -503,15 +511,14 @@ with tab1:
 
 # ----------------- TAB 2: NĂNG SUẤT & LƯƠNG -----------------
 with tab2:
-    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+    # ĐÃ GỠ BỘ LỌC LOẠI HÀNG THEO YÊU CẦU
+    f_col1, f_col2, f_col3 = st.columns(3)
     with f_col1:
         date_range_ns = st.date_input("Khoảng thời gian (Nhân sự)", [df_nhansu['Ngày'].min(), df_nhansu['Ngày'].max()], key="date_ns")
     with f_col2:
-        loai_hang_filter = st.multiselect("Lọc Loại Hàng", ["Hàng nhỏ", "Hàng cồng kềnh", "FULL"], default=["Hàng nhỏ", "Hàng cồng kềnh", "FULL"], key="lh_filter")
-    with f_col3:
         bc_list = ["Tất cả"] + list(df_nhansu['Bưu Cục'].unique())
         buu_cuc_ns = st.selectbox("Lọc Bưu cục", bc_list, key="bc_ns_tab2")
-    with f_col4:
+    with f_col3:
         if buu_cuc_ns == "Tất cả":
             nv_list = ["Tất cả"] + list(df_nhansu['Nhân Viên'].unique())
         else:
@@ -521,19 +528,16 @@ with tab2:
     mask_ns = pd.Series(True, index=df_nhansu.index)
     if len(date_range_ns) == 2:
         mask_ns &= (df_nhansu['Ngày'] >= pd.to_datetime(date_range_ns[0])) & (df_nhansu['Ngày'] <= pd.to_datetime(date_range_ns[1]))
-    if loai_hang_filter:
-        mask_ns &= df_nhansu['Loại Hàng'].isin(loai_hang_filter)
     if buu_cuc_ns != "Tất cả":
         mask_ns &= (df_nhansu['Bưu Cục'] == buu_cuc_ns)
     if nhan_vien_ns != "Tất cả":
         mask_ns &= (df_nhansu['Nhân Viên'] == nhan_vien_ns)
     df_ns_filtered = df_nhansu[mask_ns].copy()
 
-    styled_header("PHÂN TÍCH ĐƠN GIÁ & NĂNG SUẤT GIAO", "📈")
+    styled_header("PHÂN TÍCH ĐƠN GIÁ, NĂNG SUẤT & TỔNG LƯƠNG", "📈")
     
     # === LOGIC SO SÁNH KỲ LƯƠNG ===
     mask_ns_no_date = pd.Series(True, index=df_nhansu.index)
-    if loai_hang_filter: mask_ns_no_date &= df_nhansu['Loại Hàng'].isin(loai_hang_filter)
     if buu_cuc_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Bưu Cục'] == buu_cuc_ns)
     if nhan_vien_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Nhân Viên'] == nhan_vien_ns)
     df_ns_base = df_nhansu[mask_ns_no_date]
@@ -563,11 +567,23 @@ with tab2:
     avg_price_prev = df_prev['Đơn Giá'].mean() if not df_prev.empty else 0
     diff_price = avg_price_curr - avg_price_prev
     
+    # NÂNG CẤP: TÍNH TỔNG LƯƠNG
+    total_salary_curr = df_curr['Tổng Lương'].sum() if not df_curr.empty else 0
+    total_salary_prev = df_prev['Tổng Lương'].sum() if not df_prev.empty else 0
+    diff_salary = total_salary_curr - total_salary_prev
+    
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333;'>So sánh Đơn Giá Trung Bình (Logic Kỳ Lương: Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
     m_ns1, m_ns2, m_ns3 = st.columns(3)
     m_ns1.metric(f"Hiện tại: {curr_name}", f"{avg_price_curr:,.0f} đ")
     m_ns2.metric(f"Kỳ trước: {prev_name}", f"{avg_price_prev:,.0f} đ")
     m_ns3.metric("Tăng/Giảm so với kỳ trước", f"{diff_price:,.0f} đ", f"{diff_price:,.0f} đ")
+    
+    # NÂNG CẤP: HIỂN THỊ METRIC TỔNG LƯƠNG
+    st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 15px;'>So sánh Tổng Lương (Logic Kỳ Lương)</div>", unsafe_allow_html=True)
+    m_sal1, m_sal2, m_sal3 = st.columns(3)
+    m_sal1.metric(f"Tổng Lương Hiện Tại", f"{total_salary_curr:,.0f} đ")
+    m_sal2.metric(f"Tổng Lương Kỳ Trước", f"{total_salary_prev:,.0f} đ")
+    m_sal3.metric("Mức Tăng/Giảm Thu Nhập", f"{diff_salary:,.0f} đ", f"{diff_salary:,.0f} đ")
     
     # === BỔ SUNG SO SÁNH %GTC ===
     df_n = df_ns_base[df_ns_base['Ngày'] == max_date_ns]
@@ -625,6 +641,19 @@ with tab2:
         fig_gtc_nv = draw_combo_chart(df_gtc_nv, 'Ngày', 'Số Đơn', '%GTC', title_gtc, bar_name="Số Đơn Đã Giao", line_name="% GTC")
         st.plotly_chart(fig_gtc_nv, use_container_width=True)
 
+    # NÂNG CẤP: Biểu đồ đường thể hiện TỔNG LƯƠNG
+    st.markdown("---")
+    chart_ns3, chart_ns4 = st.columns(2)
+    with chart_ns3:
+        df_luong = df_ns_filtered.groupby('Ngày')['Tổng Lương'].sum().reset_index()
+        title_luong = f"Biến động Tổng Lương của {nhan_vien_ns}" if nhan_vien_ns != "Tất cả" else f"Biến động Tổng Lương tại {buu_cuc_ns}"
+        fig_luong = px.line(df_luong, x='Ngày', y='Tổng Lương', markers=True, title=title_luong)
+        fig_luong.update_traces(line=dict(color='#28a745', width=4), marker=dict(size=10, color='#007BFF', line=dict(width=2, color='white')))
+        fig_luong.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified", yaxis_title="VNĐ")
+        fig_luong.update_yaxes(showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
+        fig_luong.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"))
+        st.plotly_chart(fig_luong, use_container_width=True)
+
     st.markdown("---")
     ai_role_ns = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Năng Suất):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_ns")
 
@@ -633,15 +662,15 @@ with tab2:
             if ai_role_ns == "Góc nhìn Giám Đốc":
                 role_prompt = "Nhiệm vụ: Đóng vai Giám đốc Nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất tổng thể, 2. Phân tích Quỹ lương/Chi phí/Đơn giá, 3. Đề xuất chính sách nhân sự cấp quản lý. Viết chuyên nghiệp."
             elif ai_role_ns == "Góc nhìn Quản lý khu vực (AM)":
-                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Đánh giá 3 phần: 1. Tổng quan năng suất giao hàng của khu vực, 2. Cảnh báo rủi ro về quỹ lương/đơn giá, 3. Chỉ đạo Nhân viên xử lý (điều hành kho) điều phối lại tuyến, ép năng suất giao hàng. Viết dứt khoát, thực tiễn và thúc đẩy."
+                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Đánh giá 3 phần: 1. Tổng quan năng suất giao hàng của khu vực, 2. Cảnh báo rủi ro về quỹ lương/đơn giá, 3. Chỉ đạo Nhân viên xử lý (điều hành kho) phân tuyến lại, ép năng suất giao hàng. Viết dứt khoát, thực tiễn và thúc đẩy."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Nhân sự gửi thông báo cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, tạo động lực (dùng "Mình" với "Mọi người" hoặc "Anh em"). Hãy chia 3 phần: 1. Ghi nhận công sức/năng suất của team, 2. Thông báo nhanh tình hình thu nhập/đơn giá, 3. Chia sẻ bí kíp/lời khuyên để anh em tăng thu nhập.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Nhân sự gửi thông báo cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, tạo động lực (dùng "Mình" với "Mọi người" hoặc "Anh em"). Hãy chia 3 phần: 1. Ghi nhận công sức/năng suất của team, 2. Thông báo nhanh tình hình tổng thu nhập/đơn giá, 3. Chia sẻ bí kíp/lời khuyên để anh em tăng thu nhập.'
                 
             prompt_ns = f"""
             Dữ liệu Năng suất Nhân sự (Đã lọc): 
             - Tổng đơn đã giao: {df_ns_filtered['Số Đơn'].sum()}
-            - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
-            - Kỳ lương: Hiện tại {curr_name} đang là {avg_price_curr:,.0f} đ (Tăng/giảm {diff_price:,.0f} so với kỳ trước).
+            - Đơn giá trung bình: {avg_price_curr:,.0f} VNĐ
+            - Tổng lương kỳ hiện tại ({curr_name}): {total_salary_curr:,.0f} đ (Tăng/giảm {diff_salary:,.0f} so với kỳ trước).
             {role_prompt}
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
@@ -720,7 +749,6 @@ with tab3:
     with gauge_col2:
         st.plotly_chart(create_gauge("Tỷ lệ GTC TikTok (%)", actual_tts, current_kpi_tts), use_container_width=True)
     with gauge_col3:
-        # ĐÃ SỬA: Không dùng inverse_color nữa vì ODR cao là tốt
         st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr), use_container_width=True)
 
     st.markdown("---")
@@ -752,7 +780,7 @@ with tab3:
             elif ai_role_kpi == "Góc nhìn Quản lý khu vực (AM)":
                 role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Đánh giá 3 phần: 1. Phân tích mức độ hoàn thành KPI của khu vực so với mục tiêu, 2. Điểm danh các chỉ số đang báo động (đặc biệt ODR), 3. Giao task khẩn cho Nhân viên xử lý (điều hành kho) và Nhân viên giao hàng để kéo số. Viết dứt khoát, ép số."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Báo cáo gửi tin nhắn cho NHÓM NHÂN VIÊN XỬ LÝ & GIAO HÀNG. Xưng hô thân thiện, cổ vũ (dùng "Mình" với "Mọi người" hoặc "Team"). Hãy chia 3 phần: 1. Tuyên dương team nếu đạt KPI hoặc Động viên nếu trượt, 2. Chỉ ra điểm nghẽn hiện tại, 3. Phân công mục tiêu chạy gấp hôm nay để giữ vững phong độ/kéo lại số.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Báo cáo gửi tin nhắn cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, cổ vũ (dùng "Mình" với "Mọi người" hoặc "Team"). Hãy chia 3 phần: 1. Tuyên dương team nếu đạt KPI hoặc Động viên nếu trượt, 2. Chỉ ra điểm nghẽn hiện tại, 3. Phân công mục tiêu chạy gấp hôm nay để giữ vững phong độ/kéo lại số.'
                 
             prompt_kpi = f"""
             Khu vực ({buu_cuc_kpi}) - Mục tiêu KPI: 
@@ -905,9 +933,9 @@ with tab4:
             if ai_role_kd == "Góc nhìn Giám Đốc":
                 role_prompt = "Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Đánh giá hiệu suất chạy số tổng thể, 2. Phân tích tỷ lệ chốt sale, 3. Đề xuất chiến lược định hướng để tăng trưởng doanh thu."
             elif ai_role_kd == "Góc nhìn Quản lý khu vực (AM)":
-                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Phân tích 3 phần: 1. Đánh giá tốc độ chạy doanh thu của khu vực, 2. Cảnh báo tỷ lệ rớt đơn ở phễu khách hàng tiềm năng, 3. Đưa ra chỉ đạo thúc đẩy đội ngũ Sales khu vực chốt deal khẩn cấp. Viết dứt khoát, máu lửa."
+                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Phân tích 3 phần: 1. Đánh giá tốc độ chạy doanh thu của khu vực, 2. Cảnh báo tỷ lệ rớt đơn ở phễu khách hàng tiềm năng, 3. Đưa ra chỉ đạo thúc đẩy đội ngũ Nhân viên xử lý/Sales khu vực chốt deal khẩn cấp. Viết dứt khoát, máu lửa."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN SALES/XỬ LÝ ĐƠN. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.'
                 
             prompt_kd = f"""
             Khu vực: {buu_cuc_kd}. Chế độ xem: {view_type}
