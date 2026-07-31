@@ -81,6 +81,7 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    /* NÂNG CẤP CHỮ TAB MẠNH MẼ, IN ĐẬM VÀ TO HƠN */
     .stTabs [data-baseweb="tab"] {
         font-weight: 900 !important; font-size: 18px !important; border: 2px solid #007BFF !important;
         border-radius: 8px 8px 0px 0px !important; padding: 14px 26px !important;
@@ -273,6 +274,7 @@ def get_real_data():
         df_vh_c = clean_dataframe_numbers(df_vh_c, text_cols_vh)
         df_ns = clean_dataframe_numbers(df_ns, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
+        # Bù trừ cho các cột phần trăm để chống lỗi tàng hình
         for df_target in [df_vh_tq, df_vh_c]:
             for col in ['GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
                 if col in df_target.columns:
@@ -304,6 +306,7 @@ def get_real_data():
         if 'Loại Hàng' not in df_ns.columns: df_ns['Loại Hàng'] = "FULL"
         df_ns['Loại Hàng'] = df_ns['Loại Hàng'].astype(str).str.strip()
         
+        # Những giá trị số đếm thì gán bằng 0.0, phần trăm gán bằng np.nan
         for req in ['Volume', 'Volume TTS']:
             if req not in df_vh_tq.columns: df_vh_tq[req] = 0.0
             if req not in df_vh_c.columns: df_vh_c[req] = 0.0
@@ -325,7 +328,7 @@ def get_real_data():
 
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT (LINK GID 1862143946)
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT
 @st.cache_data(ttl=60)
 def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
@@ -588,18 +591,22 @@ with tab1:
 
 # ----------------- TAB 2: NĂNG SUẤT & LƯƠNG -----------------
 with tab2:
-    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+    f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
     with f_col1:
         date_range_ns = st.date_input("Khoảng thời gian (Nhân sự)", [df_nhansu['Ngày'].min(), df_nhansu['Ngày'].max()], key="date_ns")
     with f_col2:
-        # NÂNG CẤP ĐỒNG BỘ BƯU CỤC TỪ CẢ 2 NGUỒN FILE GOOGLE SHEETS
+        # NÂNG CẤP LỌC LOẠI HÀNG HOÀN TOÀN ĐỒNG BỘ
+        lh_set1 = set(df_nhansu['Loại Hàng'].dropna().astype(str).str.strip().unique())
+        lh_set2 = set(df_ns_gtc_raw['Loại Hàng'].dropna().astype(str).str.strip().unique()) if not df_ns_gtc_raw.empty and 'Loại Hàng' in df_ns_gtc_raw.columns else set()
+        lh_all = sorted([x for x in lh_set1.union(lh_set2) if x and x != "nan"])
+        loai_hang_filter = st.multiselect("Lọc Loại Hàng", lh_all, default=[], key="lh_filter")
+    with f_col3:
         bc_set1 = set(df_nhansu['Bưu Cục'].dropna().astype(str).str.strip().unique())
         bc_set2 = set(df_ns_gtc_raw['Bưu Cục'].dropna().astype(str).str.strip().unique()) if not df_ns_gtc_raw.empty else set()
         bc_all = sorted([x for x in bc_set1.union(bc_set2) if x and x != "Chưa phân loại" and x != "nan"])
         bc_list = ["Tất cả"] + bc_all
         buu_cuc_ns = st.selectbox("Lọc Bưu cục", bc_list, key="bc_ns_tab2")
-    with f_col3:
-        # NÂNG CẤP ĐỒNG BỘ NHÂN VIÊN TỪ CẢ 2 NGUỒN FILE GOOGLE SHEETS
+    with f_col4:
         if buu_cuc_ns == "Tất cả":
             nv_set1 = set(df_nhansu['Nhân Viên'].dropna().astype(str).str.strip().unique())
             nv_set2 = set(df_ns_gtc_raw['Nhân Viên'].dropna().astype(str).str.strip().unique()) if not df_ns_gtc_raw.empty else set()
@@ -609,7 +616,7 @@ with tab2:
         nv_all = sorted([x for x in nv_set1.union(nv_set2) if x and x != "Chưa phân loại" and x != "nan"])
         nv_list = ["Tất cả"] + nv_all
         nhan_vien_ns = st.selectbox("Lọc Nhân viên", nv_list, key="nv_ns_tab2")
-    with f_col4:
+    with f_col5:
         loai_luong_list = ['LHH LTC', 'LHH GTC', 'LHH GTBTT']
         loai_luong_filter = st.multiselect("Lọc Loại Lương", loai_luong_list, default=loai_luong_list, key="ll_filter")
 
@@ -620,12 +627,15 @@ with tab2:
         mask_ns &= (df_nhansu['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_ns).strip().lower())
     if nhan_vien_ns != "Tất cả":
         mask_ns &= (df_nhansu['Nhân Viên'].astype(str).str.strip().str.lower() == str(nhan_vien_ns).strip().lower())
+    if loai_hang_filter:
+        mask_ns &= (df_nhansu['Loại Hàng'].astype(str).str.strip().isin(loai_hang_filter))
         
     df_ns_filtered = df_nhansu[mask_ns].copy()
     
     mask_ns_no_date = pd.Series(True, index=df_nhansu.index)
     if buu_cuc_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_ns).strip().lower())
     if nhan_vien_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Nhân Viên'].astype(str).str.strip().str.lower() == str(nhan_vien_ns).strip().lower())
+    if loai_hang_filter: mask_ns_no_date &= (df_nhansu['Loại Hàng'].astype(str).str.strip().isin(loai_hang_filter))
     
     df_ns_base = df_nhansu[mask_ns_no_date].copy()
     
@@ -678,16 +688,19 @@ with tab2:
     m_sal2.metric(f"Tổng Lương Kỳ Trước", f"{total_salary_prev:,.0f} đ")
     m_sal3.metric("Mức Tăng/Giảm Thu Nhập", f"{diff_salary:,.0f} đ", f"{diff_salary:,.0f} đ")
     
-    # NÂNG CẤP LỌC CHUẨN XÁC DỮ LIỆU TỪ LINK 1862143946
+    # XỬ LÝ LỌC CHUẨN XÁC DỮ LIỆU TỪ LINK 1862143946 CHO CẢ BẢNG METRIC GTC, VÀ 2 CHART
     if not df_ns_gtc_raw.empty:
         mask_gtc = pd.Series(True, index=df_ns_gtc_raw.index)
         if buu_cuc_ns != "Tất cả": 
             mask_gtc &= (df_ns_gtc_raw['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_ns).strip().lower())
         if nhan_vien_ns != "Tất cả": 
             mask_gtc &= (df_ns_gtc_raw['Nhân Viên'].astype(str).str.strip().str.lower() == str(nhan_vien_ns).strip().lower())
+        if loai_hang_filter and 'Loại Hàng' in df_ns_gtc_raw.columns:
+            mask_gtc &= (df_ns_gtc_raw['Loại Hàng'].astype(str).str.strip().isin(loai_hang_filter))
             
         df_ns_gtc_base = df_ns_gtc_raw[mask_gtc]
         
+        # Data cho Metric so sánh %GTC
         df_n = df_ns_gtc_base[df_ns_gtc_base['Ngày'] == max_date_ns]
         df_n_prev = df_ns_gtc_base[df_ns_gtc_base['Ngày'] == (max_date_ns - timedelta(days=1))]
         
@@ -721,33 +734,29 @@ with tab2:
         
         gtc_m = calc_gtc(df_m)
         gtc_m_prev = calc_gtc(df_m_prev)
+        
+        # Data cho biểu đồ %GTC và Số đơn Gán vs Giao
+        mask_gtc_chart = pd.Series(True, index=df_ns_gtc_base.index)
+        if len(date_range_ns) == 2:
+            mask_gtc_chart &= (df_ns_gtc_base['Ngày'] >= pd.to_datetime(date_range_ns[0])) & (df_ns_gtc_base['Ngày'] <= pd.to_datetime(date_range_ns[1]))
+        
+        df_gtc_filtered = df_ns_gtc_base[mask_gtc_chart].copy()
+        if not df_gtc_filtered.empty:
+            df_gtc_nv = df_gtc_filtered.groupby('Ngày').agg({'Đơn giao tính lương': 'sum', 'Số đơn gán Giao': 'sum'}).reset_index()
+            df_gtc_nv['%GTC'] = np.where(df_gtc_nv['Số đơn gán Giao'] > 0, (df_gtc_nv['Đơn giao tính lương'] / df_gtc_nv['Số đơn gán Giao']) * 100, 0.0)
+        else:
+            df_gtc_nv = pd.DataFrame(columns=['Ngày', 'Đơn giao tính lương', 'Số đơn gán Giao', '%GTC'])
+            
     else:
         gtc_n = gtc_n_prev = gtc_w = gtc_w_prev = gtc_m = gtc_m_prev = 0.0
+        df_gtc_nv = pd.DataFrame(columns=['Ngày', 'Đơn giao tính lương', 'Số đơn gán Giao', '%GTC'])
+        df_gtc_filtered = pd.DataFrame()
 
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 25px;'>So sánh Năng suất %GTC (Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
     m_gtc1, m_gtc2, m_gtc3 = st.columns(3)
     m_gtc1.metric("Ngày (N vs N-1)", f"{gtc_n:.2f}%", f"{gtc_n - gtc_n_prev:.2f}% so với N-1")
     m_gtc2.metric("Tuần (W vs W-1)", f"{gtc_w:.2f}%", f"{gtc_w - gtc_w_prev:.2f}% so với W-1")
     m_gtc3.metric("Tháng (M vs M-1)", f"{gtc_m:.2f}%", f"{gtc_m - gtc_m_prev:.2f}% so với M-1")
-
-    # XỬ LÝ LỌC VÀ CHUẨN BỊ DỮ LIỆU BẢNG BIỂU ĐỒ NĂNG SUẤT VÀ SỐ ĐƠN GÁN VS GIAO
-    if not df_ns_gtc_raw.empty:
-        mask_gtc_chart = pd.Series(True, index=df_ns_gtc_raw.index)
-        if len(date_range_ns) == 2:
-            mask_gtc_chart &= (df_ns_gtc_raw['Ngày'] >= pd.to_datetime(date_range_ns[0])) & (df_ns_gtc_raw['Ngày'] <= pd.to_datetime(date_range_ns[1]))
-        if buu_cuc_ns != "Tất cả": 
-            mask_gtc_chart &= (df_ns_gtc_raw['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_ns).strip().lower())
-        if nhan_vien_ns != "Tất cả": 
-            mask_gtc_chart &= (df_ns_gtc_raw['Nhân Viên'].astype(str).str.strip().str.lower() == str(nhan_vien_ns).strip().lower())
-        
-        df_gtc_filtered = df_ns_gtc_raw[mask_gtc_chart].copy()
-        if not df_gtc_filtered.empty:
-            df_gtc_nv = df_gtc_filtered.groupby('Ngày').agg({'Đơn giao tính lương': 'sum', 'Số đơn gán Giao': 'sum'}).reset_index()
-            df_gtc_nv['%GTC'] = np.where(df_gtc_nv['Số đơn gán Giao'] > 0, (df_gtc_nv['Đơn giao tính lương'] / df_gtc_nv['Số đơn gán Giao']) * 100, 0.0)
-        else:
-            df_gtc_nv = pd.DataFrame(columns=['Ngày', 'Đơn giao tính lương', 'Số đơn gán Giao', '%GTC'])
-    else:
-        df_gtc_nv = pd.DataFrame(columns=['Ngày', 'Đơn giao tính lương', 'Số đơn gán Giao', '%GTC'])
 
     chart_ns1, chart_ns2 = st.columns(2)
     with chart_ns1:
@@ -780,10 +789,10 @@ with tab2:
             fig_gtc_nv.update_layout(title=dict(text=title_gtc, font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified", barmode='group', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(weight="bold")))
             fig_gtc_nv.update_yaxes(title_text="Số lượng", secondary_y=False, showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
             fig_gtc_nv.update_yaxes(title_text="% GTC", secondary_y=True, showgrid=False, range=[0, 100], title_font=dict(weight="bold"))
-            fig_gtc_nv.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"), tickformat="%d/%m")
+            fig_gtc_nv.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"), dtick="D1", tickformat="%d/%m")
             st.plotly_chart(fig_gtc_nv, use_container_width=True)
         else:
-            st.warning("⚠️ Không tìm thấy dữ liệu Năng suất & %GTC phù hợp với bộ lọc đã chọn.")
+            st.warning("⚠️ Không tìm thấy dữ liệu Năng suất & %GTC phù hợp với bộ lọc.")
 
     st.markdown("---")
     chart_ns3, chart_ns4 = st.columns(2)
@@ -807,10 +816,10 @@ with tab2:
         
             fig_line_don.update_layout(title=dict(text=title_line_don, font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(weight="bold")))
             fig_line_don.update_yaxes(title_text="Số lượng đơn", showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
-            fig_line_don.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"), tickformat="%d/%m")
+            fig_line_don.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"), dtick="D1", tickformat="%d/%m")
             st.plotly_chart(fig_line_don, use_container_width=True)
         else:
-            st.warning("⚠️ Không tìm thấy dữ liệu Số đơn Gán vs Giao phù hợp với bộ lọc đã chọn.")
+            st.warning("⚠️ Không tìm thấy dữ liệu Số đơn Gán vs Giao phù hợp với bộ lọc.")
 
     st.markdown("---")
     ai_role_ns = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Năng Suất):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_ns")
@@ -824,9 +833,13 @@ with tab2:
             else:
                 role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Nhân sự gửi thông báo cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, tạo động lực (dùng "Mình" với "Mọi người" hoặc "Anh em"). Hãy chia 3 phần: 1. Ghi nhận công sức/năng suất của team, 2. Thông báo nhanh tình hình tổng thu nhập/đơn giá, 3. Chia sẻ bí kíp/lời khuyên để anh em tăng thu nhập.'
                 
+            tong_don_gan = df_gtc_filtered['Số đơn gán Giao'].sum() if not df_gtc_filtered.empty else 0
+            tong_don_giao = df_gtc_filtered['Đơn giao tính lương'].sum() if not df_gtc_filtered.empty else 0
+
             prompt_ns = f"""
             Dữ liệu Năng suất Nhân sự (Đã lọc): 
-            - Tổng đơn đã giao: {df_ns_filtered['Số Đơn'].sum()}
+            - Tổng số đơn gán (LTC): {tong_don_gan:,.0f} đơn
+            - Tổng đơn giao thành công (GTC): {tong_don_giao:,.0f} đơn
             - Đơn giá trung bình: {avg_price_curr:,.0f} VNĐ
             - Tổng lương kỳ hiện tại ({curr_name}): {total_salary_curr:,.0f} đ (Tăng/giảm {diff_salary:,.0f} so với kỳ trước).
             {role_prompt}
