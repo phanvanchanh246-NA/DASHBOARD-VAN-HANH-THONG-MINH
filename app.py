@@ -179,14 +179,12 @@ def parse_vn_num(val):
         else: 
             val = val.replace(',', '')
     elif ',' in val:
-        # Xử lý , là số thập phân
         val = val.replace(',', '.')
     elif '.' in val:
         parts = val.split('.')
         if len(parts) > 2: 
             val = val.replace('.', '')
         else:
-            # NÂNG CẤP BẢO VỆ ODR: Chặn việc biến 0.985 thành 985.0
             if len(parts[1]) == 3 and parts[0] != '0': 
                 val = val.replace('.', '')
     try:
@@ -238,7 +236,6 @@ def get_real_data():
         df_vh_c = pd.read_csv(url_vh_ca)
         df_ns = pd.read_csv(url_nhansu)
         
-        # SIÊU MAPPER: Thêm tất cả các biến thể của ODR và GTC để chống lỗi tàng hình
         vh_mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày tạo': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
@@ -269,7 +266,6 @@ def get_real_data():
         df_vh_c = clean_dataframe_numbers(df_vh_c, text_cols_vh)
         df_ns = clean_dataframe_numbers(df_ns, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
-        # NÂNG CẤP BẢO VỆ 2: Hàm bù trừ số thập phân cho các cột Phần trăm (0.98 -> 98.0)
         for df_target in [df_vh_tq, df_vh_c]:
             for col in ['GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
                 if col in df_target.columns:
@@ -499,7 +495,6 @@ with tab1:
     with chart_col4:
         fig_odr = px.line(df_tts, x='Ngày', y='ODR', markers=True, title=f"Tỷ lệ Ontime TTS (ODR TikTokShop) ({view_mode_vh})")
         fig_odr.update_traces(line=dict(color='#28a745', width=4), marker=dict(size=10, color='#28a745', line=dict(width=2, color='white')))
-        # NÂNG CẤP BẢO VỆ 3: Mở khóa trục Y của biểu đồ ODR để nó tự co giãn theo data thực tế
         fig_odr.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified")
         fig_odr.update_yaxes(showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
         fig_odr.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"))
@@ -562,7 +557,8 @@ with tab1:
 
 # ----------------- TAB 2: NĂNG SUẤT & LƯƠNG -----------------
 with tab2:
-    f_col1, f_col2, f_col3 = st.columns(3)
+    # NÂNG CẤP BỘ LỌC TÍNH LƯƠNG VÀ ĐỔI GIAO DIỆN SANG 4 CỘT
+    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
     with f_col1:
         date_range_ns = st.date_input("Khoảng thời gian (Nhân sự)", [df_nhansu['Ngày'].min(), df_nhansu['Ngày'].max()], key="date_ns")
     with f_col2:
@@ -574,6 +570,9 @@ with tab2:
         else:
             nv_list = ["Tất cả"] + list(df_nhansu[df_nhansu['Bưu Cục'] == buu_cuc_ns]['Nhân Viên'].unique())
         nhan_vien_ns = st.selectbox("Lọc Nhân viên", nv_list, key="nv_ns_tab2")
+    with f_col4:
+        loai_luong_list = ['LHH LTC', 'LHH GTC', 'LHH GTBTT']
+        loai_luong_filter = st.multiselect("Lọc Loại Lương", loai_luong_list, default=loai_luong_list, key="ll_filter")
 
     mask_ns = pd.Series(True, index=df_nhansu.index)
     if len(date_range_ns) == 2:
@@ -582,15 +581,20 @@ with tab2:
         mask_ns &= (df_nhansu['Bưu Cục'] == buu_cuc_ns)
     if nhan_vien_ns != "Tất cả":
         mask_ns &= (df_nhansu['Nhân Viên'] == nhan_vien_ns)
+        
     df_ns_filtered = df_nhansu[mask_ns].copy()
-
-    styled_header("PHÂN TÍCH ĐƠN GIÁ, NĂNG SUẤT & TỔNG LƯƠNG", "📈")
     
-    # === LOGIC SO SÁNH KỲ LƯƠNG ===
     mask_ns_no_date = pd.Series(True, index=df_nhansu.index)
     if buu_cuc_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Bưu Cục'] == buu_cuc_ns)
     if nhan_vien_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Nhân Viên'] == nhan_vien_ns)
-    df_ns_base = df_nhansu[mask_ns_no_date]
+    df_ns_base = df_nhansu[mask_ns_no_date].copy()
+    
+    # NÂNG CẤP TÍNH TỔNG LƯƠNG TỰ ĐỘNG THEO BỘ LỌC
+    selected_ll = loai_luong_filter if loai_luong_filter else loai_luong_list
+    df_ns_filtered['Tổng Lương'] = df_ns_filtered[selected_ll].sum(axis=1)
+    df_ns_base['Tổng Lương'] = df_ns_base[selected_ll].sum(axis=1)
+
+    styled_header("PHÂN TÍCH ĐƠN GIÁ, NĂNG SUẤT & TỔNG LƯƠNG", "📈")
     
     max_date_ns = pd.to_datetime(date_range_ns[1]) if len(date_range_ns) == 2 else pd.to_datetime(date_range_ns[0])
     
@@ -627,7 +631,7 @@ with tab2:
     m_ns2.metric(f"Kỳ trước: {prev_name}", f"{avg_price_prev:,.0f} đ")
     m_ns3.metric("Tăng/Giảm so với kỳ trước", f"{diff_price:,.0f} đ", f"{diff_price:,.0f} đ")
     
-    st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 15px;'>So sánh Tổng Lương (Logic Kỳ Lương)</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 15px;'>So sánh Tổng Lương theo Loại: {', '.join(selected_ll)}</div>", unsafe_allow_html=True)
     m_sal1, m_sal2, m_sal3 = st.columns(3)
     m_sal1.metric(f"Tổng Lương Hiện Tại", f"{total_salary_curr:,.0f} đ")
     m_sal2.metric(f"Tổng Lương Kỳ Trước", f"{total_salary_prev:,.0f} đ")
@@ -740,6 +744,20 @@ with tab2:
         fig_luong.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"))
         st.plotly_chart(fig_luong, use_container_width=True)
 
+    with chart_ns4:
+        # NÂNG CẤP: Biểu đồ đường (Line Chart) so sánh Số đơn gán và Số đơn giao tính lương
+        title_line_don = f"Số đơn Gán vs Giao của {nhan_vien_ns}" if nhan_vien_ns != "Tất cả" else f"Số đơn Gán vs Giao tại {buu_cuc_ns}"
+        fig_line_don = go.Figure()
+        
+        if not df_gtc_nv.empty:
+            fig_line_don.add_trace(go.Scatter(x=df_gtc_nv['Ngày'], y=df_gtc_nv['Số đơn gán Giao'], name="Số đơn gán", mode='lines+markers', line=dict(color='#FF8C00', width=4), marker=dict(size=10, line=dict(width=2, color='white'))))
+            fig_line_don.add_trace(go.Scatter(x=df_gtc_nv['Ngày'], y=df_gtc_nv['Đơn giao tính lương'], name="Số đơn giao", mode='lines+markers', line=dict(color='#007BFF', width=4), marker=dict(size=10, line=dict(width=2, color='white'))))
+        
+        fig_line_don.update_layout(title=dict(text=title_line_don, font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(weight="bold")))
+        fig_line_don.update_yaxes(title_text="Số lượng đơn", showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
+        fig_line_don.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"), dtick="D1", tickformat="%d/%m")
+        st.plotly_chart(fig_line_don, use_container_width=True)
+
     st.markdown("---")
     ai_role_ns = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Năng Suất):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_ns")
 
@@ -808,9 +826,9 @@ with tab3:
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target):
         steps = [
-            {'range': [0, target * 0.8], 'color': "#FF7F50"},
-            {'range': [target * 0.8, target], 'color': "#48CAE4"},
-            {'range': [target, 100], 'color': "#00F2FE"}
+            {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
+            {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
+            {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
         ]
         delta_inc = "#00F2FE"
         delta_dec = "#FF7F50"
@@ -821,7 +839,7 @@ with tab3:
             delta = {'reference': target, 'increasing': {'color': delta_inc}, 'decreasing': {'color': delta_dec}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#333", 'tickfont': dict(weight="bold")},
-                'bar': {'color': "#2C3E50", 'thickness': 0.25},
+                'bar': {'color': "#2C3E50", 'thickness': 0.25}, # Kim đo đổi thành Xanh Navy Đậm cho nổi bật
                 'steps': steps,
                 'borderwidth': 2,
                 'bordercolor': "#e2e2e2",
