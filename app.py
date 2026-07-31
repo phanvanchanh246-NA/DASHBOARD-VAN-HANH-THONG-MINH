@@ -484,7 +484,7 @@ with tab1:
             Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
             - Tổng đơn: {df_vh_tq_filtered['Volume'].sum()}
             - Tỷ lệ GTC: {df_vh_tq_filtered['GTC'].mean():.2f}%
-            - Tỷ lệ Tồn kho: {df_vh_tq_filtered['ODR'].mean():.2f}%
+            - Tỷ lệ Ontime Giao TTS: {df_vh_tq_filtered['ODR'].mean():.2f}%
             Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
@@ -738,8 +738,8 @@ with tab3:
     if st.button("🔍 AI Đánh giá mức độ đạt KPI", type="primary", key="btn_ai_kpi"):
         with st.spinner("🔄 AI đang đối chiếu số liệu với mục tiêu KPI..."):
             prompt_kpi = f"""
-            Khu vực ({buu_cuc_kpi}) - Mục tiêu: GTC > {current_kpi_gtc}%, GTC TikTok > {current_kpi_tts}%, Tồn kho < {current_kpi_odr}%.
-            Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Tồn kho: {actual_odr:.2f}%.
+            Khu vực ({buu_cuc_kpi}) - Mục tiêu: GTC > {current_kpi_gtc}%, GTC TikTok > {current_kpi_tts}%, Ontime Giao TTS < {current_kpi_odr}%.
+            Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Ontime Giao TTS: {actual_odr:.2f}%.
             Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
