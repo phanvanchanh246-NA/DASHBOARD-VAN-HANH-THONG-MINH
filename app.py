@@ -81,7 +81,6 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    /* NÂNG CẤP CHỮ TAB MẠNH MẼ, IN ĐẬM VÀ TO HƠN */
     .stTabs [data-baseweb="tab"] {
         font-weight: 900 !important; font-size: 18px !important; border: 2px solid #007BFF !important;
         border-radius: 8px 8px 0px 0px !important; padding: 14px 26px !important;
@@ -115,7 +114,7 @@ def check_login():
 
 if not st.session_state.authenticated:
     check_login()
-    st.stop() # Dừng hệ thống tại đây nếu chưa đăng nhập thành công
+    st.stop()
 
 # Nút Đăng xuất ở thanh bên
 with st.sidebar:
@@ -168,7 +167,7 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
     return fig
 
 # ==========================================
-# 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS (SIÊU BỘ LỌC CHỐNG LỖI V2)
+# 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS
 # ==========================================
 def parse_vn_num(val):
     val = str(val).replace('%', '').replace('đ', '').replace('VNĐ', '').replace(' ', '').strip()
@@ -180,13 +179,15 @@ def parse_vn_num(val):
         else: 
             val = val.replace(',', '')
     elif ',' in val:
+        # Xử lý , là số thập phân
         val = val.replace(',', '.')
     elif '.' in val:
         parts = val.split('.')
         if len(parts) > 2: 
             val = val.replace('.', '')
         else:
-            if len(parts[1]) == 3: 
+            # NÂNG CẤP BẢO VỆ ODR: Chặn việc biến 0.985 thành 985.0
+            if len(parts[1]) == 3 and parts[0] != '0': 
                 val = val.replace('.', '')
     try:
         return float(val)
@@ -237,14 +238,14 @@ def get_real_data():
         df_vh_c = pd.read_csv(url_vh_ca)
         df_ns = pd.read_csv(url_nhansu)
         
-        # MAPPING THÔNG MINH, NHẬN DIỆN MỌI BIẾN THỂ CỦA SẢN LƯỢNG VÀ CA LÀM VIỆC
+        # SIÊU MAPPER: Thêm tất cả các biến thể của ODR và GTC để chống lỗi tàng hình
         vh_mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày tạo': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
             '%GTC': 'GTC', 'GTC (%)': 'GTC', 'Tỷ lệ GTC': 'GTC', '% GTC': 'GTC',
-            'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng',
-            'Volume_TTS': 'Volume TTS', 'GTC TTS': 'GTC_TTS', '%GTC_TTS': 'GTC_TTS',
-            'Ontime Giao TTS': 'ODR', 'ODR (%)': 'ODR',
+            'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng', '% Trả hàng': 'Trả Hàng',
+            'Volume_TTS': 'Volume TTS', 'GTC TTS': 'GTC_TTS', '%GTC_TTS': 'GTC_TTS', 'Tỷ lệ GTC TTS': 'GTC_TTS', '% GTC TTS': 'GTC_TTS',
+            'Ontime Giao TTS': 'ODR', 'ODR (%)': 'ODR', 'Tỷ lệ ODR': 'ODR', '% ODR': 'ODR', 'Ontime': 'ODR', 'Tỷ lệ Ontime': 'ODR', 'Tỉ lệ Ontime': 'ODR',
             'Sản lượng': 'Volume', 'Sản Lượng': 'Volume', 'Tổng đơn': 'Volume', 'Tổng Đơn': 'Volume', 'Volume': 'Volume',
             'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Phân loại': 'Loại Hàng', 'Ca làm việc': 'Loại Hàng', 'Ca': 'Loại Hàng'
         }
@@ -268,6 +269,19 @@ def get_real_data():
         df_vh_c = clean_dataframe_numbers(df_vh_c, text_cols_vh)
         df_ns = clean_dataframe_numbers(df_ns, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
+        # NÂNG CẤP BẢO VỆ 2: Hàm bù trừ số thập phân cho các cột Phần trăm (0.98 -> 98.0)
+        for df_target in [df_vh_tq, df_vh_c]:
+            for col in ['GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
+                if col in df_target.columns:
+                    valid_vals = df_target[df_target[col] > 0][col].dropna()
+                    if not valid_vals.empty and valid_vals.max() <= 1.2:
+                        df_target[col] = df_target[col] * 100
+                        
+        if '%GTC' in df_ns.columns:
+            valid_vals = df_ns[df_ns['%GTC'] > 0]['%GTC'].dropna()
+            if not valid_vals.empty and valid_vals.max() <= 1.2:
+                df_ns['%GTC'] = df_ns['%GTC'] * 100
+        
         df_vh_tq['Ngày'] = pd.to_datetime(df_vh_tq['Ngày'], errors='coerce')
         df_vh_c['Ngày'] = pd.to_datetime(df_vh_c['Ngày'], errors='coerce')
         df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'], errors='coerce')
@@ -276,8 +290,6 @@ def get_real_data():
             df['Bưu Cục'] = df['Bưu Cục'].astype(str)
             if 'Loại Hàng' not in df.columns: df['Loại Hàng'] = "Hàng Mới Ca 1"
             df['Loại Hàng'] = df['Loại Hàng'].astype(str)
-            
-            # ĐỒNG BỘ CỘT 'Ca' THEO 'Loại Hàng' ĐỂ BIỂU ĐỒ 3 CHẠY ĐÚNG 3 CA
             df['Ca'] = df['Loại Hàng']
             
         df_ns['Bưu Cục'] = df_ns['Bưu Cục'].astype(str)
@@ -411,7 +423,6 @@ with tab1:
     with col3:
         loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], default=["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], key="lh_vh")
 
-    # BỘ LỌC CHO BẢNG TỔNG QUAN (KHÔNG LỌC LOẠI HÀNG ĐỂ TRÁNH MẤT DỮ LIỆU)
     mask_vh_tq = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_vh) == 2:
         mask_vh_tq &= (df_vh_tongquan['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_tongquan['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -419,7 +430,6 @@ with tab1:
         mask_vh_tq &= (df_vh_tongquan['Bưu Cục'] == buu_cuc_vh)
     df_vh_tq_filtered = df_vh_tongquan[mask_vh_tq].copy()
     
-    # BỘ LỌC CHO BẢNG CA (CÓ LỌC LOẠI HÀNG)
     mask_vh_ca = pd.Series(True, index=df_vh_ca.index)
     if len(date_range_vh) == 2:
         mask_vh_ca &= (df_vh_ca['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_ca['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -489,7 +499,8 @@ with tab1:
     with chart_col4:
         fig_odr = px.line(df_tts, x='Ngày', y='ODR', markers=True, title=f"Tỷ lệ Ontime TTS (ODR TikTokShop) ({view_mode_vh})")
         fig_odr.update_traces(line=dict(color='#28a745', width=4), marker=dict(size=10, color='#28a745', line=dict(width=2, color='white')))
-        fig_odr.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', yaxis=dict(range=[70, 100]), hovermode="x unified")
+        # NÂNG CẤP BẢO VỆ 3: Mở khóa trục Y của biểu đồ ODR để nó tự co giãn theo data thực tế
+        fig_odr.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified")
         fig_odr.update_yaxes(showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
         fig_odr.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"))
         st.plotly_chart(fig_odr, use_container_width=True)
@@ -705,7 +716,6 @@ with tab2:
             
         title_gtc = f"Năng suất & %GTC của {nhan_vien_ns}" if nhan_vien_ns != "Tất cả" else "Năng suất & %GTC toàn hệ thống"
         
-        # Vẽ biểu đồ custom
         fig_gtc_nv = make_subplots(specs=[[{"secondary_y": True}]])
         fig_gtc_nv.add_trace(go.Bar(x=df_gtc_nv['Ngày'], y=df_gtc_nv['Số đơn gán Giao'], name="Số đơn gán", marker_color='#17a2b8', opacity=0.85), secondary_y=False)
         fig_gtc_nv.add_trace(go.Bar(x=df_gtc_nv['Ngày'], y=df_gtc_nv['Đơn giao tính lương'], name="Số đơn GTC", marker_color='#007BFF', opacity=0.85), secondary_y=False)
@@ -798,9 +808,9 @@ with tab3:
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target):
         steps = [
-            {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
-            {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
-            {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
+            {'range': [0, target * 0.8], 'color': "#FF7F50"},
+            {'range': [target * 0.8, target], 'color': "#48CAE4"},
+            {'range': [target, 100], 'color': "#00F2FE"}
         ]
         delta_inc = "#00F2FE"
         delta_dec = "#FF7F50"
@@ -811,7 +821,7 @@ with tab3:
             delta = {'reference': target, 'increasing': {'color': delta_inc}, 'decreasing': {'color': delta_dec}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#333", 'tickfont': dict(weight="bold")},
-                'bar': {'color': "#2C3E50", 'thickness': 0.25}, # Kim đo đổi thành Xanh Navy Đậm cho nổi bật
+                'bar': {'color': "#2C3E50", 'thickness': 0.25},
                 'steps': steps,
                 'borderwidth': 2,
                 'bordercolor': "#e2e2e2",
