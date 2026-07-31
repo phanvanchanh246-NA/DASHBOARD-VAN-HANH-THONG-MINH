@@ -383,10 +383,8 @@ with tab1:
 
     styled_header("1. TỔNG QUAN GTC VÀ TỶ LỆ TRẢ HÀNG", "🌍")
     
-    # NÂNG CẤP CHẾ ĐỘ XEM: ÁP DỤNG CHO TOÀN BỘ CÁC BẢNG TRONG TAB 1
     view_mode_vh = st.radio("Chế độ xem (Áp dụng toàn Tab):", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], horizontal=True, key="view_mode_vh")
     
-    # --- Áp dụng cho Biểu đồ 1 ---
     df_trend_display = df_vh_tq_filtered.copy()
     if view_mode_vh == "Theo Tuần":
         df_trend_display['Period'] = df_trend_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
@@ -430,7 +428,6 @@ with tab1:
     styled_header("2. PHÂN TÍCH TIKTOK SHOP & ONTIME GIAO TTS (ODR)", "🛒")
     chart_col3, chart_col4 = st.columns(2)
     
-    # --- Áp dụng chế độ xem cho Biểu đồ 2 (Tiktok Shop) ---
     df_tts_base = df_vh_tq_filtered.copy()
     if view_mode_vh == "Theo Tuần":
         df_tts_base['Ngày'] = df_tts_base['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
@@ -451,7 +448,6 @@ with tab1:
 
     styled_header("3. NĂNG SUẤT GIAO THEO CA LÀM VIỆC", "🕒")
     
-    # --- Áp dụng chế độ xem cho Biểu đồ 3 (Năng suất theo Ca) ---
     df_ca_base = df_vh_ca_filtered.copy()
     if view_mode_vh == "Theo Tuần":
         df_ca_base['Ngày'] = df_ca_base['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
@@ -480,11 +476,14 @@ with tab1:
 
     if st.button("🔍 Nhờ AI Phân tích Vận Hành", type="primary", key="btn_ai_vh"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
+            # SỬA LẠI PROMPT AI: DẠY CHO AI HIỂU ODR LÀ TỐT KHÔNG PHẢI TỒN KHO
             prompt_vh = f"""
             Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
             - Tổng đơn: {df_vh_tq_filtered['Volume'].sum()}
             - Tỷ lệ GTC: {df_vh_tq_filtered['GTC'].mean():.2f}%
-            - Tỷ lệ Ontime Giao TTS: {df_vh_tq_filtered['ODR'].mean():.2f}%
+            - Tỷ lệ Ontime Giao TTS (ODR): {df_vh_tq_filtered['ODR'].mean():.2f}%
+            
+            (LƯU Ý QUAN TRỌNG CHO AI: ODR là tỷ lệ cam kết giao hàng đúng hạn với sàn Tiktokshop. Tỷ lệ này CÀNG CAO CÀNG TỐT, thể hiện việc giao hàng đúng hạn rất tốt. Thấp là tệ, rủi ro bị phạt.)
             Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
@@ -672,25 +671,14 @@ with tab3:
     current_kpi_odr = st.session_state.kpi_odr_dict.get(buu_cuc_kpi, 98.0)
 
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
-    def create_gauge(title, value, target, inverse_color=False):
-        # NÂNG CẤP BẢNG MÀU GAUGE: Tươi Sáng & Năng Động (Light blue, Coral, Sparkly Teal)
-        if not inverse_color:
-            steps = [
-                {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
-                {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
-                {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
-            ]
-            delta_inc = "#00F2FE"
-            delta_dec = "#FF7F50"
-        else:
-            # Nghịch đảo (Cho ODR: Càng thấp càng tốt)
-            steps = [
-                {'range': [0, target], 'color': "#00F2FE"},
-                {'range': [target, target * 1.5], 'color': "#48CAE4"},
-                {'range': [target * 1.5, 100], 'color': "#FF7F50"}
-            ]
-            delta_inc = "#FF7F50"
-            delta_dec = "#00F2FE"
+    def create_gauge(title, value, target):
+        steps = [
+            {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
+            {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
+            {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
+        ]
+        delta_inc = "#00F2FE"
+        delta_dec = "#FF7F50"
             
         fig = go.Figure(go.Indicator(
             mode = "gauge+number+delta", value = value, domain = {'x': [0, 1], 'y': [0, 1]},
@@ -712,9 +700,9 @@ with tab3:
     with gauge_col2:
         st.plotly_chart(create_gauge("Tỷ lệ GTC TikTok (%)", actual_tts, current_kpi_tts), use_container_width=True)
     with gauge_col3:
-        st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr, inverse_color=True), use_container_width=True)
+        # ĐÃ SỬA: Không dùng inverse_color nữa vì ODR cao là tốt
+        st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr), use_container_width=True)
 
-    # NÂNG CẤP TIÊU ĐỀ BẢNG KPI: Bắt mắt hơn
     st.markdown("---")
     st.markdown("""
         <div style="background: linear-gradient(135deg, #00B4D8, #0077B6); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
@@ -726,7 +714,6 @@ with tab3:
     df_kpi_table['Ngày'] = df_kpi_table['Ngày'].dt.strftime('%d-%m-%Y')
     df_kpi_table['% Đạt KPI GTC'] = (df_kpi_table['GTC'] / current_kpi_gtc) * 100 if current_kpi_gtc > 0 else 0
     
-    # NÂNG CẤP GIAO DIỆN BẢNG KPI:
     styled_kpi_table = df_kpi_table.style.set_properties(**{
         'background-color': '#f8fdff', 
         'color': '#003f5c', 
@@ -737,9 +724,20 @@ with tab3:
 
     if st.button("🔍 AI Đánh giá mức độ đạt KPI", type="primary", key="btn_ai_kpi"):
         with st.spinner("🔄 AI đang đối chiếu số liệu với mục tiêu KPI..."):
+            # SỬA LẠI PROMPT AI: DẠY CHO AI HIỂU ODR LÀ TỐT, PHẢI LỚN HƠN MỤC TIÊU MỚI ĐẠT
             prompt_kpi = f"""
-            Khu vực ({buu_cuc_kpi}) - Mục tiêu: GTC > {current_kpi_gtc}%, GTC TikTok > {current_kpi_tts}%, Ontime Giao TTS < {current_kpi_odr}%.
-            Thực tế: GTC: {actual_gtc:.2f}%, GTC TikTok: {actual_tts:.2f}%, Ontime Giao TTS: {actual_odr:.2f}%.
+            Khu vực ({buu_cuc_kpi}) - Mục tiêu KPI: 
+            - GTC > {current_kpi_gtc}% 
+            - GTC TikTok > {current_kpi_tts}%
+            - Ontime Giao TTS (ODR) > {current_kpi_odr}% (Càng cao càng tốt)
+            
+            Thực tế đạt được: 
+            - GTC: {actual_gtc:.2f}% 
+            - GTC TikTok: {actual_tts:.2f}%
+            - Ontime Giao TTS (ODR): {actual_odr:.2f}%
+            
+            (LƯU Ý DÀNH CHO AI: ODR là tỷ lệ cam kết giao hàng đúng hạn với sàn Tiktokshop. Chỉ số ODR Thực tế phải LỚN HƠN HOẶC BẰNG Mục tiêu KPI thì mới được coi là hoàn thành xuất sắc. Nếu thấp hơn là trượt KPI, đang làm tệ).
+            
             Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
