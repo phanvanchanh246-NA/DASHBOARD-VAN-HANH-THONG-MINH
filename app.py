@@ -296,7 +296,6 @@ df_khachhang = get_customer_data()
 # ==========================================
 # 3. HÀM TRỢ LÝ AI
 # ==========================================
-# BỔ SUNG YÊU CẦU 1: Thêm dòng chữ Designed by AM Phan Van Chanh
 st.markdown("""
     <div class="banner">
         <div>
@@ -357,7 +356,6 @@ with tab1:
     with col1:
         date_range_vh = st.date_input("Khoảng thời gian (Vận hành)", [df_vh_tongquan['Ngày'].min(), df_vh_tongquan['Ngày'].max()], key="date_vh")
     with col2:
-        # BỔ SUNG YÊU CẦU 2: Thêm "Grand Total" vào chọn Bưu cục ở Tab Vận hành
         bc_list_vh = ["Tất cả", "Grand Total"] + [x for x in df_vh_tongquan['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
         buu_cuc_vh = st.selectbox("Chọn Bưu cục", bc_list_vh, key="bc_vh")
     with col3:
@@ -617,7 +615,9 @@ with tab3:
     styled_header("CÀI ĐẶT & THEO DÕI KPI VẬN HÀNH", "🎯")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="set_bc_kpi_tab3")
+        # BỔ SUNG YÊU CẦU: Thêm "Grand Total" vào chọn Bưu cục ở Tab KPI
+        bc_list_kpi = ["Tất cả", "Grand Total"] + [x for x in df_vh_tongquan['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
+        target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", bc_list_kpi, key="set_bc_kpi_tab3")
         
         if target_bc_kpi not in st.session_state.kpi_gtc_dict: st.session_state.kpi_gtc_dict[target_bc_kpi] = 70.0
         if target_bc_kpi not in st.session_state.kpi_tts_dict: st.session_state.kpi_tts_dict[target_bc_kpi] = 80.0
@@ -635,7 +635,7 @@ with tab3:
     with t3_col1:
         date_range_kpi = st.date_input("Chọn thời gian", [df_vh_tongquan['Ngày'].min(), df_vh_tongquan['Ngày'].max()], key="date_kpi")
     with t3_col2:
-        buu_cuc_kpi = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_vh_tongquan['Bưu Cục'].unique()), key="bc_kpi")
+        buu_cuc_kpi = st.selectbox("Chọn Bưu cục để XEM số liệu", bc_list_kpi, key="bc_kpi")
 
     mask_kpi = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_kpi) == 2:
@@ -716,7 +716,9 @@ with tab4:
     styled_header("BÁO CÁO DOANH THU & KHÁCH HÀNG MỚI", "💰")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="set_bc_kd_tab4")
+        # BỔ SUNG YÊU CẦU: Thêm "Grand Total" vào chọn Bưu cục ở Tab Kinh Doanh
+        bc_list_kd = ["Tất cả", "Grand Total"] + [x for x in df_kinhdoanh['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
+        target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", bc_list_kd, key="set_bc_kd_tab4")
         
         if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 2100000000.0
         
@@ -726,7 +728,7 @@ with tab4:
     with t4_col1:
         date_range_kd = st.date_input("Chọn thời gian", [df_kinhdoanh['Ngày'].max() - timedelta(days=7), df_kinhdoanh['Ngày'].max()], key="date_kd")
     with t4_col2:
-        buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", ["Tất cả"] + list(df_kinhdoanh['Bưu Cục'].unique()), key="bc_kd")
+        buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", bc_list_kd, key="bc_kd")
     with t4_col3:
         view_type = st.selectbox("Góc nhìn báo cáo", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], key="view_kd")
 
@@ -808,10 +810,34 @@ with tab4:
         fig_funnel.update_layout(title=dict(text=f"Phễu chuyển đổi KH Mới ({view_type})", font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
         st.plotly_chart(fig_funnel, use_container_width=True)
 
-    # BỔ SUNG YÊU CẦU 3: Bảng danh sách khách hàng tiềm năng
+    # BỔ SUNG YÊU CẦU 3: Bảng danh sách khách hàng tiềm năng - Bắt mắt & Tự động lọc
     st.markdown("---")
-    styled_header("DANH SÁCH KHÁCH HÀNG TIỀM NĂNG", "📋")
-    st.dataframe(df_khachhang, use_container_width=True)
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #FF8C00, #ff5722); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+            <h3 style="color: white; margin: 0; font-weight: 900; text-transform: uppercase;">📋 Danh Sách Khách Hàng Tiềm Năng Chờ Chốt Deal</h3>
+            <p style="color: #fff3cd; font-size: 14px; margin: 5px 0 0 0; font-style: italic;">(Chỉ hiển thị các khách hàng được đánh dấu phân loại "Khách hàng tiềm năng")</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    if not df_khachhang.empty:
+        # Tìm cột chứa chữ 'loại khách hàng' để tránh sai sót nếu tiêu đề bảng có thêm khoảng trắng
+        target_col = [c for c in df_khachhang.columns if 'loại khách hàng' in str(c).lower()]
+        if target_col:
+            # Lọc bảng chỉ lấy những dòng có chứa từ "tiềm năng"
+            df_kh_filtered = df_khachhang[df_khachhang[target_col[0]].astype(str).str.contains('tiềm năng', case=False, na=False)]
+        else:
+            df_kh_filtered = df_khachhang
+    else:
+        df_kh_filtered = df_khachhang
+        
+    # Áp dụng màu sắc cho bảng dữ liệu
+    styled_df = df_kh_filtered.style.set_properties(**{
+        'background-color': '#fff9f0', 
+        'color': '#333333', 
+        'border-color': '#ffcc80'
+    })
+    
+    st.dataframe(styled_df, use_container_width=True)
 
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
