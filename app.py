@@ -81,6 +81,7 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    /* NÂNG CẤP CHỮ TAB MẠNH MẼ, IN ĐẬM VÀ TO HƠN */
     .stTabs [data-baseweb="tab"] {
         font-weight: 900 !important; font-size: 18px !important; border: 2px solid #007BFF !important;
         border-radius: 8px 8px 0px 0px !important; padding: 14px 26px !important;
@@ -474,16 +475,17 @@ with tab1:
     st.plotly_chart(fig_ca, use_container_width=True)
 
     st.markdown("---")
-    # TÙY CHỌN TONE OF VOICE AI
-    ai_role_vh = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Vận Hành):", ["Góc nhìn Giám Đốc", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_vh")
+    ai_role_vh = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Vận Hành):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_vh")
     
     if st.button("🔍 Nhờ AI Phân tích Vận Hành", type="primary", key="btn_ai_vh"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
             
             if ai_role_vh == "Góc nhìn Giám Đốc":
                 role_prompt = "Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng thể hiệu suất, 2. Phân tích Rủi ro vĩ mô, 3. Đề xuất hành động chiến lược. Viết chuyên nghiệp, uy quyền."
+            elif ai_role_vh == "Góc nhìn Quản lý khu vực (AM)":
+                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Phân tích 3 phần: 1. Đánh giá hiệu suất vận hành của khu vực, 2. Nhận diện các điểm nóng/tuyến kéo tụt số liệu, 3. Đưa ra chỉ đạo điều phối trực tiếp cho Nhân viên xử lý (điều hành kho) và Nhân viên giao hàng. Viết dứt khoát, mang tính quản trị và đốc thúc."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Điều phối Vận hành gửi thông báo trực tiếp cho NHÓM NHÂN VIÊN XỬ LÝ. Xưng hô thân thiện, tạo động lực (dùng từ "Mình" với "Mọi người" hoặc "Team"). Hãy chia làm 3 ý rõ ràng: 1. Đánh giá nhanh tình hình ca làm việc, 2. Ghi chú các điểm nóng cần anh em chú ý gấp, 3. Kêu gọi hành động ưu tiên cho hôm nay.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Điều phối Vận hành gửi thông báo trực tiếp cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, tạo động lực (dùng từ "Mình" với "Mọi người" hoặc "Team"). Hãy chia làm 3 ý rõ ràng: 1. Đánh giá nhanh tình hình ca làm việc, 2. Ghi chú các điểm nóng cần anh em chú ý gấp, 3. Kêu gọi hành động ưu tiên cho hôm nay.'
                 
             prompt_vh = f"""
             Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
@@ -624,14 +626,16 @@ with tab2:
         st.plotly_chart(fig_gtc_nv, use_container_width=True)
 
     st.markdown("---")
-    ai_role_ns = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Năng Suất):", ["Góc nhìn Giám Đốc", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_ns")
+    ai_role_ns = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Năng Suất):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_ns")
 
     if st.button("🔍 Nhờ AI Phân tích Nhân sự & Chi phí", type="primary", key="btn_ai_ns"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Năng Suất..."):
             if ai_role_ns == "Góc nhìn Giám Đốc":
                 role_prompt = "Nhiệm vụ: Đóng vai Giám đốc Nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất tổng thể, 2. Phân tích Quỹ lương/Chi phí/Đơn giá, 3. Đề xuất chính sách nhân sự cấp quản lý. Viết chuyên nghiệp."
+            elif ai_role_ns == "Góc nhìn Quản lý khu vực (AM)":
+                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Đánh giá 3 phần: 1. Tổng quan năng suất giao hàng của khu vực, 2. Cảnh báo rủi ro về quỹ lương/đơn giá, 3. Chỉ đạo Nhân viên xử lý (điều hành kho) điều phối lại tuyến, ép năng suất giao hàng. Viết dứt khoát, thực tiễn và thúc đẩy."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Nhân sự gửi thông báo cho NHÓM NHÂN VIÊN XỬ LÝ. Xưng hô thân thiện, tạo động lực (dùng "Mình" với "Mọi người" hoặc "Anh em"). Hãy chia 3 phần: 1. Ghi nhận công sức/năng suất của team, 2. Thông báo nhanh tình hình thu nhập/đơn giá, 3. Chia sẻ bí kíp/lời khuyên để anh em tăng thu nhập.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Nhân sự gửi thông báo cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, tạo động lực (dùng "Mình" với "Mọi người" hoặc "Anh em"). Hãy chia 3 phần: 1. Ghi nhận công sức/năng suất của team, 2. Thông báo nhanh tình hình thu nhập/đơn giá, 3. Chia sẻ bí kíp/lời khuyên để anh em tăng thu nhập.'
                 
             prompt_ns = f"""
             Dữ liệu Năng suất Nhân sự (Đã lọc): 
@@ -716,6 +720,7 @@ with tab3:
     with gauge_col2:
         st.plotly_chart(create_gauge("Tỷ lệ GTC TikTok (%)", actual_tts, current_kpi_tts), use_container_width=True)
     with gauge_col3:
+        # ĐÃ SỬA: Không dùng inverse_color nữa vì ODR cao là tốt
         st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr), use_container_width=True)
 
     st.markdown("---")
@@ -738,14 +743,16 @@ with tab3:
     st.dataframe(styled_kpi_table, use_container_width=True)
 
     st.markdown("---")
-    ai_role_kpi = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (KPI):", ["Góc nhìn Giám Đốc", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_kpi")
+    ai_role_kpi = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (KPI):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_kpi")
 
     if st.button("🔍 AI Đánh giá mức độ đạt KPI", type="primary", key="btn_ai_kpi"):
         with st.spinner("🔄 AI đang đối chiếu số liệu với mục tiêu KPI..."):
             if ai_role_kpi == "Góc nhìn Giám Đốc":
                 role_prompt = "Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá tình hình đạt/trượt KPI vĩ mô, 2. Cảnh báo rủi ro hệ thống nếu trượt, 3. Yêu cầu hành động khẩn cấp cho Quản lý cấp trung."
+            elif ai_role_kpi == "Góc nhìn Quản lý khu vực (AM)":
+                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Đánh giá 3 phần: 1. Phân tích mức độ hoàn thành KPI của khu vực so với mục tiêu, 2. Điểm danh các chỉ số đang báo động (đặc biệt ODR), 3. Giao task khẩn cho Nhân viên xử lý (điều hành kho) và Nhân viên giao hàng để kéo số. Viết dứt khoát, ép số."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Báo cáo gửi tin nhắn cho NHÓM NHÂN VIÊN XỬ LÝ. Xưng hô thân thiện, cổ vũ (dùng "Mình" với "Mọi người" hoặc "Team"). Hãy chia 3 phần: 1. Tuyên dương team nếu đạt KPI hoặc Động viên nếu trượt, 2. Chỉ ra điểm nghẽn hiện tại, 3. Phân công mục tiêu chạy gấp hôm nay để giữ vững phong độ/kéo lại số.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Báo cáo gửi tin nhắn cho NHÓM NHÂN VIÊN XỬ LÝ & GIAO HÀNG. Xưng hô thân thiện, cổ vũ (dùng "Mình" với "Mọi người" hoặc "Team"). Hãy chia 3 phần: 1. Tuyên dương team nếu đạt KPI hoặc Động viên nếu trượt, 2. Chỉ ra điểm nghẽn hiện tại, 3. Phân công mục tiêu chạy gấp hôm nay để giữ vững phong độ/kéo lại số.'
                 
             prompt_kpi = f"""
             Khu vực ({buu_cuc_kpi}) - Mục tiêu KPI: 
@@ -891,12 +898,14 @@ with tab4:
     st.dataframe(styled_df, use_container_width=True)
 
     st.markdown("---")
-    ai_role_kd = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Kinh Doanh):", ["Góc nhìn Giám Đốc", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_kd")
+    ai_role_kd = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Kinh Doanh):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_kd")
 
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
             if ai_role_kd == "Góc nhìn Giám Đốc":
                 role_prompt = "Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Đánh giá hiệu suất chạy số tổng thể, 2. Phân tích tỷ lệ chốt sale, 3. Đề xuất chiến lược định hướng để tăng trưởng doanh thu."
+            elif ai_role_kd == "Góc nhìn Quản lý khu vực (AM)":
+                role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Phân tích 3 phần: 1. Đánh giá tốc độ chạy doanh thu của khu vực, 2. Cảnh báo tỷ lệ rớt đơn ở phễu khách hàng tiềm năng, 3. Đưa ra chỉ đạo thúc đẩy đội ngũ Sales khu vực chốt deal khẩn cấp. Viết dứt khoát, máu lửa."
             else:
                 role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN SALES/XỬ LÝ ĐƠN. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.'
                 
