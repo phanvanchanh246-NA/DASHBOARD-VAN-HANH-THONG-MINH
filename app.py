@@ -212,9 +212,8 @@ def get_real_business_data():
             'Khách hàng lên đơn': 'Khách Lên Đơn', 'Doanh thu KH mới': 'Doanh Thu KH Mới'
         }
         df_kd = df_kd.rename(columns=kd_mapping)
-        
         if 'Bưu Cục' not in df_kd.columns: df_kd['Bưu Cục'] = "Chưa phân loại"
-            
+        
         df_kd = clean_dataframe_numbers(df_kd, text_cols=['Ngày', 'Bưu Cục'])
         df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'], errors='coerce')
         df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str)
@@ -238,13 +237,16 @@ def get_real_data():
         df_vh_c = pd.read_csv(url_vh_ca)
         df_ns = pd.read_csv(url_nhansu)
         
+        # MAPPING THÔNG MINH, NHẬN DIỆN MỌI BIẾN THỂ CỦA SẢN LƯỢNG VÀ CA LÀM VIỆC
         vh_mapping = {
-            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày tạo': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
             '%GTC': 'GTC', 'GTC (%)': 'GTC', 'Tỷ lệ GTC': 'GTC', '% GTC': 'GTC',
             'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng',
             'Volume_TTS': 'Volume TTS', 'GTC TTS': 'GTC_TTS', '%GTC_TTS': 'GTC_TTS',
-            'Ontime Giao TTS': 'ODR', 'ODR (%)': 'ODR'
+            'Ontime Giao TTS': 'ODR', 'ODR (%)': 'ODR',
+            'Sản lượng': 'Volume', 'Sản Lượng': 'Volume', 'Tổng đơn': 'Volume', 'Tổng Đơn': 'Volume', 'Volume': 'Volume',
+            'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Phân loại': 'Loại Hàng', 'Ca làm việc': 'Loại Hàng', 'Ca': 'Loại Hàng'
         }
         df_vh_tq = df_vh_tq.rename(columns=vh_mapping)
         df_vh_c = df_vh_c.rename(columns=vh_mapping)
@@ -272,10 +274,11 @@ def get_real_data():
         
         for df in [df_vh_tq, df_vh_c]:
             df['Bưu Cục'] = df['Bưu Cục'].astype(str)
-            if 'Loại Hàng' not in df.columns: df['Loại Hàng'] = "FULL"
+            if 'Loại Hàng' not in df.columns: df['Loại Hàng'] = "Hàng Mới Ca 1"
             df['Loại Hàng'] = df['Loại Hàng'].astype(str)
-            if 'Ca' not in df.columns: df['Ca'] = "Ca 1"
-            df['Ca'] = df['Ca'].astype(str)
+            
+            # ĐỒNG BỘ CỘT 'Ca' THEO 'Loại Hàng' ĐỂ BIỂU ĐỒ 3 CHẠY ĐÚNG 3 CA
+            df['Ca'] = df['Loại Hàng']
             
         df_ns['Bưu Cục'] = df_ns['Bưu Cục'].astype(str)
         df_ns['Nhân Viên'] = df_ns['Nhân Viên'].astype(str)
@@ -408,6 +411,7 @@ with tab1:
     with col3:
         loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], default=["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], key="lh_vh")
 
+    # BỘ LỌC CHO BẢNG TỔNG QUAN (KHÔNG LỌC LOẠI HÀNG ĐỂ TRÁNH MẤT DỮ LIỆU)
     mask_vh_tq = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_vh) == 2:
         mask_vh_tq &= (df_vh_tongquan['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_tongquan['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -415,6 +419,7 @@ with tab1:
         mask_vh_tq &= (df_vh_tongquan['Bưu Cục'] == buu_cuc_vh)
     df_vh_tq_filtered = df_vh_tongquan[mask_vh_tq].copy()
     
+    # BỘ LỌC CHO BẢNG CA (CÓ LỌC LOẠI HÀNG)
     mask_vh_ca = pd.Series(True, index=df_vh_ca.index)
     if len(date_range_vh) == 2:
         mask_vh_ca &= (df_vh_ca['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_ca['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -685,7 +690,6 @@ with tab2:
         st.plotly_chart(fig_dg, use_container_width=True)
 
     with chart_ns2:
-        # CẬP NHẬT: Biểu đồ kết hợp hiển thị Số đơn gán, Số đơn GTC, %GTC
         if not df_ns_gtc_raw.empty:
             mask_gtc_chart = pd.Series(True, index=df_ns_gtc_raw.index)
             if len(date_range_ns) == 2:
@@ -821,7 +825,6 @@ with tab3:
     with gauge_col2:
         st.plotly_chart(create_gauge("Tỷ lệ GTC TikTok (%)", actual_tts, current_kpi_tts), use_container_width=True)
     with gauge_col3:
-        # ĐÃ SỬA: Không dùng inverse_color nữa vì ODR cao là tốt
         st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr), use_container_width=True)
 
     st.markdown("---")
