@@ -205,13 +205,18 @@ def get_real_business_data():
     url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
         df_kd = pd.read_csv(url_kinhdoanh)
-        # NÂNG CẤP: Map cột Thời gian thành Ngày để giữ nguyên logic code mượt mà
+        # NÂNG CẤP: Map cột Thời gian thành Ngày, Tự động nhận diện Bưu Cục
         kd_mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục', 'Cửa hàng': 'Bưu Cục',
             'Doanh thu': 'Doanh Thu', 'Khách hàng liên hệ': 'Khách Liên Hệ',
             'Khách hàng lên đơn': 'Khách Lên Đơn', 'Doanh thu KH mới': 'Doanh Thu KH Mới'
         }
         df_kd = df_kd.rename(columns=kd_mapping)
+        
+        # BẢO VỆ CHỐNG LỖI MẤT CỘT
+        if 'Bưu Cục' not in df_kd.columns: df_kd['Bưu Cục'] = "Chưa phân loại"
+        
         df_kd = clean_dataframe_numbers(df_kd, text_cols=['Ngày', 'Bưu Cục'])
         df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'], errors='coerce')
         df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str)
@@ -235,9 +240,10 @@ def get_real_data():
         df_vh_c = pd.read_csv(url_vh_ca)
         df_ns = pd.read_csv(url_nhansu)
         
-        # NÂNG CẤP: Map cột Thời gian thành Ngày để giữ nguyên logic code
+        # NÂNG CẤP: Map cột Thời gian thành Ngày, Tự động nhận diện Bưu Cục
         vh_mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
             '%GTC': 'GTC', 'GTC (%)': 'GTC', 'Tỷ lệ GTC': 'GTC', '% GTC': 'GTC',
             'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng',
             'Volume_TTS': 'Volume TTS', 'GTC TTS': 'GTC_TTS', '%GTC_TTS': 'GTC_TTS',
@@ -248,10 +254,16 @@ def get_real_data():
         
         ns_mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
             'GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', '% GTC': '%GTC',
             'Đơn giá': 'Đơn Giá', 'Số đơn': 'Số Đơn'
         }
         df_ns = df_ns.rename(columns=ns_mapping)
+        
+        # BẢO VỆ CHỐNG LỖI MẤT CỘT
+        if 'Bưu Cục' not in df_vh_tq.columns: df_vh_tq['Bưu Cục'] = "Chưa phân loại"
+        if 'Bưu Cục' not in df_vh_c.columns: df_vh_c['Bưu Cục'] = "Chưa phân loại"
+        if 'Bưu Cục' not in df_ns.columns: df_ns['Bưu Cục'] = "Chưa phân loại"
         
         text_cols_vh = ['Ngày', 'Bưu Cục', 'Ca', 'Loại Hàng']
         df_vh_tq = clean_dataframe_numbers(df_vh_tq, text_cols_vh)
@@ -289,6 +301,38 @@ def get_real_data():
         st.stop()
 
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
+
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT
+@st.cache_data(ttl=60)
+def get_ns_gtc_data():
+    url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
+    try:
+        df = pd.read_csv(url_ns_gtc)
+        mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
+        }
+        df = df.rename(columns=mapping)
+        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
+        
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên'])
+        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        df['Bưu Cục'] = df['Bưu Cục'].astype(str)
+        
+        if 'Nhân Viên' in df.columns:
+            df['Nhân Viên'] = df['Nhân Viên'].astype(str)
+        else:
+            df['Nhân Viên'] = "Chưa phân loại"
+            
+        # Đảm bảo có 2 cột để tính toán phần trăm GTC
+        for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
+            if req not in df.columns: df[req] = 0.0
+            
+        return df.dropna(subset=['Ngày'])
+    except Exception as e:
+        return pd.DataFrame()
+
+df_ns_gtc_raw = get_ns_gtc_data()
 
 # Lấy dữ liệu danh sách khách hàng tiềm năng
 @st.cache_data(ttl=60)
@@ -369,7 +413,8 @@ with tab1:
         bc_list_vh = ["Tất cả", "Grand Total"] + [x for x in df_vh_tongquan['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
         buu_cuc_vh = st.selectbox("Chọn Bưu cục", bc_list_vh, key="bc_vh")
     with col3:
-        loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng ca 1", "Hàng ca 2", "FULL"], default=["Hàng ca 1", "Hàng ca 2", "FULL"], key="lh_vh")
+        # NÂNG CẤP: Đổi 3 bộ lọc Loại hàng
+        loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], default=["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], key="lh_vh")
 
     mask_vh_tq = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_vh) == 2:
@@ -511,7 +556,7 @@ with tab1:
 
 # ----------------- TAB 2: NĂNG SUẤT & LƯƠNG -----------------
 with tab2:
-    # ĐÃ GỠ BỘ LỌC LOẠI HÀNG THEO YÊU CẦU
+    # NÂNG CẤP: BỎ HOÀN TOÀN BỘ LỌC LOẠI HÀNG Ở TAB NÀY
     f_col1, f_col2, f_col3 = st.columns(3)
     with f_col1:
         date_range_ns = st.date_input("Khoảng thời gian (Nhân sự)", [df_nhansu['Ngày'].min(), df_nhansu['Ngày'].max()], key="date_ns")
@@ -585,30 +630,49 @@ with tab2:
     m_sal2.metric(f"Tổng Lương Kỳ Trước", f"{total_salary_prev:,.0f} đ")
     m_sal3.metric("Mức Tăng/Giảm Thu Nhập", f"{diff_salary:,.0f} đ", f"{diff_salary:,.0f} đ")
     
-    # === BỔ SUNG SO SÁNH %GTC ===
-    df_n = df_ns_base[df_ns_base['Ngày'] == max_date_ns]
-    df_n_prev = df_ns_base[df_ns_base['Ngày'] == (max_date_ns - timedelta(days=1))]
-    gtc_n = df_n['%GTC'].mean() if not df_n.empty else 0
-    gtc_n_prev = df_n_prev['%GTC'].mean() if not df_n_prev.empty else 0
+    # === BỔ SUNG SO SÁNH %GTC THEO DỮ LIỆU GTC MỚI ===
+    if not df_ns_gtc_raw.empty:
+        mask_gtc = pd.Series(True, index=df_ns_gtc_raw.index)
+        if buu_cuc_ns != "Tất cả": mask_gtc &= (df_ns_gtc_raw['Bưu Cục'] == buu_cuc_ns)
+        if nhan_vien_ns != "Tất cả": mask_gtc &= (df_ns_gtc_raw['Nhân Viên'] == nhan_vien_ns)
+        df_ns_gtc_base = df_ns_gtc_raw[mask_gtc]
+        
+        df_n = df_ns_gtc_base[df_ns_gtc_base['Ngày'] == max_date_ns]
+        df_n_prev = df_ns_gtc_base[df_ns_gtc_base['Ngày'] == (max_date_ns - timedelta(days=1))]
+        
+        # Hàm tính GTC an toàn tránh lỗi chia 0
+        def calc_gtc(df_sub):
+            t_giao = df_sub['Đơn giao tính lương'].sum()
+            t_gan = df_sub['Số đơn gán Giao'].sum()
+            return (t_giao / t_gan * 100) if t_gan > 0 else 0.0
 
-    start_w_ns = max_date_ns - timedelta(days=max_date_ns.weekday())
-    end_w_ns = start_w_ns + timedelta(days=6)
-    df_w = df_ns_base[(df_ns_base['Ngày'] >= start_w_ns) & (df_ns_base['Ngày'] <= end_w_ns)]
-    start_w_prev_ns = start_w_ns - timedelta(days=7)
-    end_w_prev_ns = start_w_prev_ns + timedelta(days=6)
-    df_w_prev = df_ns_base[(df_ns_base['Ngày'] >= start_w_prev_ns) & (df_ns_base['Ngày'] <= end_w_prev_ns)]
-    gtc_w = df_w['%GTC'].mean() if not df_w.empty else 0
-    gtc_w_prev = df_w_prev['%GTC'].mean() if not df_w_prev.empty else 0
+        gtc_n = calc_gtc(df_n)
+        gtc_n_prev = calc_gtc(df_n_prev)
 
-    start_m_ns = max_date_ns.replace(day=1)
-    next_m_ns = start_m_ns.replace(day=28) + timedelta(days=4)
-    end_m_ns = next_m_ns - timedelta(days=next_m_ns.day)
-    df_m = df_ns_base[(df_ns_base['Ngày'] >= start_m_ns) & (df_ns_base['Ngày'] <= end_m_ns)]
-    start_m_prev_ns = (start_m_ns - timedelta(days=1)).replace(day=1)
-    end_m_prev_ns = start_m_ns - timedelta(days=1)
-    df_m_prev = df_ns_base[(df_ns_base['Ngày'] >= start_m_prev_ns) & (df_ns_base['Ngày'] <= end_m_prev_ns)]
-    gtc_m = df_m['%GTC'].mean() if not df_m.empty else 0
-    gtc_m_prev = df_m_prev['%GTC'].mean() if not df_m_prev.empty else 0
+        start_w_ns = max_date_ns - timedelta(days=max_date_ns.weekday())
+        end_w_ns = start_w_ns + timedelta(days=6)
+        df_w = df_ns_gtc_base[(df_ns_gtc_base['Ngày'] >= start_w_ns) & (df_ns_gtc_base['Ngày'] <= end_w_ns)]
+        
+        start_w_prev_ns = start_w_ns - timedelta(days=7)
+        end_w_prev_ns = start_w_prev_ns + timedelta(days=6)
+        df_w_prev = df_ns_gtc_base[(df_ns_gtc_base['Ngày'] >= start_w_prev_ns) & (df_ns_gtc_base['Ngày'] <= end_w_prev_ns)]
+        
+        gtc_w = calc_gtc(df_w)
+        gtc_w_prev = calc_gtc(df_w_prev)
+
+        start_m_ns = max_date_ns.replace(day=1)
+        next_m_ns = start_m_ns.replace(day=28) + timedelta(days=4)
+        end_m_ns = next_m_ns - timedelta(days=next_m_ns.day)
+        df_m = df_ns_gtc_base[(df_ns_gtc_base['Ngày'] >= start_m_ns) & (df_ns_gtc_base['Ngày'] <= end_m_ns)]
+        
+        start_m_prev_ns = (start_m_ns - timedelta(days=1)).replace(day=1)
+        end_m_prev_ns = start_m_ns - timedelta(days=1)
+        df_m_prev = df_ns_gtc_base[(df_ns_gtc_base['Ngày'] >= start_m_prev_ns) & (df_ns_gtc_base['Ngày'] <= end_m_prev_ns)]
+        
+        gtc_m = calc_gtc(df_m)
+        gtc_m_prev = calc_gtc(df_m_prev)
+    else:
+        gtc_n = gtc_n_prev = gtc_w = gtc_w_prev = gtc_m = gtc_m_prev = 0.0
 
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 25px;'>So sánh Năng suất %GTC (Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
     m_gtc1, m_gtc2, m_gtc3 = st.columns(3)
@@ -636,7 +700,21 @@ with tab2:
         st.plotly_chart(fig_dg, use_container_width=True)
 
     with chart_ns2:
-        df_gtc_nv = df_ns_filtered.groupby('Ngày').agg({'Số Đơn': 'sum', '%GTC': 'mean'}).reset_index()
+        # NÂNG CẤP: Biểu đồ lấy dữ liệu từ link Năng suất & %GTC mới
+        if not df_ns_gtc_raw.empty:
+            mask_gtc_chart = pd.Series(True, index=df_ns_gtc_raw.index)
+            if len(date_range_ns) == 2:
+                mask_gtc_chart &= (df_ns_gtc_raw['Ngày'] >= pd.to_datetime(date_range_ns[0])) & (df_ns_gtc_raw['Ngày'] <= pd.to_datetime(date_range_ns[1]))
+            if buu_cuc_ns != "Tất cả": mask_gtc_chart &= (df_ns_gtc_raw['Bưu Cục'] == buu_cuc_ns)
+            if nhan_vien_ns != "Tất cả": mask_gtc_chart &= (df_ns_gtc_raw['Nhân Viên'] == nhan_vien_ns)
+            
+            df_gtc_filtered = df_ns_gtc_raw[mask_gtc_chart].copy()
+            df_gtc_nv = df_gtc_filtered.groupby('Ngày').agg({'Đơn giao tính lương': 'sum', 'Số đơn gán Giao': 'sum'}).reset_index()
+            df_gtc_nv['%GTC'] = np.where(df_gtc_nv['Số đơn gán Giao'] > 0, (df_gtc_nv['Đơn giao tính lương'] / df_gtc_nv['Số đơn gán Giao']) * 100, 0.0)
+            df_gtc_nv['Số Đơn'] = df_gtc_nv['Đơn giao tính lương']
+        else:
+            df_gtc_nv = pd.DataFrame(columns=['Ngày', 'Số Đơn', '%GTC'])
+            
         title_gtc = f"Năng suất & %GTC của {nhan_vien_ns}" if nhan_vien_ns != "Tất cả" else "Năng suất & %GTC toàn hệ thống"
         fig_gtc_nv = draw_combo_chart(df_gtc_nv, 'Ngày', 'Số Đơn', '%GTC', title_gtc, bar_name="Số Đơn Đã Giao", line_name="% GTC")
         st.plotly_chart(fig_gtc_nv, use_container_width=True)
@@ -749,6 +827,7 @@ with tab3:
     with gauge_col2:
         st.plotly_chart(create_gauge("Tỷ lệ GTC TikTok (%)", actual_tts, current_kpi_tts), use_container_width=True)
     with gauge_col3:
+        # ĐÃ SỬA: Không dùng inverse_color nữa vì ODR cao là tốt
         st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr), use_container_width=True)
 
     st.markdown("---")
@@ -935,7 +1014,7 @@ with tab4:
             elif ai_role_kd == "Góc nhìn Quản lý khu vực (AM)":
                 role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Phân tích 3 phần: 1. Đánh giá tốc độ chạy doanh thu của khu vực, 2. Cảnh báo tỷ lệ rớt đơn ở phễu khách hàng tiềm năng, 3. Đưa ra chỉ đạo thúc đẩy đội ngũ Nhân viên xử lý/Sales khu vực chốt deal khẩn cấp. Viết dứt khoát, máu lửa."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN SALES/XỬ LÝ ĐƠN. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.'
                 
             prompt_kd = f"""
             Khu vực: {buu_cuc_kd}. Chế độ xem: {view_type}
