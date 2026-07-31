@@ -81,7 +81,6 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    /* NÂNG CẤP CHỮ TAB MẠNH MẼ, IN ĐẬM VÀ TO HƠN */
     .stTabs [data-baseweb="tab"] {
         font-weight: 900 !important; font-size: 18px !important; border: 2px solid #007BFF !important;
         border-radius: 8px 8px 0px 0px !important; padding: 14px 26px !important;
@@ -171,9 +170,11 @@ def draw_combo_chart(df, x_col, bar_y, line_y, title, bar_name="Sản lượng",
 # 2. LẤY DỮ LIỆU TỪ GOOGLE SHEETS
 # ==========================================
 def parse_vn_num(val):
+    # NÂNG CẤP TRỌNG TÂM: Biến ô trống thành np.nan để hàm Mean bỏ qua hoàn toàn ô đó
+    if pd.isna(val): return np.nan
     val = str(val).replace('%', '').replace('đ', '').replace('VNĐ', '').replace(' ', '').strip()
-    if val in ['nan', 'None', '', '0', '0.0']: 
-        return 0.0
+    if val in ['nan', 'None', '', '-']: 
+        return np.nan
     if ',' in val and '.' in val:
         if val.rfind(',') > val.rfind('.'): 
             val = val.replace('.', '').replace(',', '.')
@@ -191,10 +192,9 @@ def parse_vn_num(val):
     try:
         return float(val)
     except:
-        return 0.0
+        return np.nan
 
 def clean_dataframe_numbers(df, text_cols):
-    df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
     for col in df.columns:
         if col not in text_cols:
             df[col] = df[col].apply(parse_vn_num)
@@ -205,6 +205,7 @@ def get_real_business_data():
     url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
         df_kd = pd.read_csv(url_kinhdoanh)
+        df_kd.columns = df_kd.columns.astype(str).str.strip().str.replace('\xa0', ' ')
         kd_mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục', 'Cửa hàng': 'Bưu Cục',
@@ -216,7 +217,6 @@ def get_real_business_data():
         
         df_kd = clean_dataframe_numbers(df_kd, text_cols=['Ngày', 'Bưu Cục'])
         df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'], errors='coerce')
-        # Loại bỏ khoảng trắng thừa
         df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str).str.strip()
         for req in ['Doanh Thu', 'Khách Liên Hệ', 'Khách Lên Đơn', 'Doanh Thu KH Mới']:
             if req not in df_kd.columns: df_kd[req] = 0.0
@@ -238,8 +238,12 @@ def get_real_data():
         df_vh_c = pd.read_csv(url_vh_ca)
         df_ns = pd.read_csv(url_nhansu)
         
+        df_vh_tq.columns = df_vh_tq.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        df_vh_c.columns = df_vh_c.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        df_ns.columns = df_ns.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        
         vh_mapping = {
-            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày tạo': 'Ngày',
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày tạo': 'Ngày', 'Ngày': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
             '%GTC': 'GTC', 'GTC (%)': 'GTC', 'Tỷ lệ GTC': 'GTC', '% GTC': 'GTC',
             'Trả hàng': 'Trả Hàng', 'Tỷ lệ trả hàng': 'Trả Hàng', '% Trả hàng': 'Trả Hàng',
@@ -252,9 +256,10 @@ def get_real_data():
         df_vh_c = df_vh_c.rename(columns=vh_mapping)
         
         ns_mapping = {
-            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
-            'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên',
+            'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên', 'Nhân Viên': 'Nhân Viên',
+            'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Loại Hàng': 'Loại Hàng',
             'GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', '% GTC': '%GTC',
             'Đơn giá': 'Đơn Giá', 'Số đơn': 'Số Đơn'
         }
@@ -269,6 +274,7 @@ def get_real_data():
         df_vh_c = clean_dataframe_numbers(df_vh_c, text_cols_vh)
         df_ns = clean_dataframe_numbers(df_ns, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
+        # Bù trừ cho các cột phần trăm để chống lỗi tàng hình
         for df_target in [df_vh_tq, df_vh_c]:
             for col in ['GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
                 if col in df_target.columns:
@@ -286,7 +292,6 @@ def get_real_data():
         df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'], errors='coerce')
         
         for df in [df_vh_tq, df_vh_c]:
-            # Ép kiểu và hút sạch khoảng trắng
             df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
             if 'Loại Hàng' not in df.columns: df['Loại Hàng'] = "Hàng Mới Ca 1"
             df['Loại Hàng'] = df['Loại Hàng'].astype(str).str.strip()
@@ -301,11 +306,18 @@ def get_real_data():
         if 'Loại Hàng' not in df_ns.columns: df_ns['Loại Hàng'] = "FULL"
         df_ns['Loại Hàng'] = df_ns['Loại Hàng'].astype(str).str.strip()
         
-        for req in ['Volume', 'Volume TTS', 'GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
+        # Những giá trị số đếm thì gán bằng 0.0, phần trăm gán bằng np.nan
+        for req in ['Volume', 'Volume TTS']:
             if req not in df_vh_tq.columns: df_vh_tq[req] = 0.0
             if req not in df_vh_c.columns: df_vh_c[req] = 0.0
-        for req in ['Số Đơn', 'Đơn Giá', '%GTC', 'LHH LTC', 'LHH GTC', 'LHH GTBTT']:
+        for req in ['GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
+            if req not in df_vh_tq.columns: df_vh_tq[req] = np.nan
+            if req not in df_vh_c.columns: df_vh_c[req] = np.nan
+            
+        for req in ['Số Đơn', 'LHH LTC', 'LHH GTC', 'LHH GTBTT']:
             if req not in df_ns.columns: df_ns[req] = 0.0
+        if 'Đơn Giá' not in df_ns.columns: df_ns['Đơn Giá'] = np.nan
+        if '%GTC' not in df_ns.columns: df_ns['%GTC'] = np.nan
             
         df_ns['Tổng Lương'] = df_ns['LHH LTC'] + df_ns['LHH GTC'] + df_ns['LHH GTBTT']
             
@@ -322,24 +334,28 @@ def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
     try:
         df = pd.read_csv(url_ns_gtc)
+        df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
         mapping = {
-            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
-            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục',
-            'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên'
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục', 'Bưu Cục': 'Bưu Cục',
+            'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên', 'Nhân Viên': 'Nhân Viên',
+            'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Phân loại': 'Loại Hàng', 'Loại Hàng': 'Loại Hàng'
         }
         df = df.rename(columns=mapping)
         if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
         
-        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên'])
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
-        # Ép kiểu và hút sạch khoảng trắng chống lỗi sai lệch bộ lọc
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         
         if 'Nhân Viên' in df.columns:
             df['Nhân Viên'] = df['Nhân Viên'].astype(str).str.strip()
         else:
             df['Nhân Viên'] = "Chưa phân loại"
+            
+        if 'Loại Hàng' in df.columns:
+            df['Loại Hàng'] = df['Loại Hàng'].astype(str).str.strip()
             
         for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
             if req not in df.columns: df[req] = 0.0
@@ -430,7 +446,6 @@ with tab1:
     with col3:
         loai_hang_vh = st.multiselect("Lọc Loại Hàng", ["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], default=["Hàng Mới Ca 1", "Hàng Mới Ca 2", "Hàng Tồn"], key="lh_vh")
 
-    # BỘ LỌC CHO BẢNG TỔNG QUAN (KHÔNG LỌC LOẠI HÀNG ĐỂ TRÁNH MẤT DỮ LIỆU)
     mask_vh_tq = pd.Series(True, index=df_vh_tongquan.index)
     if len(date_range_vh) == 2:
         mask_vh_tq &= (df_vh_tongquan['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_tongquan['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -438,7 +453,6 @@ with tab1:
         mask_vh_tq &= (df_vh_tongquan['Bưu Cục'] == buu_cuc_vh)
     df_vh_tq_filtered = df_vh_tongquan[mask_vh_tq].copy()
     
-    # BỘ LỌC CHO BẢNG CA (CÓ LỌC LOẠI HÀNG)
     mask_vh_ca = pd.Series(True, index=df_vh_ca.index)
     if len(date_range_vh) == 2:
         mask_vh_ca &= (df_vh_ca['Ngày'] >= pd.to_datetime(date_range_vh[0])) & (df_vh_ca['Ngày'] <= pd.to_datetime(date_range_vh[1]))
@@ -466,14 +480,17 @@ with tab1:
 
     if not df_trend_display.empty:
         df_trend_display = df_trend_display.sort_values('Ngày')
-        latest_vol = df_trend_display.iloc[-1]['Volume']
-        latest_gtc = df_trend_display.iloc[-1]['GTC']
+        latest_vol = df_trend_display.iloc[-1]['Volume'] if not df_trend_display.empty else 0.0
+        latest_gtc = df_trend_display.iloc[-1]['GTC'] if not df_trend_display.empty else 0.0
         
-        prev_vol = 0
-        prev_gtc = 0
-        if len(df_trend_display) > 1:
-            prev_vol = df_trend_display.iloc[-2]['Volume']
-            prev_gtc = df_trend_display.iloc[-2]['GTC']
+        latest_vol = latest_vol if pd.notna(latest_vol) else 0.0
+        latest_gtc = latest_gtc if pd.notna(latest_gtc) else 0.0
+        
+        prev_vol = df_trend_display.iloc[-2]['Volume'] if len(df_trend_display) > 1 else 0.0
+        prev_gtc = df_trend_display.iloc[-2]['GTC'] if len(df_trend_display) > 1 else 0.0
+        
+        prev_vol = prev_vol if pd.notna(prev_vol) else 0.0
+        prev_gtc = prev_gtc if pd.notna(prev_gtc) else 0.0
             
         st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333;'>So sánh kỳ gần nhất so với kỳ trước ({view_mode_vh}):</div>", unsafe_allow_html=True)
         m_col1, m_col2 = st.columns(2)
@@ -508,7 +525,7 @@ with tab1:
     with chart_col4:
         fig_odr = px.line(df_tts, x='Ngày', y='ODR', markers=True, title=f"Tỷ lệ Ontime TTS (ODR TikTokShop) ({view_mode_vh})")
         fig_odr.update_traces(line=dict(color='#28a745', width=4), marker=dict(size=10, color='#28a745', line=dict(width=2, color='white')))
-        fig_odr.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', yaxis=dict(range=[70, 100]), hovermode="x unified")
+        fig_odr.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified")
         fig_odr.update_yaxes(showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
         fig_odr.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"))
         st.plotly_chart(fig_odr, use_container_width=True)
@@ -554,11 +571,14 @@ with tab1:
             else:
                 role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Điều phối Vận hành gửi thông báo trực tiếp cho NHÓM NHÂN VIÊN XỬ LÝ (Điều hành kho) & GIAO HÀNG. Xưng hô thân thiện, tạo động lực (dùng từ "Mình" với "Mọi người" hoặc "Team"). Hãy chia làm 3 ý rõ ràng: 1. Đánh giá nhanh tình hình ca làm việc, 2. Ghi chú các điểm nóng cần anh em chú ý gấp, 3. Kêu gọi hành động ưu tiên cho hôm nay.'
                 
+            mean_gtc = df_vh_tq_filtered['GTC'].mean()
+            mean_odr = df_vh_tq_filtered['ODR'].mean()
+            
             prompt_vh = f"""
             Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
             - Tổng đơn: {df_vh_tq_filtered['Volume'].sum()}
-            - Tỷ lệ GTC: {df_vh_tq_filtered['GTC'].mean():.2f}%
-            - Tỷ lệ Ontime Giao TTS (ODR): {df_vh_tq_filtered['ODR'].mean():.2f}%
+            - Tỷ lệ GTC: {mean_gtc:.2f}%
+            - Tỷ lệ Ontime Giao TTS (ODR): {mean_odr:.2f}%
             
             (LƯU Ý QUAN TRỌNG CHO AI: ODR là tỷ lệ cam kết giao hàng đúng hạn với sàn Tiktokshop. Tỷ lệ này CÀNG CAO CÀNG TỐT. Thấp là tệ, rủi ro bị phạt.)
             {role_prompt}
@@ -570,19 +590,24 @@ with tab1:
 
 # ----------------- TAB 2: NĂNG SUẤT & LƯƠNG -----------------
 with tab2:
-    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+    f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
     with f_col1:
         date_range_ns = st.date_input("Khoảng thời gian (Nhân sự)", [df_nhansu['Ngày'].min(), df_nhansu['Ngày'].max()], key="date_ns")
     with f_col2:
+        lh_list = list(df_nhansu['Loại Hàng'].unique())
+        if not df_ns_gtc_raw.empty and 'Loại Hàng' in df_ns_gtc_raw.columns:
+            lh_list = list(set(lh_list + list(df_ns_gtc_raw['Loại Hàng'].unique())))
+        loai_hang_filter = st.multiselect("Lọc Loại Hàng", lh_list, default=[], key="lh_filter")
+    with f_col3:
         bc_list = ["Tất cả"] + list(df_nhansu['Bưu Cục'].unique())
         buu_cuc_ns = st.selectbox("Lọc Bưu cục", bc_list, key="bc_ns_tab2")
-    with f_col3:
+    with f_col4:
         if buu_cuc_ns == "Tất cả":
             nv_list = ["Tất cả"] + list(df_nhansu['Nhân Viên'].unique())
         else:
             nv_list = ["Tất cả"] + list(df_nhansu[df_nhansu['Bưu Cục'] == buu_cuc_ns]['Nhân Viên'].unique())
         nhan_vien_ns = st.selectbox("Lọc Nhân viên", nv_list, key="nv_ns_tab2")
-    with f_col4:
+    with f_col5:
         loai_luong_list = ['LHH LTC', 'LHH GTC', 'LHH GTBTT']
         loai_luong_filter = st.multiselect("Lọc Loại Lương", loai_luong_list, default=loai_luong_list, key="ll_filter")
 
@@ -593,12 +618,16 @@ with tab2:
         mask_ns &= (df_nhansu['Bưu Cục'] == buu_cuc_ns)
     if nhan_vien_ns != "Tất cả":
         mask_ns &= (df_nhansu['Nhân Viên'] == nhan_vien_ns)
+    if loai_hang_filter:
+        mask_ns &= (df_nhansu['Loại Hàng'].isin(loai_hang_filter))
         
     df_ns_filtered = df_nhansu[mask_ns].copy()
     
     mask_ns_no_date = pd.Series(True, index=df_nhansu.index)
     if buu_cuc_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Bưu Cục'] == buu_cuc_ns)
     if nhan_vien_ns != "Tất cả": mask_ns_no_date &= (df_nhansu['Nhân Viên'] == nhan_vien_ns)
+    if loai_hang_filter: mask_ns_no_date &= (df_nhansu['Loại Hàng'].isin(loai_hang_filter))
+    
     df_ns_base = df_nhansu[mask_ns_no_date].copy()
     
     selected_ll = loai_luong_filter if loai_luong_filter else loai_luong_list
@@ -607,7 +636,6 @@ with tab2:
 
     styled_header("PHÂN TÍCH ĐƠN GIÁ, NĂNG SUẤT & TỔNG LƯƠNG", "📈")
     
-    # === LOGIC SO SÁNH KỲ LƯƠNG ===
     max_date_ns = pd.to_datetime(date_range_ns[1]) if len(date_range_ns) == 2 else pd.to_datetime(date_range_ns[0])
     
     if max_date_ns.day <= 15:
@@ -629,8 +657,10 @@ with tab2:
     df_curr = df_ns_base[(df_ns_base['Ngày'] >= curr_start) & (df_ns_base['Ngày'] <= curr_end)]
     df_prev = df_ns_base[(df_ns_base['Ngày'] >= prev_start) & (df_ns_base['Ngày'] <= prev_end)]
     
-    avg_price_curr = df_curr['Đơn Giá'].mean() if not df_curr.empty else 0
-    avg_price_prev = df_prev['Đơn Giá'].mean() if not df_prev.empty else 0
+    avg_price_curr = df_curr['Đơn Giá'].mean()
+    avg_price_curr = avg_price_curr if pd.notna(avg_price_curr) else 0.0
+    avg_price_prev = df_prev['Đơn Giá'].mean()
+    avg_price_prev = avg_price_prev if pd.notna(avg_price_prev) else 0.0
     diff_price = avg_price_curr - avg_price_prev
     
     total_salary_curr = df_curr['Tổng Lương'].sum() if not df_curr.empty else 0
@@ -653,6 +683,9 @@ with tab2:
         mask_gtc = pd.Series(True, index=df_ns_gtc_raw.index)
         if buu_cuc_ns != "Tất cả": mask_gtc &= (df_ns_gtc_raw['Bưu Cục'] == buu_cuc_ns)
         if nhan_vien_ns != "Tất cả": mask_gtc &= (df_ns_gtc_raw['Nhân Viên'] == nhan_vien_ns)
+        if loai_hang_filter and 'Loại Hàng' in df_ns_gtc_raw.columns:
+            mask_gtc &= (df_ns_gtc_raw['Loại Hàng'].isin(loai_hang_filter))
+            
         df_ns_gtc_base = df_ns_gtc_raw[mask_gtc]
         
         df_n = df_ns_gtc_base[df_ns_gtc_base['Ngày'] == max_date_ns]
@@ -723,6 +756,7 @@ with tab2:
                 mask_gtc_chart &= (df_ns_gtc_raw['Ngày'] >= pd.to_datetime(date_range_ns[0])) & (df_ns_gtc_raw['Ngày'] <= pd.to_datetime(date_range_ns[1]))
             if buu_cuc_ns != "Tất cả": mask_gtc_chart &= (df_ns_gtc_raw['Bưu Cục'] == buu_cuc_ns)
             if nhan_vien_ns != "Tất cả": mask_gtc_chart &= (df_ns_gtc_raw['Nhân Viên'] == nhan_vien_ns)
+            if loai_hang_filter and 'Loại Hàng' in df_ns_gtc_raw.columns: mask_gtc_chart &= (df_ns_gtc_raw['Loại Hàng'].isin(loai_hang_filter))
             
             df_gtc_filtered = df_ns_gtc_raw[mask_gtc_chart].copy()
             df_gtc_nv = df_gtc_filtered.groupby('Ngày').agg({'Đơn giao tính lương': 'sum', 'Số đơn gán Giao': 'sum'}).reset_index()
@@ -826,9 +860,13 @@ with tab3:
         mask_kpi &= (df_vh_tongquan['Bưu Cục'] == buu_cuc_kpi)
     df_kpi_filtered = df_vh_tongquan[mask_kpi].copy()
 
-    actual_gtc = df_kpi_filtered['GTC'].mean() if not df_kpi_filtered.empty else 0
-    actual_tts = df_kpi_filtered['GTC_TTS'].mean() if not df_kpi_filtered.empty else 0
-    actual_odr = df_kpi_filtered['ODR'].mean() if not df_kpi_filtered.empty else 0
+    actual_gtc = df_kpi_filtered['GTC'].mean() if not df_kpi_filtered.empty else np.nan
+    actual_tts = df_kpi_filtered['GTC_TTS'].mean() if not df_kpi_filtered.empty else np.nan
+    actual_odr = df_kpi_filtered['ODR'].mean() if not df_kpi_filtered.empty else np.nan
+    
+    actual_gtc = actual_gtc if pd.notna(actual_gtc) else 0.0
+    actual_tts = actual_tts if pd.notna(actual_tts) else 0.0
+    actual_odr = actual_odr if pd.notna(actual_odr) else 0.0
     
     current_kpi_gtc = st.session_state.kpi_gtc_dict.get(buu_cuc_kpi, 70.0)
     current_kpi_tts = st.session_state.kpi_tts_dict.get(buu_cuc_kpi, 80.0)
@@ -837,9 +875,9 @@ with tab3:
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target):
         steps = [
-            {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
-            {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
-            {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
+            {'range': [0, target * 0.8], 'color': "#FF7F50"},
+            {'range': [target * 0.8, target], 'color': "#48CAE4"},
+            {'range': [target, 100], 'color': "#00F2FE"}
         ]
         delta_inc = "#00F2FE"
         delta_dec = "#FF7F50"
@@ -850,7 +888,7 @@ with tab3:
             delta = {'reference': target, 'increasing': {'color': delta_inc}, 'decreasing': {'color': delta_dec}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#333", 'tickfont': dict(weight="bold")},
-                'bar': {'color': "#2C3E50", 'thickness': 0.25}, # Kim đo đổi thành Xanh Navy Đậm cho nổi bật
+                'bar': {'color': "#2C3E50", 'thickness': 0.25},
                 'steps': steps,
                 'borderwidth': 2,
                 'bordercolor': "#e2e2e2",
@@ -864,7 +902,6 @@ with tab3:
     with gauge_col2:
         st.plotly_chart(create_gauge("Tỷ lệ GTC TikTok (%)", actual_tts, current_kpi_tts), use_container_width=True)
     with gauge_col3:
-        # ĐÃ SỬA: Không dùng inverse_color nữa vì ODR cao là tốt
         st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr), use_container_width=True)
 
     st.markdown("---")
