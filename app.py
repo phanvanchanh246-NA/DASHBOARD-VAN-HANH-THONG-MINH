@@ -81,10 +81,12 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    /* NÂNG CẤP CHỮ TAB MẠNH MẼ, IN ĐẬM VÀ TO HƠN */
     .stTabs [data-baseweb="tab"] {
-        font-weight: 800 !important; font-size: 16px !important; border: 2px solid #007BFF !important;
-        border-radius: 8px 8px 0px 0px !important; padding: 12px 24px !important;
+        font-weight: 900 !important; font-size: 18px !important; border: 2px solid #007BFF !important;
+        border-radius: 8px 8px 0px 0px !important; padding: 14px 26px !important;
         background-color: #ffffff !important; color: #0056b3 !important;
+        text-transform: uppercase; letter-spacing: 0.5px;
     }
     .stTabs [aria-selected="true"] {
         background-color: #007BFF !important; color: white !important;
@@ -381,8 +383,10 @@ with tab1:
 
     styled_header("1. TỔNG QUAN GTC VÀ TỶ LỆ TRẢ HÀNG", "🌍")
     
-    view_mode_vh = st.radio("Chế độ xem Tổng quan:", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], horizontal=True, key="view_mode_vh")
+    # NÂNG CẤP CHẾ ĐỘ XEM: ÁP DỤNG CHO TOÀN BỘ CÁC BẢNG TRONG TAB 1
+    view_mode_vh = st.radio("Chế độ xem (Áp dụng toàn Tab):", ["Theo Ngày", "Theo Tuần", "Theo Tháng"], horizontal=True, key="view_mode_vh")
     
+    # --- Áp dụng cho Biểu đồ 1 ---
     df_trend_display = df_vh_tq_filtered.copy()
     if view_mode_vh == "Theo Tuần":
         df_trend_display['Period'] = df_trend_display['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
@@ -425,12 +429,20 @@ with tab1:
 
     styled_header("2. PHÂN TÍCH TIKTOK SHOP & ONTIME GIAO TTS (ODR)", "🛒")
     chart_col3, chart_col4 = st.columns(2)
-    df_tts = df_vh_tq_filtered.groupby('Ngày').agg({'Volume TTS': 'sum', 'GTC_TTS': 'mean', 'ODR': 'mean'}).reset_index()
+    
+    # --- Áp dụng chế độ xem cho Biểu đồ 2 (Tiktok Shop) ---
+    df_tts_base = df_vh_tq_filtered.copy()
+    if view_mode_vh == "Theo Tuần":
+        df_tts_base['Ngày'] = df_tts_base['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
+    elif view_mode_vh == "Theo Tháng":
+        df_tts_base['Ngày'] = df_tts_base['Ngày'].dt.to_period('M').apply(lambda r: r.start_time)
+    df_tts = df_tts_base.groupby('Ngày').agg({'Volume TTS': 'sum', 'GTC_TTS': 'mean', 'ODR': 'mean'}).reset_index()
+    
     with chart_col3:
-        fig_tts = draw_combo_chart(df_tts, 'Ngày', 'Volume TTS', 'GTC_TTS', "Tỷ lệ GTC TiktokShop (TTS)", bar_name="Sản lượng TTS", line_name="% GTC TTS")
+        fig_tts = draw_combo_chart(df_tts, 'Ngày', 'Volume TTS', 'GTC_TTS', f"Tỷ lệ GTC TiktokShop ({view_mode_vh})", bar_name="Sản lượng TTS", line_name="% GTC TTS")
         st.plotly_chart(fig_tts, use_container_width=True)
     with chart_col4:
-        fig_odr = px.line(df_tts, x='Ngày', y='ODR', markers=True, title="Tỷ lệ Ontime TTS (ODR TikTokShop)")
+        fig_odr = px.line(df_tts, x='Ngày', y='ODR', markers=True, title=f"Tỷ lệ Ontime TTS (ODR TikTokShop) ({view_mode_vh})")
         fig_odr.update_traces(line=dict(color='#28a745', width=4), marker=dict(size=10, color='#28a745', line=dict(width=2, color='white')))
         fig_odr.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', yaxis=dict(range=[70, 100]), hovermode="x unified")
         fig_odr.update_yaxes(showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
@@ -438,9 +450,17 @@ with tab1:
         st.plotly_chart(fig_odr, use_container_width=True)
 
     styled_header("3. NĂNG SUẤT GIAO THEO CA LÀM VIỆC", "🕒")
-    df_ca = df_vh_ca_filtered.groupby(['Ngày', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
     
-    df_ca['TrụcX'] = df_ca['Ngày'].dt.strftime('%d/%m') + " - " + df_ca['Ca']
+    # --- Áp dụng chế độ xem cho Biểu đồ 3 (Năng suất theo Ca) ---
+    df_ca_base = df_vh_ca_filtered.copy()
+    if view_mode_vh == "Theo Tuần":
+        df_ca_base['Ngày'] = df_ca_base['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
+    elif view_mode_vh == "Theo Tháng":
+        df_ca_base['Ngày'] = df_ca_base['Ngày'].dt.to_period('M').apply(lambda r: r.start_time)
+    df_ca = df_ca_base.groupby(['Ngày', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
+    
+    fmt = '%m/%Y' if view_mode_vh == "Theo Tháng" else '%d/%m'
+    df_ca['TrụcX'] = df_ca['Ngày'].dt.strftime(fmt) + " - " + df_ca['Ca']
     
     fig_ca = make_subplots(specs=[[{"secondary_y": True}]])
     colors_bar = ['#007BFF', '#17a2b8', '#6c757d']
@@ -452,7 +472,7 @@ with tab1:
         fig_ca.add_trace(go.Bar(x=df_ca_sub['TrụcX'], y=df_ca_sub['Volume'], name=f"Volume {ca_name}", marker_color=c_bar, opacity=0.85), secondary_y=False)
         fig_ca.add_trace(go.Scatter(x=df_ca_sub['TrụcX'], y=df_ca_sub['GTC'], name=f"%GTC {ca_name}", mode='lines+markers', line=dict(color=c_line, width=3), marker=dict(size=8, color=c_line, line=dict(width=1, color='white'))), secondary_y=True)
 
-    fig_ca.update_layout(title=dict(text="Sản Lượng và Tỷ Lệ GTC Theo Ca Làm Việc", font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified", barmode='group', legend=dict(font=dict(weight="bold")))
+    fig_ca.update_layout(title=dict(text=f"Sản Lượng và Tỷ Lệ GTC Theo Ca Làm Việc ({view_mode_vh})", font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified", barmode='group', legend=dict(font=dict(weight="bold")))
     fig_ca.update_yaxes(title_text="Sản lượng", secondary_y=False, showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
     fig_ca.update_yaxes(title_text="% GTC", secondary_y=True, range=[0, 100], showgrid=False, title_font=dict(weight="bold"))
     fig_ca.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"))
@@ -615,7 +635,6 @@ with tab3:
     styled_header("CÀI ĐẶT & THEO DÕI KPI VẬN HÀNH", "🎯")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        # BỔ SUNG YÊU CẦU: Thêm "Grand Total" vào chọn Bưu cục ở Tab KPI
         bc_list_kpi = ["Tất cả", "Grand Total"] + [x for x in df_vh_tongquan['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
         target_bc_kpi = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI:", bc_list_kpi, key="set_bc_kpi_tab3")
         
@@ -654,22 +673,24 @@ with tab3:
 
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target, inverse_color=False):
+        # NÂNG CẤP BẢNG MÀU GAUGE: Tươi Sáng & Năng Động (Light blue, Coral, Sparkly Teal)
         if not inverse_color:
             steps = [
-                {'range': [0, target * 0.8], 'color': "#ffeaeb"},
-                {'range': [target * 0.8, target], 'color': "#fff3cd"},
-                {'range': [target, 100], 'color': "#d4edda"}
+                {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
+                {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
+                {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
             ]
-            delta_inc = "#28a745"
-            delta_dec = "#FF3333"
+            delta_inc = "#00F2FE"
+            delta_dec = "#FF7F50"
         else:
+            # Nghịch đảo (Cho ODR: Càng thấp càng tốt)
             steps = [
-                {'range': [0, target], 'color': "#d4edda"},
-                {'range': [target, target * 1.5], 'color': "#fff3cd"},
-                {'range': [target * 1.5, 100], 'color': "#ffeaeb"}
+                {'range': [0, target], 'color': "#00F2FE"},
+                {'range': [target, target * 1.5], 'color': "#48CAE4"},
+                {'range': [target * 1.5, 100], 'color': "#FF7F50"}
             ]
-            delta_inc = "#FF3333"
-            delta_dec = "#28a745"
+            delta_inc = "#FF7F50"
+            delta_dec = "#00F2FE"
             
         fig = go.Figure(go.Indicator(
             mode = "gauge+number+delta", value = value, domain = {'x': [0, 1], 'y': [0, 1]},
@@ -677,7 +698,7 @@ with tab3:
             delta = {'reference': target, 'increasing': {'color': delta_inc}, 'decreasing': {'color': delta_dec}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#333", 'tickfont': dict(weight="bold")},
-                'bar': {'color': "#007BFF", 'thickness': 0.25},
+                'bar': {'color': "#2C3E50", 'thickness': 0.25}, # Kim đo đổi thành Xanh Navy Đậm cho nổi bật
                 'steps': steps,
                 'borderwidth': 2,
                 'bordercolor': "#e2e2e2",
@@ -693,11 +714,26 @@ with tab3:
     with gauge_col3:
         st.plotly_chart(create_gauge("Ontime Giao TTS ODR (%)", actual_odr, current_kpi_odr, inverse_color=True), use_container_width=True)
 
-    st.markdown("**BẢNG THEO DÕI HOÀN THÀNH KPI THEO NGÀY**")
+    # NÂNG CẤP TIÊU ĐỀ BẢNG KPI: Bắt mắt hơn
+    st.markdown("---")
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #00B4D8, #0077B6); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+            <h3 style="color: white; margin: 0; font-weight: 900; text-transform: uppercase;">📊 BẢNG THEO DÕI HOÀN THÀNH KPI THEO NGÀY</h3>
+        </div>
+    """, unsafe_allow_html=True)
+    
     df_kpi_table = df_kpi_filtered.groupby('Ngày').agg({'GTC':'mean', 'GTC_TTS':'mean', 'ODR':'mean'}).reset_index()
     df_kpi_table['Ngày'] = df_kpi_table['Ngày'].dt.strftime('%d-%m-%Y')
     df_kpi_table['% Đạt KPI GTC'] = (df_kpi_table['GTC'] / current_kpi_gtc) * 100 if current_kpi_gtc > 0 else 0
-    st.dataframe(df_kpi_table.style.format({"GTC": "{:.2f}%", "GTC_TTS": "{:.2f}%", "ODR": "{:.2f}%", "% Đạt KPI GTC": "{:.1f}%"}), use_container_width=True)
+    
+    # NÂNG CẤP GIAO DIỆN BẢNG KPI:
+    styled_kpi_table = df_kpi_table.style.set_properties(**{
+        'background-color': '#f8fdff', 
+        'color': '#003f5c', 
+        'border-color': '#90e0ef'
+    }).format({"GTC": "{:.2f}%", "GTC_TTS": "{:.2f}%", "ODR": "{:.2f}%", "% Đạt KPI GTC": "{:.1f}%"})
+    
+    st.dataframe(styled_kpi_table, use_container_width=True)
 
     if st.button("🔍 AI Đánh giá mức độ đạt KPI", type="primary", key="btn_ai_kpi"):
         with st.spinner("🔄 AI đang đối chiếu số liệu với mục tiêu KPI..."):
@@ -716,7 +752,6 @@ with tab4:
     styled_header("BÁO CÁO DOANH THU & KHÁCH HÀNG MỚI", "💰")
     
     with st.expander("⚙️ ĐIỀU CHỈNH KPI DOANH THU (Sẽ tự động lưu lại theo từng Khu vực/Bưu cục)", expanded=True):
-        # BỔ SUNG YÊU CẦU: Thêm "Grand Total" vào chọn Bưu cục ở Tab Kinh Doanh
         bc_list_kd = ["Tất cả", "Grand Total"] + [x for x in df_kinhdoanh['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
         target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", bc_list_kd, key="set_bc_kd_tab4")
         
@@ -810,7 +845,6 @@ with tab4:
         fig_funnel.update_layout(title=dict(text=f"Phễu chuyển đổi KH Mới ({view_type})", font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
         st.plotly_chart(fig_funnel, use_container_width=True)
 
-    # BỔ SUNG YÊU CẦU 3: Bảng danh sách khách hàng tiềm năng - Bắt mắt & Tự động lọc
     st.markdown("---")
     st.markdown("""
         <div style="background: linear-gradient(135deg, #FF8C00, #ff5722); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
@@ -820,17 +854,14 @@ with tab4:
     """, unsafe_allow_html=True)
     
     if not df_khachhang.empty:
-        # Tìm cột chứa chữ 'loại khách hàng' để tránh sai sót nếu tiêu đề bảng có thêm khoảng trắng
         target_col = [c for c in df_khachhang.columns if 'loại khách hàng' in str(c).lower()]
         if target_col:
-            # Lọc bảng chỉ lấy những dòng có chứa từ "tiềm năng"
             df_kh_filtered = df_khachhang[df_khachhang[target_col[0]].astype(str).str.contains('tiềm năng', case=False, na=False)]
         else:
             df_kh_filtered = df_khachhang
     else:
         df_kh_filtered = df_khachhang
         
-    # Áp dụng màu sắc cho bảng dữ liệu
     styled_df = df_kh_filtered.style.set_properties(**{
         'background-color': '#fff9f0', 
         'color': '#333333', 
