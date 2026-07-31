@@ -476,15 +476,15 @@ with tab1:
 
     if st.button("🔍 Nhờ AI Phân tích Vận Hành", type="primary", key="btn_ai_vh"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
-            # SỬA LẠI PROMPT AI: DẠY CHO AI HIỂU ODR LÀ TỐT KHÔNG PHẢI TỒN KHO
+            # SỬA LẠI PROMPT: AI là trợ lý, thông báo thân thiện cho Nhân viên
             prompt_vh = f"""
             Dữ liệu Vận Hành (Đã lọc theo bưu cục {buu_cuc_vh}): 
             - Tổng đơn: {df_vh_tq_filtered['Volume'].sum()}
             - Tỷ lệ GTC: {df_vh_tq_filtered['GTC'].mean():.2f}%
             - Tỷ lệ Ontime Giao TTS (ODR): {df_vh_tq_filtered['ODR'].mean():.2f}%
             
-            (LƯU Ý QUAN TRỌNG CHO AI: ODR là tỷ lệ cam kết giao hàng đúng hạn với sàn Tiktokshop. Tỷ lệ này CÀNG CAO CÀNG TỐT, thể hiện việc giao hàng đúng hạn rất tốt. Thấp là tệ, rủi ro bị phạt.)
-            Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng quan, 2. Phân tích Rủi ro, 3. Đề xuất hành động. Viết tiếng Việt chuẩn, không bỏ dở câu.
+            (LƯU Ý QUAN TRỌNG CHO AI: ODR là tỷ lệ cam kết giao hàng đúng hạn với sàn Tiktokshop. Tỷ lệ này CÀNG CAO CÀNG TỐT. Thấp là tệ, rủi ro bị phạt.)
+            Nhiệm vụ: Đóng vai Trợ lý Điều phối Vận hành gửi thông báo trực tiếp cho NHÓM NHÂN VIÊN XỬ LÝ. Xưng hô thân thiện, tạo động lực (dùng từ "Mình" với "Mọi người" hoặc "Team"). Hãy chia làm 3 ý rõ ràng: 1. Đánh giá nhanh tình hình ca làm việc, 2. Ghi chú các điểm nóng cần anh em chú ý gấp, 3. Kêu gọi hành động ưu tiên cho hôm nay.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_vh_result = get_ai_analysis(prompt_vh)
@@ -617,12 +617,13 @@ with tab2:
 
     if st.button("🔍 Nhờ AI Phân tích Nhân sự & Chi phí", type="primary", key="btn_ai_ns"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Năng Suất..."):
+            # SỬA LẠI PROMPT: AI là trợ lý, thông báo thân thiện cho Nhân viên
             prompt_ns = f"""
             Dữ liệu Năng suất Nhân sự (Đã lọc): 
             - Tổng đơn đã giao: {df_ns_filtered['Số Đơn'].sum()}
             - Đơn giá trung bình: {df_ns_filtered['Đơn Giá'].mean():,.0f} VNĐ
             - Kỳ lương: Hiện tại {curr_name} đang là {avg_price_curr:,.0f} đ (Tăng/giảm {diff_price:,.0f} so với kỳ trước).
-            Nhiệm vụ: Đóng vai Quản lý nhân sự. Đánh giá chuyên sâu 3 phần: 1. Đánh giá năng suất, 2. Rủi ro chi phí, 3. Đề xuất nhân sự.
+            Nhiệm vụ: Đóng vai Trợ lý Nhân sự gửi thông báo cho NHÓM NHÂN VIÊN XỬ LÝ. Xưng hô thân thiện, tạo động lực (dùng "Mình" với "Mọi người" hoặc "Anh em"). Hãy chia 3 phần: 1. Ghi nhận công sức/năng suất của team, 2. Thông báo nhanh tình hình thu nhập/đơn giá, 3. Chia sẻ bí kíp/lời khuyên để anh em tăng thu nhập.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_ns_result = get_ai_analysis(prompt_ns)
@@ -724,7 +725,7 @@ with tab3:
 
     if st.button("🔍 AI Đánh giá mức độ đạt KPI", type="primary", key="btn_ai_kpi"):
         with st.spinner("🔄 AI đang đối chiếu số liệu với mục tiêu KPI..."):
-            # SỬA LẠI PROMPT AI: DẠY CHO AI HIỂU ODR LÀ TỐT, PHẢI LỚN HƠN MỤC TIÊU MỚI ĐẠT
+            # SỬA LẠI PROMPT: AI là trợ lý, thông báo thân thiện cho Nhân viên
             prompt_kpi = f"""
             Khu vực ({buu_cuc_kpi}) - Mục tiêu KPI: 
             - GTC > {current_kpi_gtc}% 
@@ -738,7 +739,7 @@ with tab3:
             
             (LƯU Ý DÀNH CHO AI: ODR là tỷ lệ cam kết giao hàng đúng hạn với sàn Tiktokshop. Chỉ số ODR Thực tế phải LỚN HƠN HOẶC BẰNG Mục tiêu KPI thì mới được coi là hoàn thành xuất sắc. Nếu thấp hơn là trượt KPI, đang làm tệ).
             
-            Đóng vai Giám đốc kiểm soát. Đưa ra: 1. Đánh giá nhanh việc đạt/trượt KPI, 2. Cảnh báo nghiêm trọng nếu trượt, 3. Yêu cầu hành động khẩn.
+            Nhiệm vụ: Đóng vai Trợ lý Báo cáo gửi tin nhắn cho NHÓM NHÂN VIÊN XỬ LÝ. Xưng hô thân thiện, cổ vũ (dùng "Mình" với "Mọi người" hoặc "Team"). Hãy chia 3 phần: 1. Tuyên dương team nếu đạt KPI hoặc Động viên/an ủi nếu trượt, 2. Chỉ ra điểm nghẽn hiện tại, 3. Phân công mục tiêu chạy gấp hôm nay để giữ vững phong độ/kéo lại số.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_kpi_result = get_ai_analysis(prompt_kpi)
@@ -870,10 +871,11 @@ with tab4:
 
     if st.button("🔍 AI Cố vấn Kinh Doanh & Sales", type="primary", key="btn_ai_kd"):
         with st.spinner("🔄 AI đang phân tích hiệu suất Kinh Doanh..."):
+            # SỬA LẠI PROMPT: AI là trợ lý, thông báo thân thiện cho Nhân viên
             prompt_kd = f"""
             Khu vực: {buu_cuc_kd}. Chế độ xem: {view_type}
             Phân tích Kinh doanh: KPI: {kpi_dt_val:,.0f}. Thực tế: {rev_n:,.0f}. So với kỳ trước: {rev_prev:,.0f}. Phễu KH: {total_lh} liên hệ -> {total_ld} lên đơn.
-            Nhiệm vụ: Đóng vai Giám đốc Kinh doanh. Hãy phân tích 3 phần: 1. Lời khen/Cảnh báo việc chạy số, 2. Đánh giá tỷ lệ chốt sale, 3. Đề xuất chiến lược khẩn cấp.
+            Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN SALES/XỬ LÝ ĐƠN. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
             """
             st.session_state.ai_kd_result = get_ai_analysis(prompt_kd)
