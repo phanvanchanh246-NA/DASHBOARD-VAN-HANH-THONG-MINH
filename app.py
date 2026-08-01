@@ -30,6 +30,7 @@ if "ai_vh_result" not in st.session_state: st.session_state.ai_vh_result = "Bấ
 if "ai_ns_result" not in st.session_state: st.session_state.ai_ns_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
 if "ai_kpi_result" not in st.session_state: st.session_state.ai_kpi_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
 if "ai_kd_result" not in st.session_state: st.session_state.ai_kd_result = "Bấm nút '🔍 Nhờ AI Phân tích' để xem cố vấn chi tiết."
+if "ai_td_result" not in st.session_state: st.session_state.ai_td_result = "Bấm nút '🔍 AI Đánh giá Chương trình Thi đua' để xem cố vấn chi tiết."
 
 # Bộ nhớ cho Chatbot
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
@@ -325,7 +326,7 @@ def get_real_data():
 
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT (THÁNG HIỆN TẠI)
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT (THÁNG HIỆN TẠI VÀ CHUNG CHO THÁNG 06 NẾU LỌC LÙI NGÀY)
 @st.cache_data(ttl=60)
 def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
@@ -366,10 +367,10 @@ def get_ns_gtc_data():
 
 df_ns_gtc_raw = get_ns_gtc_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC (THÁNG 06)
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC (HIỆN TẠI LẤY CÙNG 1 LINK 1862143946 THEO YÊU CẦU)
 @st.cache_data(ttl=60)
 def get_prev_month_gtc_data():
-    url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1588522442"
+    url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
     try:
         df = pd.read_csv(url_ns_gtc_prev)
         df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
@@ -379,15 +380,14 @@ def get_prev_month_gtc_data():
             'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên', 'Nhân Viên': 'Nhân Viên', 'Tên Nhân Viên': 'Nhân Viên',
             'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Phân loại': 'Loại Hàng', 'Loại Hàng': 'Loại Hàng',
             'Đơn giao tính lương': 'Đơn giao tính lương', 'Số đơn giao tính lương': 'Đơn giao tính lương', 'Đơn Giao Tính Lương': 'Đơn giao tính lương', 'Đơn giao': 'Đơn giao tính lương', 'Số đơn GTC': 'Đơn giao tính lương', 'Đơn GTC': 'Đơn giao tính lương',
-            'Số đơn gán Giao': 'Số đơn gán Giao', 'Số đơn gán giao': 'Số đơn gán Giao', 'Số đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán Giao': 'Số đơn gán Giao', 'Đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán': 'Số đơn gán Giao',
-            '%GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', 'GTC': '%GTC', '% GTC': '%GTC', 'Tỉ lệ GTC': '%GTC'
+            'Số đơn gán Giao': 'Số đơn gán Giao', 'Số đơn gán giao': 'Số đơn gán Giao', 'Số đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán Giao': 'Số đơn gán Giao', 'Đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán': 'Số đơn gán Giao'
         }
         df = df.rename(columns=mapping)
         if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
         if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
         
-        if 'Ngày' in df.columns:
-            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
+        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         
@@ -400,25 +400,11 @@ def get_prev_month_gtc_data():
             df['Loại Hàng'] = df['Loại Hàng'].astype(str).str.strip()
             
         for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
-            if req not in df.columns: 
-                df[req] = 0.0
-            else:
-                df[req] = pd.to_numeric(df[req].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                
-        if '%GTC' not in df.columns: 
-            df['%GTC'] = np.nan
-        else:
-            df['%GTC'] = pd.to_numeric(df['%GTC'].astype(str).str.replace('%', '').str.replace(',', '.'), errors='coerce')
+            if req not in df.columns: df[req] = 0.0
             
-        if '%GTC' in df.columns:
-            valid_vals = df[df['%GTC'] > 0]['%GTC'].dropna()
-            if not valid_vals.empty and valid_vals.max() <= 1.2:
-                df['%GTC'] = df['%GTC'] * 100
-                
-        return df
+        return df.dropna(subset=['Ngày'])
     except Exception as e:
-        # Đảm bảo trả về DataFrame trống có đầy đủ cột để tránh KeyError
-        return pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao', '%GTC'])
+        return pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao'])
 
 df_ns_prev_raw = get_prev_month_gtc_data()
 
@@ -1006,9 +992,9 @@ with tab3:
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target):
         steps = [
-            {'range': [0, target * 0.8], 'color': "#FF7F50"},
-            {'range': [target * 0.8, target], 'color': "#48CAE4"},
-            {'range': [target, 100], 'color': "#00F2FE"}
+            {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
+            {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
+            {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
         ]
         delta_inc = "#00F2FE"
         delta_dec = "#FF7F50"
@@ -1019,7 +1005,7 @@ with tab3:
             delta = {'reference': target, 'increasing': {'color': delta_inc}, 'decreasing': {'color': delta_dec}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#333", 'tickfont': dict(weight="bold")},
-                'bar': {'color': "#2C3E50", 'thickness': 0.25},
+                'bar': {'color': "#2C3E50", 'thickness': 0.25}, # Kim đo đổi thành Xanh Navy Đậm cho nổi bật
                 'steps': steps,
                 'borderwidth': 2,
                 'bordercolor': "#e2e2e2",
@@ -1270,8 +1256,17 @@ with tab5:
     df_t7 = df_ns_gtc_raw.copy()
     df_t6 = df_ns_prev_raw.copy()
     
-    if len(date_range_t5) == 2 and not df_t7.empty and 'Ngày' in df_t7.columns:
-        df_t7 = df_t7[(df_t7['Ngày'] >= pd.to_datetime(date_range_t5[0])) & (df_t7['Ngày'] <= pd.to_datetime(date_range_t5[1]))]
+    if len(date_range_t5) == 2:
+        curr_start = pd.to_datetime(date_range_t5[0])
+        curr_end = pd.to_datetime(date_range_t5[1])
+        
+        if not df_t7.empty and 'Ngày' in df_t7.columns:
+            df_t7 = df_t7[(df_t7['Ngày'] >= curr_start) & (df_t7['Ngày'] <= curr_end)]
+            
+        if not df_t6.empty and 'Ngày' in df_t6.columns:
+            prev_end = curr_start.replace(day=1) - timedelta(days=1)
+            prev_start = prev_end.replace(day=1)
+            df_t6 = df_t6[(df_t6['Ngày'] >= prev_start) & (df_t6['Ngày'] <= prev_end)]
         
     if buu_cuc_t5 != "Tất cả":
         if not df_t7.empty and 'Bưu Cục' in df_t7.columns:
@@ -1383,7 +1378,42 @@ with tab5:
             })
             
             st.dataframe(styled_daily, use_container_width=True)
+            
+            st.markdown("---")
+            ai_role_td = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Thi Đua GTC):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_td")
+
+            if st.button("🔍 AI Đánh giá Chương trình Thi đua", type="primary", key="btn_ai_td"):
+                with st.spinner("🔄 AI đang phân tích dữ liệu Thi đua GTC..."):
+                    if ai_role_td == "Góc nhìn Giám Đốc":
+                        role_prompt = "Đóng vai Giám đốc vận hành. Đánh giá tổng quan hiệu suất thi đua của các bưu cục, vinh danh những nhân sự xuất sắc và chỉ ra các rủi ro năng suất từ nhóm xếp cuối."
+                    elif ai_role_td == "Góc nhìn Quản lý khu vực (AM)":
+                        role_prompt = "Đóng vai Quản lý khu vực (AM). Nhận xét trực diện bảng xếp hạng thi đua, đốc thúc các cá nhân đang ở thứ hạng thấp và có phương án điều phối ngay lập tức."
+                    else:
+                        role_prompt = 'Đóng vai Trợ lý Điều phối gửi thông báo cho đội Shipper/Nhân viên. Dùng xưng hô thân thiện ("Mình" với "Mọi người/Anh em"). Vinh danh top đầu, động viên top cuối cố gắng để đạt mốc thưởng >=80%.'
+                    
+                    top_3 = df_thi_dua.head(3)[['Nhân Viên', '%GTC Tháng 07', 'Tổng Điểm']].to_dict('records') if not df_thi_dua.empty else []
+                    bottom_3 = df_thi_dua.tail(3)[['Nhân Viên', '%GTC Tháng 07']].to_dict('records') if not df_thi_dua.empty else []
+                    
+                    d_start_td = date_range_t5[0].strftime('%d/%m/%Y') if len(date_range_t5) > 0 else ""
+                    d_end_td = date_range_t5[1].strftime('%d/%m/%Y') if len(date_range_t5) > 1 else d_start_td
+
+                    prompt_td = f"""
+                    Dữ liệu Thi đua GTC Đã Lọc:
+                    - Thời gian: {d_start_td} đến {d_end_td}
+                    - Bưu cục/Khu vực: {buu_cuc_t5}
+                    
+                    Top 3 Xuất sắc nhất: {top_3}
+                    Top 3 Cần cố gắng: {bottom_3}
+                    
+                    (LƯU Ý DÀNH CHO AI: Điều kiện nhận thưởng là %GTC Tháng 07 phải >= 80%. Tỷ lệ cải thiện tính bằng Tháng 07 / Tháng 06. Xếp hạng tổng dựa trên trung bình thứ hạng của 3 tiêu chí: Số lượng gán, %GTC, %Cải thiện. Xếp hạng càng thấp (1,2,3) thì càng giỏi).
+                    
+                    {role_prompt}
+                    Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
+                    """
+                    st.session_state.ai_td_result = get_ai_analysis(prompt_td)
+            render_ai_and_telegram(st.session_state.ai_td_result, "Thi Đua GTC", "td")
+            
         else:
             st.warning("⚠️ Dữ liệu không có cột Ngày để hiển thị bảng hằng ngày.")
     else:
-        st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất cho bộ lọc này.")
+        st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất (Tháng 07) cho Bưu Cục này.")
