@@ -456,7 +456,7 @@ st.divider()
 
 # ĐỊNH DẠNG CHUNG CHO DÒNG TIÊU ĐỀ BẢNG (HEADER)
 th_props = [
-    ('background-color', '#29B6F6'), # Xanh da trời nhạt, sáng
+    ('background-color', '#FF6600'), # Cam an toàn
     ('color', '#ffffff'),            # Chữ trắng tương phản
     ('font-weight', '900'),          # In đậm mạnh
     ('font-size', '15px'),           # Kích thước chữ
