@@ -273,7 +273,6 @@ def get_real_data():
         df_vh_c = clean_dataframe_numbers(df_vh_c, text_cols_vh)
         df_ns = clean_dataframe_numbers(df_ns, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
-        # Bù trừ cho các cột phần trăm để chống lỗi tàng hình
         for df_target in [df_vh_tq, df_vh_c]:
             for col in ['GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
                 if col in df_target.columns:
@@ -740,14 +739,29 @@ with tab2:
         
         gtc_m = calc_gtc(df_m)
         gtc_m_prev = calc_gtc(df_m_prev)
+        
+        sl_n = df_n['Đơn giao tính lương'].sum()
+        sl_n_prev = df_n_prev['Đơn giao tính lương'].sum()
+        sl_w = df_w['Đơn giao tính lương'].sum()
+        sl_w_prev = df_w_prev['Đơn giao tính lương'].sum()
+        sl_m = df_m['Đơn giao tính lương'].sum()
+        sl_m_prev = df_m_prev['Đơn giao tính lương'].sum()
+        
     else:
         gtc_n = gtc_n_prev = gtc_w = gtc_w_prev = gtc_m = gtc_m_prev = 0.0
+        sl_n = sl_n_prev = sl_w = sl_w_prev = sl_m = sl_m_prev = 0
 
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 25px;'>So sánh Năng suất %GTC (Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
     m_gtc1, m_gtc2, m_gtc3 = st.columns(3)
     m_gtc1.metric("Ngày (N vs N-1)", f"{gtc_n:.2f}%", f"{gtc_n - gtc_n_prev:.2f}% so với N-1")
     m_gtc2.metric("Tuần (W vs W-1)", f"{gtc_w:.2f}%", f"{gtc_w - gtc_w_prev:.2f}% so với W-1")
     m_gtc3.metric("Tháng (M vs M-1)", f"{gtc_m:.2f}%", f"{gtc_m - gtc_m_prev:.2f}% so với M-1")
+    
+    st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 25px;'>So sánh Sản Lượng GTC (Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
+    m_sl1, m_sl2, m_sl3 = st.columns(3)
+    m_sl1.metric("Ngày (N vs N-1)", f"{sl_n:,.0f} đơn", f"{sl_n - sl_n_prev:,.0f} đơn so với N-1")
+    m_sl2.metric("Tuần (W vs W-1)", f"{sl_w:,.0f} đơn", f"{sl_w - sl_w_prev:,.0f} đơn so với W-1")
+    m_sl3.metric("Tháng (M vs M-1)", f"{sl_m:,.0f} đơn", f"{sl_m - sl_m_prev:,.0f} đơn so với M-1")
 
     if not df_ns_gtc_raw.empty:
         mask_gtc_chart = pd.Series(True, index=df_ns_gtc_raw.index)
