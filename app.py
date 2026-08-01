@@ -1341,7 +1341,7 @@ with tab5:
             'Tổng Điểm': "{:.2f}",
             'Xếp Hạng Tổng': "{:.0f}"
         }).set_properties(**{
-            'background-color': '#FFF4E6',  # Vàng cam nhạt (Năng động)
+            'background-color': '#FFFFFF',  # Màu trắng
             'color': '#D35400',             # Cam đậm cháy
             'border-color': '#FF9F43',      # Viền cam sáng
             'font-weight': '600'            # Làm đậm các con số thi đua
