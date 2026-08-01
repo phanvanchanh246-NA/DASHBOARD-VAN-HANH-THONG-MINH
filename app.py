@@ -659,16 +659,16 @@ with tab2:
         curr_end = max_date_ns.replace(day=15)
         prev_end = curr_start - timedelta(days=1)
         prev_start = prev_end.replace(day=16)
-        curr_name = f"Kỳ 20 ({curr_start.month}/{curr_start.year})"
-        prev_name = f"Kỳ 05 ({prev_start.month}/{prev_start.year})"
+        curr_name = f"Kỳ 20 ({curr_start.month:02d}/{curr_start.year})"
+        prev_name = f"Kỳ 05 ({curr_start.month:02d}/{curr_start.year})"
     else:
         curr_start = max_date_ns.replace(day=16)
         next_m = (curr_start.replace(day=28) + timedelta(days=4)).replace(day=1)
         curr_end = next_m - timedelta(days=1)
         prev_start = max_date_ns.replace(day=1)
         prev_end = max_date_ns.replace(day=15)
-        curr_name = f"Kỳ 05 ({curr_start.month}/{curr_start.year})"
-        prev_name = f"Kỳ 20 ({prev_start.month}/{prev_start.year})"
+        curr_name = f"Kỳ 05 ({next_m.month:02d}/{next_m.year})"
+        prev_name = f"Kỳ 20 ({curr_start.month:02d}/{curr_start.year})"
         
     df_curr = df_ns_base[(df_ns_base['Ngày'] >= curr_start) & (df_ns_base['Ngày'] <= curr_end)]
     df_prev = df_ns_base[(df_ns_base['Ngày'] >= prev_start) & (df_ns_base['Ngày'] <= prev_end)]
