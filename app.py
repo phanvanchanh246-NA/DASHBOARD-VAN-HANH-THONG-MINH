@@ -387,9 +387,7 @@ def get_prev_month_gtc_data():
         if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
         
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
-        
-        if 'Ngày' in df.columns:
-            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         
@@ -404,8 +402,7 @@ def get_prev_month_gtc_data():
         for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
             if req not in df.columns: df[req] = 0.0
             
-        # KHÔNG SỬ DỤNG LỆNH df.dropna(subset=['Ngày']) ĐỂ TRÁNH LỖI XÓA DỮ LIỆU BẢNG TỔNG
-        return df
+        return df.dropna(subset=['Ngày'])
     except Exception as e:
         return pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao'])
 
@@ -1308,7 +1305,7 @@ with tab5:
         df_thi_dua = pd.merge(grp_t7, grp_t6[['Nhân Viên', col_prev]], on='Nhân Viên', how='left')
         df_thi_dua[col_prev] = df_thi_dua[col_prev].fillna(0.0)
         
-        # THAY ĐỔI LOGIC: TỶ LỆ CẢI THIỆN = PHÉP TRỪ (Tháng này - Tháng trước)
+        # TỶ LỆ CẢI THIỆN = PHÉP TRỪ
         df_thi_dua['Tỷ Lệ Cải Thiện'] = df_thi_dua[col_curr] - df_thi_dua[col_prev]
         
         df_thi_dua.rename(columns={'Số đơn gán Giao': 'Tổng Đơn Gán', 'Đơn giao tính lương': 'Tổng Đơn GTC'}, inplace=True)
@@ -1319,7 +1316,11 @@ with tab5:
         df_thi_dua['Xếp Hạng Cải Thiện'] = df_thi_dua['Tỷ Lệ Cải Thiện'].rank(method='min', ascending=False)
         
         df_thi_dua['Tổng Điểm'] = (df_thi_dua['Xếp Hạng Gán'] + df_thi_dua['Xếp Hạng %GTC'] + df_thi_dua['Xếp Hạng Cải Thiện']) / 3
-        df_thi_dua['Xếp Hạng Tổng'] = df_thi_dua['Tổng Điểm'].rank(method='min', ascending=True)
+        
+        # BỔ SUNG LOGIC TIE-BREAKER: Ưu tiên %GTC tháng hiện tại nếu bằng điểm
+        df_thi_dua['Tie_Breaker'] = -df_thi_dua[col_curr]
+        df_thi_dua['Xếp Hạng Tổng'] = df_thi_dua[['Tổng Điểm', 'Tie_Breaker']].apply(tuple, axis=1).rank(method='min')
+        df_thi_dua = df_thi_dua.drop(columns=['Tie_Breaker'])
         
         df_thi_dua['Đạt Điều Kiện Thưởng (>=80%)'] = np.where(df_thi_dua[col_curr] >= 80, '✅', '❌')
         
@@ -1333,16 +1334,17 @@ with tab5:
             'Tổng Đơn GTC': "{:,.0f}",
             col_curr: "{:.2f}%",
             col_prev: "{:.2f}%",
-            'Tỷ Lệ Cải Thiện': "{:+.2f}%",  # Hiển thị số âm/dương bằng phần trăm
+            'Tỷ Lệ Cải Thiện': "{:+.2f}%",
             'Xếp Hạng Gán': "{:.0f}",
             'Xếp Hạng %GTC': "{:.0f}",
             'Xếp Hạng Cải Thiện': "{:.0f}",
             'Tổng Điểm': "{:.2f}",
             'Xếp Hạng Tổng': "{:.0f}"
         }).set_properties(**{
-            'background-color': '#fff9f0', 
-            'color': '#333333', 
-            'border-color': '#ffcc80'
+            'background-color': '#FFF4E6',  # Vàng cam nhạt (Năng động)
+            'color': '#D35400',             # Cam đậm cháy
+            'border-color': '#FF9F43',      # Viền cam sáng
+            'font-weight': '600'            # Làm đậm các con số thi đua
         })
         
         st.dataframe(styled_thi_dua, use_container_width=True)
@@ -1356,7 +1358,7 @@ with tab5:
             
             grp_daily = df_daily.groupby(['Nhân Viên', 'Ngày', 'Ngày Str']).agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
             # BẢO VỆ CHIA KHÔNG
-            grp_daily['%GTC'] = (grp_daily['Đơn giao tính lương'] / grp_daily['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
+            grp_daily['%GTC'] = (grp_daily['Đơn giao tính lương'] / gr_daily['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
             
             pivot_daily = grp_daily.pivot(index='Nhân Viên', columns='Ngày Str', values=['Số đơn gán Giao', 'Đơn giao tính lương', '%GTC'])
             
@@ -1390,9 +1392,10 @@ with tab5:
                         format_dict_daily[col] = "{:,.0f}"
                         
             styled_daily = pivot_daily.style.format(format_dict_daily).set_properties(**{
-                'background-color': '#f8fdff', 
-                'color': '#003f5c', 
-                'border-color': '#90e0ef'
+                'background-color': '#E1F5FE',  # Xanh dương nhạt (Tươi sáng)
+                'color': '#0277BD',             # Xanh lam đậm
+                'border-color': '#29B6F6',      # Viền xanh da trời
+                'font-weight': '500'            # Làm rõ số liệu
             })
             
             st.dataframe(styled_daily, use_container_width=True)
