@@ -124,28 +124,7 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
-    # CHATBOT AI DẠY VIỆC
-    st.markdown("### 🤖 Trợ lý AI Riêng")
-    for chat in st.session_state.chat_history:
-        with st.chat_message(chat["role"]):
-            st.markdown(chat["content"])
-            
-    if prompt_chat := st.chat_input("Dạy AI hoặc đặt câu hỏi..."):
-        st.session_state.chat_history.append({"role": "user", "content": prompt_chat})
-        with st.chat_message("user"): st.markdown(prompt_chat)
-        
-        with st.chat_message("assistant"):
-            if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
-                st.error("Chưa cấu hình API Key.")
-            else:
-                try:
-                    genai.configure(api_key=GEMINI_API_KEY.strip())
-                    model_chat = genai.GenerativeModel('gemini-3.6-flash')
-                    response_chat = model_chat.generate_content(f"Người dùng nói: {prompt_chat}. Hãy trả lời ngắn gọn, tập trung vào logistics.")
-                    st.markdown(response_chat.text)
-                    st.session_state.chat_history.append({"role": "assistant", "content": response_chat.text})
-                except Exception as e:
-                    st.error(f"Lỗi AI: {e}")
+    st.markdown("👨‍💻 **Tài khoản:** Quản trị viên")
 
 def styled_header(text, icon=""):
     st.markdown(f"""
@@ -387,7 +366,9 @@ def get_prev_month_gtc_data():
         if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
         
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
-        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        
+        if 'Ngày' in df.columns:
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         
@@ -402,7 +383,8 @@ def get_prev_month_gtc_data():
         for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
             if req not in df.columns: df[req] = 0.0
             
-        return df.dropna(subset=['Ngày'])
+        # KHÔNG SỬ DỤNG LỆNH df.dropna(subset=['Ngày']) ĐỂ TRÁNH LỖI XÓA DỮ LIỆU BẢNG TỔNG
+        return df
     except Exception as e:
         return pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao'])
 
@@ -421,7 +403,7 @@ df_khachhang = get_customer_data()
 
 
 # ==========================================
-# 3. HÀM TRỢ LÝ AI
+# 3. HÀM TRỢ LÝ AI & CSS ĐỊNH DẠNG BẢNG
 # ==========================================
 st.markdown("""
     <div class="banner">
@@ -472,10 +454,23 @@ def render_ai_and_telegram(ai_result, tab_name, key_suffix):
 
 st.divider()
 
+# ĐỊNH DẠNG CHUNG CHO DÒNG TIÊU ĐỀ BẢNG (HEADER)
+th_props = [
+    ('background-color', '#29B6F6'), # Xanh da trời nhạt, sáng
+    ('color', '#ffffff'),            # Chữ trắng tương phản
+    ('font-weight', '900'),          # In đậm mạnh
+    ('font-size', '15px'),           # Kích thước chữ
+    ('text-align', 'center'),        # Căn giữa
+    ('text-transform', 'uppercase')  # In hoa
+]
+header_styles = [dict(selector="th", props=th_props)]
+
+
 # ==========================================
 # 4. GIAO DIỆN CÁC TAB BIỂU ĐỒ 
 # ==========================================
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚚 VẬN HÀNH CHI TIẾT", "👥 NĂNG SUẤT & LƯƠNG", "🎯 VẬN HÀNH THEO KPI", "💰 KINH DOANH", "🏆 THI ĐUA GTC"])
+# ĐÃ BỔ SUNG TAB 6 DÀNH RIÊNG CHO TRỢ LÝ AI
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🚚 VẬN HÀNH CHI TIẾT", "👥 NĂNG SUẤT & LƯƠNG", "🎯 VẬN HÀNH THEO KPI", "💰 KINH DOANH", "🏆 THI ĐUA GTC", "🤖 TRỢ LÝ AI"])
 
 # ----------------- TAB 1: VẬN HÀNH -----------------
 with tab1:
@@ -1036,7 +1031,7 @@ with tab3:
         'background-color': '#f8fdff', 
         'color': '#003f5c', 
         'border-color': '#90e0ef'
-    }).format({"GTC": "{:.2f}%", "GTC_TTS": "{:.2f}%", "ODR": "{:.2f}%", "% Đạt KPI GTC": "{:.1f}%"})
+    }).format({"GTC": "{:.2f}%", "GTC_TTS": "{:.2f}%", "ODR": "{:.2f}%", "% Đạt KPI GTC": "{:.1f}%"}).set_table_styles(header_styles)
     
     st.dataframe(styled_kpi_table, use_container_width=True)
 
@@ -1198,7 +1193,7 @@ with tab4:
         'background-color': '#fff9f0', 
         'color': '#333333', 
         'border-color': '#ffcc80'
-    })
+    }).set_table_styles(header_styles)
     
     st.dataframe(styled_df, use_container_width=True)
 
@@ -1345,7 +1340,7 @@ with tab5:
             'color': '#D35400',             # Cam đậm cháy
             'border-color': '#FF9F43',      # Viền cam sáng
             'font-weight': '600'            # Làm đậm các con số thi đua
-        })
+        }).set_table_styles(header_styles)
         
         st.dataframe(styled_thi_dua, use_container_width=True)
         
@@ -1396,7 +1391,7 @@ with tab5:
                 'color': '#0277BD',             # Xanh lam đậm
                 'border-color': '#29B6F6',      # Viền xanh da trời
                 'font-weight': '500'            # Làm rõ số liệu
-            })
+            }).set_table_styles(header_styles)
             
             st.dataframe(styled_daily, use_container_width=True)
             
@@ -1438,3 +1433,31 @@ with tab5:
             st.warning("⚠️ Dữ liệu không có cột Ngày để hiển thị bảng hằng ngày.")
     else:
         st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất cho Bưu Cục này.")
+
+# ----------------- TAB 6: TRỢ LÝ AI -----------------
+with tab6:
+    styled_header("TRỢ LÝ AI PHÂN TÍCH & GIẢI ĐÁP", "🤖")
+    st.markdown("Tại đây bạn có thể yêu cầu AI phân tích dữ liệu chung, đưa ra lời khuyên hoặc đặt các câu hỏi về nghiệp vụ Logistics.")
+    
+    chat_container = st.container()
+    with chat_container:
+        for chat in st.session_state.chat_history:
+            with st.chat_message(chat["role"]):
+                st.markdown(chat["content"])
+                
+    if prompt_chat := st.chat_input("Nhập câu hỏi hoặc yêu cầu cho AI..."):
+        st.session_state.chat_history.append({"role": "user", "content": prompt_chat})
+        with st.chat_message("user"): st.markdown(prompt_chat)
+        
+        with st.chat_message("assistant"):
+            if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
+                st.error("Chưa cấu hình API Key. Vui lòng thiết lập biến môi trường GEMINI_API_KEY.")
+            else:
+                try:
+                    genai.configure(api_key=GEMINI_API_KEY.strip())
+                    model_chat = genai.GenerativeModel('gemini-3.6-flash')
+                    response_chat = model_chat.generate_content(f"Người dùng nói: {prompt_chat}. Hãy trả lời ngắn gọn, tập trung vào logistics và phân tích số liệu.")
+                    st.markdown(response_chat.text)
+                    st.session_state.chat_history.append({"role": "assistant", "content": response_chat.text})
+                except Exception as e:
+                    st.error(f"Lỗi AI: {e}")
