@@ -1082,7 +1082,7 @@ with tab4:
         bc_list_kd = ["Tất cả", "Grand Total"] + [x for x in df_kinhdoanh['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
         target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", bc_list_kd, key="set_bc_kd_tab4")
         
-        if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 2100000000.0
+        if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 710000000.0
         
         st.session_state.kpi_dt_dict[target_bc_kd] = st.number_input(f"Mục tiêu Doanh thu VNĐ/Tháng ({target_bc_kd})", min_value=0.0, value=float(st.session_state.kpi_dt_dict[target_bc_kd]), step=10000000.0)
     
@@ -1127,7 +1127,7 @@ with tab4:
         rev_prev = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m_prev) & (df_filtered_kd['Ngày'] <= end_m_prev)]['Doanh Thu'].sum()
         label_prev = "So với M-1 (Tháng trước)"
 
-    kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 2100000000.0)
+    kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 710000000.0)
     
     if view_type == "Theo Ngày": kpi_dt_val = kpi_dt_val / 30
     elif view_type == "Theo Tuần": kpi_dt_val = (kpi_dt_val / 30) * 7
