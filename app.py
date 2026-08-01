@@ -1358,7 +1358,7 @@ with tab5:
             
             grp_daily = df_daily.groupby(['Nhân Viên', 'Ngày', 'Ngày Str']).agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
             # BẢO VỆ CHIA KHÔNG
-            grp_daily['%GTC'] = (grp_daily['Đơn giao tính lương'] / gr_daily['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
+            grp_daily['%GTC'] = (grp_daily['Đơn giao tính lương'] / grp_daily['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
             
             pivot_daily = grp_daily.pivot(index='Nhân Viên', columns='Ngày Str', values=['Số đơn gán Giao', 'Đơn giao tính lương', '%GTC'])
             
