@@ -326,7 +326,7 @@ def get_real_data():
 
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT (THÁNG HIỆN TẠI VÀ CHUNG CHO THÁNG 06 NẾU LỌC LÙI NGÀY)
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT (THÁNG HIỆN TẠI)
 @st.cache_data(ttl=60)
 def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
@@ -367,10 +367,10 @@ def get_ns_gtc_data():
 
 df_ns_gtc_raw = get_ns_gtc_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC (HIỆN TẠI LẤY CÙNG 1 LINK 1862143946 THEO YÊU CẦU)
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC (THÁNG 06) BẢO VỆ CHỐNG LỖI MẤT DỮ LIỆU
 @st.cache_data(ttl=60)
 def get_prev_month_gtc_data():
-    url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
+    url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1588522442"
     try:
         df = pd.read_csv(url_ns_gtc_prev)
         df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
@@ -380,14 +380,17 @@ def get_prev_month_gtc_data():
             'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên', 'Nhân Viên': 'Nhân Viên', 'Tên Nhân Viên': 'Nhân Viên',
             'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Phân loại': 'Loại Hàng', 'Loại Hàng': 'Loại Hàng',
             'Đơn giao tính lương': 'Đơn giao tính lương', 'Số đơn giao tính lương': 'Đơn giao tính lương', 'Đơn Giao Tính Lương': 'Đơn giao tính lương', 'Đơn giao': 'Đơn giao tính lương', 'Số đơn GTC': 'Đơn giao tính lương', 'Đơn GTC': 'Đơn giao tính lương',
-            'Số đơn gán Giao': 'Số đơn gán Giao', 'Số đơn gán giao': 'Số đơn gán Giao', 'Số đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán Giao': 'Số đơn gán Giao', 'Đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán': 'Số đơn gán Giao'
+            'Số đơn gán Giao': 'Số đơn gán Giao', 'Số đơn gán giao': 'Số đơn gán Giao', 'Số đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán Giao': 'Số đơn gán Giao', 'Đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán': 'Số đơn gán Giao',
+            '%GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', 'GTC': '%GTC', '% GTC': '%GTC', 'Tỉ lệ GTC': '%GTC'
         }
         df = df.rename(columns=mapping)
         if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
         if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
         
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
-        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        
+        if 'Ngày' in df.columns:
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         
@@ -402,7 +405,8 @@ def get_prev_month_gtc_data():
         for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
             if req not in df.columns: df[req] = 0.0
             
-        return df.dropna(subset=['Ngày'])
+        # KHÔNG SỬ DỤNG LỆNH df.dropna(subset=['Ngày']) ĐỂ TRÁNH LỖI XÓA DỮ LIỆU BẢNG TỔNG
+        return df
     except Exception as e:
         return pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao'])
 
@@ -833,6 +837,7 @@ with tab2:
         df_gtc_filtered = df_ns_gtc_raw[mask_gtc_chart].copy()
         if not df_gtc_filtered.empty:
             df_gtc_nv = df_gtc_filtered.groupby('Ngày').agg({'Đơn giao tính lương': 'sum', 'Số đơn gán Giao': 'sum'}).reset_index()
+            # BẢO VỆ CHIA 0 AN TOÀN
             df_gtc_nv['%GTC'] = (df_gtc_nv['Đơn giao tính lương'] / df_gtc_nv['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
         else:
             df_gtc_nv = pd.DataFrame(columns=['Ngày', 'Đơn giao tính lương', 'Số đơn gán Giao', '%GTC'])
@@ -1263,11 +1268,6 @@ with tab5:
         if not df_t7.empty and 'Ngày' in df_t7.columns:
             df_t7 = df_t7[(df_t7['Ngày'] >= curr_start) & (df_t7['Ngày'] <= curr_end)]
             
-        if not df_t6.empty and 'Ngày' in df_t6.columns:
-            prev_end = curr_start.replace(day=1) - timedelta(days=1)
-            prev_start = prev_end.replace(day=1)
-            df_t6 = df_t6[(df_t6['Ngày'] >= prev_start) & (df_t6['Ngày'] <= prev_end)]
-        
     if buu_cuc_t5 != "Tất cả":
         if not df_t7.empty and 'Bưu Cục' in df_t7.columns:
             df_t7 = df_t7[df_t7['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_t5).strip().lower()]
@@ -1276,11 +1276,13 @@ with tab5:
         
     if not df_t7.empty:
         grp_t7 = df_t7.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+        # BẢO VỆ CHIA KHÔNG (ZeroDivisionError)
         grp_t7['%GTC Tháng 07'] = (grp_t7['Đơn giao tính lương'] / grp_t7['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
         
         if not df_t6.empty:
             if 'Số đơn gán Giao' in df_t6.columns and 'Đơn giao tính lương' in df_t6.columns and df_t6['Số đơn gán Giao'].sum() > 0:
                 grp_t6 = df_t6.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+                # BẢO VỆ CHIA KHÔNG (ZeroDivisionError)
                 grp_t6['%GTC Tháng 06'] = (grp_t6['Đơn giao tính lương'] / grp_t6['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
             elif '%GTC' in df_t6.columns:
                 grp_t6 = df_t6.groupby('Nhân Viên').agg({'%GTC': 'mean'}).reset_index()
@@ -1293,6 +1295,7 @@ with tab5:
         df_thi_dua = pd.merge(grp_t7, grp_t6[['Nhân Viên', '%GTC Tháng 06']], on='Nhân Viên', how='left')
         df_thi_dua['%GTC Tháng 06'] = df_thi_dua['%GTC Tháng 06'].fillna(0.0)
         
+        # BẢO VỆ CHIA KHÔNG (ZeroDivisionError) KHI TÍNH TỶ LỆ CẢI THIỆN
         df_thi_dua['Tỷ Lệ Cải Thiện'] = (df_thi_dua['%GTC Tháng 07'] / df_thi_dua['%GTC Tháng 06'].replace({0.0: np.nan, 0: np.nan})).fillna(0.0)
         
         df_thi_dua.rename(columns={'Số đơn gán Giao': 'Tổng Đơn Gán', 'Đơn giao tính lương': 'Tổng Đơn GTC'}, inplace=True)
@@ -1338,6 +1341,7 @@ with tab5:
             df_daily['Ngày Str'] = df_daily['Ngày'].dt.strftime('%d/%m')
             
             grp_daily = df_daily.groupby(['Nhân Viên', 'Ngày', 'Ngày Str']).agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+            # BẢO VỆ CHIA KHÔNG (ZeroDivisionError)
             grp_daily['%GTC'] = (grp_daily['Đơn giao tính lương'] / grp_daily['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
             
             pivot_daily = grp_daily.pivot(index='Nhân Viên', columns='Ngày Str', values=['Số đơn gán Giao', 'Đơn giao tính lương', '%GTC'])
