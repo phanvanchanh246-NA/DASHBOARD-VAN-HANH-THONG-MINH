@@ -325,7 +325,7 @@ def get_real_data():
 
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT (THÁNG HIỆN TẠI)
 @st.cache_data(ttl=60)
 def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
@@ -365,6 +365,54 @@ def get_ns_gtc_data():
         return pd.DataFrame()
 
 df_ns_gtc_raw = get_ns_gtc_data()
+
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC (THÁNG 06)
+@st.cache_data(ttl=60)
+def get_prev_month_gtc_data():
+    url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1588522442"
+    try:
+        df = pd.read_csv(url_ns_gtc_prev)
+        df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục', 'Bưu Cục': 'Bưu Cục',
+            'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên', 'Nhân Viên': 'Nhân Viên', 'Tên Nhân Viên': 'Nhân Viên',
+            'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Phân loại': 'Loại Hàng', 'Loại Hàng': 'Loại Hàng',
+            'Đơn giao tính lương': 'Đơn giao tính lương', 'Số đơn giao tính lương': 'Đơn giao tính lương', 'Đơn Giao Tính Lương': 'Đơn giao tính lương', 'Đơn giao': 'Đơn giao tính lương', 'Số đơn GTC': 'Đơn giao tính lương', 'Đơn GTC': 'Đơn giao tính lương',
+            'Số đơn gán Giao': 'Số đơn gán Giao', 'Số đơn gán giao': 'Số đơn gán Giao', 'Số đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán Giao': 'Số đơn gán Giao', 'Đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán': 'Số đơn gán Giao',
+            '%GTC': '%GTC', 'Tỷ lệ GTC': '%GTC', 'GTC': '%GTC'
+        }
+        df = df.rename(columns=mapping)
+        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
+        if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
+        
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
+        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        
+        df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
+        
+        if 'Nhân Viên' in df.columns:
+            df['Nhân Viên'] = df['Nhân Viên'].astype(str).str.strip()
+        else:
+            df['Nhân Viên'] = "Chưa phân loại"
+            
+        if 'Loại Hàng' in df.columns:
+            df['Loại Hàng'] = df['Loại Hàng'].astype(str).str.strip()
+            
+        for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
+            if req not in df.columns: df[req] = 0.0
+        if '%GTC' not in df.columns: df['%GTC'] = np.nan
+            
+        if '%GTC' in df.columns:
+            valid_vals = df[df['%GTC'] > 0]['%GTC'].dropna()
+            if not valid_vals.empty and valid_vals.max() <= 1.2:
+                df['%GTC'] = df['%GTC'] * 100
+                
+        return df.dropna(subset=['Ngày'])
+    except Exception as e:
+        return pd.DataFrame()
+
+df_ns_prev_raw = get_prev_month_gtc_data()
 
 @st.cache_data(ttl=60)
 def get_customer_data():
@@ -433,7 +481,7 @@ st.divider()
 # ==========================================
 # 4. GIAO DIỆN CÁC TAB BIỂU ĐỒ 
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["🚚 VẬN HÀNH CHI TIẾT", "👥 NĂNG SUẤT & LƯƠNG", "🎯 VẬN HÀNH THEO KPI", "💰 KINH DOANH"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚚 VẬN HÀNH CHI TIẾT", "👥 NĂNG SUẤT & LƯƠNG", "🎯 VẬN HÀNH THEO KPI", "💰 KINH DOANH", "🏆 THI ĐUA GTC"])
 
 # ----------------- TAB 1: VẬN HÀNH -----------------
 with tab1:
@@ -1191,3 +1239,148 @@ with tab4:
             """
             st.session_state.ai_kd_result = get_ai_analysis(prompt_kd)
     render_ai_and_telegram(st.session_state.ai_kd_result, "Kinh Doanh", "kd")
+
+# ----------------- TAB 5: THI ĐUA GTC -----------------
+with tab5:
+    styled_header("BẢNG XẾP HẠNG CHƯƠNG TRÌNH THI ĐUA GTC", "🏆")
+    
+    # Lọc Bưu Cục
+    bc_set_t5 = set(df_ns_gtc_raw['Bưu Cục'].dropna().astype(str).str.strip().unique()) if not df_ns_gtc_raw.empty else set()
+    bc_all_t5 = sorted([x for x in bc_set_t5 if x and x != "Chưa phân loại" and x != "nan"])
+    bc_list_t5 = ["Tất cả"] + bc_all_t5
+    buu_cuc_t5 = st.selectbox("Lọc Bưu cục (Thi Đua):", bc_list_t5, key="bc_t5")
+    
+    # Lọc dữ liệu Tháng hiện tại (T7) và Tháng trước (T6)
+    df_t7 = df_ns_gtc_raw.copy()
+    df_t6 = df_ns_prev_raw.copy()
+    
+    if buu_cuc_t5 != "Tất cả":
+        df_t7 = df_t7[df_t7['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_t5).strip().lower()]
+        df_t6 = df_t6[df_t6['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_t5).strip().lower()]
+        
+    if not df_t7.empty:
+        # Group T7
+        grp_t7 = df_t7.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+        grp_t7['%GTC Tháng 07'] = np.where(grp_t7['Số đơn gán Giao'] > 0, (grp_t7['Đơn giao tính lương'] / grp_t7['Số đơn gán Giao']) * 100, 0.0)
+        
+        # Group T6
+        if not df_t6.empty:
+            if 'Số đơn gán Giao' in df_t6.columns and 'Đơn giao tính lương' in df_t6.columns and df_t6['Số đơn gán Giao'].sum() > 0:
+                grp_t6 = df_t6.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+                grp_t6['%GTC Tháng 06'] = np.where(grp_t6['Số đơn gán Giao'] > 0, (grp_t6['Đơn giao tính lương'] / grp_t6['Số đơn gán Giao']) * 100, 0.0)
+            elif '%GTC' in df_t6.columns:
+                grp_t6 = df_t6.groupby('Nhân Viên').agg({'%GTC': 'mean'}).reset_index()
+                grp_t6.rename(columns={'%GTC': '%GTC Tháng 06'}, inplace=True)
+            else:
+                grp_t6 = pd.DataFrame(columns=['Nhân Viên', '%GTC Tháng 06'])
+        else:
+            grp_t6 = pd.DataFrame(columns=['Nhân Viên', '%GTC Tháng 06'])
+            
+        # Merge
+        df_thi_dua = pd.merge(grp_t7, grp_t6[['Nhân Viên', '%GTC Tháng 06']], on='Nhân Viên', how='left')
+        df_thi_dua['%GTC Tháng 06'] = df_thi_dua['%GTC Tháng 06'].fillna(0.0)
+        
+        # Tính tỷ lệ cải thiện:
+        df_thi_dua['Tỷ Lệ Cải Thiện'] = np.where(df_thi_dua['%GTC Tháng 06'] > 0, df_thi_dua['%GTC Tháng 07'] / df_thi_dua['%GTC Tháng 06'], 0.0)
+        
+        # Rename cols
+        df_thi_dua.rename(columns={'Số đơn gán Giao': 'Tổng Đơn Gán', 'Đơn giao tính lương': 'Tổng Đơn GTC'}, inplace=True)
+        
+        # Rankings (method=min, ascending=False -> cao nhất = rank 1)
+        df_thi_dua['Xếp Hạng Gán'] = df_thi_dua['Tổng Đơn Gán'].rank(method='min', ascending=False)
+        df_thi_dua['Xếp Hạng %GTC'] = df_thi_dua['%GTC Tháng 07'].rank(method='min', ascending=False)
+        df_thi_dua['Xếp Hạng Cải Thiện'] = df_thi_dua['Tỷ Lệ Cải Thiện'].rank(method='min', ascending=False)
+        
+        # Tổng điểm (Trung bình cộng rank)
+        df_thi_dua['Tổng Điểm'] = (df_thi_dua['Xếp Hạng Gán'] + df_thi_dua['Xếp Hạng %GTC'] + df_thi_dua['Xếp Hạng Cải Thiện']) / 3
+        # Xếp hạng tổng: thấp nhất = rank 1
+        df_thi_dua['Xếp Hạng Tổng'] = df_thi_dua['Tổng Điểm'].rank(method='min', ascending=True)
+        
+        # Xét thưởng
+        df_thi_dua['Đạt Điều Kiện Thưởng (>=80%)'] = np.where(df_thi_dua['%GTC Tháng 07'] >= 80, '✅', '❌')
+        
+        # Sort
+        df_thi_dua = df_thi_dua.sort_values('Xếp Hạng Tổng')
+        
+        # Reorder columns
+        cols_order_td = ['Nhân Viên', 'Tổng Đơn Gán', 'Tổng Đơn GTC', '%GTC Tháng 07', '%GTC Tháng 06', 'Tỷ Lệ Cải Thiện', 'Xếp Hạng Gán', 'Xếp Hạng %GTC', 'Xếp Hạng Cải Thiện', 'Tổng Điểm', 'Xếp Hạng Tổng', 'Đạt Điều Kiện Thưởng (>=80%)']
+        df_thi_dua = df_thi_dua[cols_order_td]
+        
+        # Render Table
+        styled_thi_dua = df_thi_dua.style.format({
+            'Tổng Đơn Gán': "{:,.0f}",
+            'Tổng Đơn GTC': "{:,.0f}",
+            '%GTC Tháng 07': "{:.2f}%",
+            '%GTC Tháng 06': "{:.2f}%",
+            'Tỷ Lệ Cải Thiện': "{:.2f}x",
+            'Xếp Hạng Gán': "{:.0f}",
+            'Xếp Hạng %GTC': "{:.0f}",
+            'Xếp Hạng Cải Thiện': "{:.0f}",
+            'Tổng Điểm': "{:.2f}",
+            'Xếp Hạng Tổng': "{:.0f}"
+        }).set_properties(**{
+            'background-color': '#fff9f0', 
+            'color': '#333333', 
+            'border-color': '#ffcc80'
+        })
+        
+        st.dataframe(styled_thi_dua, use_container_width=True)
+        
+        st.markdown("---")
+        styled_header("BẢNG NĂNG SUẤT NHÂN VIÊN HẰNG NGÀY", "📅")
+        
+        # Pivot Table for Daily
+        df_daily = df_t7.copy()
+        df_daily['Ngày Str'] = df_daily['Ngày'].dt.strftime('%d/%m')
+        
+        # Group to avoid duplicates
+        grp_daily = df_daily.groupby(['Nhân Viên', 'Ngày', 'Ngày Str']).agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+        grp_daily['%GTC'] = np.where(grp_daily['Số đơn gán Giao'] > 0, (grp_daily['Đơn giao tính lương'] / grp_daily['Số đơn gán Giao']) * 100, 0.0)
+        
+        # Pivot
+        pivot_daily = grp_daily.pivot(index='Nhân Viên', columns='Ngày Str', values=['Số đơn gán Giao', 'Đơn giao tính lương', '%GTC'])
+        
+        # Ensure ordered by correct date
+        dates_sorted = sorted(grp_daily['Ngày'].unique())
+        dates_sorted_str = [pd.to_datetime(d).strftime('%d/%m') for d in dates_sorted]
+        
+        # Reorder and flatten
+        cols_order_daily = []
+        new_cols_names = []
+        for d_str in dates_sorted_str:
+            cols_order_daily.extend([('Số đơn gán Giao', d_str), ('Đơn giao tính lương', d_str), ('%GTC', d_str)])
+            new_cols_names.extend([f"Tổng Đơn Gán ({d_str})", f"Tổng Đơn GTC ({d_str})", f"%GTC ({d_str})"])
+            
+        # Reindex to force column order
+        valid_cols = [c for c in cols_order_daily if c in pivot_daily.columns]
+        pivot_daily = pivot_daily[valid_cols]
+        
+        # Flatten names
+        final_names = []
+        for c in valid_cols:
+            if c[0] == 'Số đơn gán Giao': final_names.append(f"Tổng Đơn Gán ({c[1]})")
+            elif c[0] == 'Đơn giao tính lương': final_names.append(f"Tổng Đơn GTC ({c[1]})")
+            else: final_names.append(f"%GTC ({c[1]})")
+            
+        pivot_daily.columns = final_names
+        pivot_daily = pivot_daily.reset_index().fillna(0)
+        
+        # Formatting dynamically
+        format_dict_daily = {}
+        for col in pivot_daily.columns:
+            if col != 'Nhân Viên':
+                if '%GTC' in col:
+                    format_dict_daily[col] = "{:.2f}%"
+                else:
+                    format_dict_daily[col] = "{:,.0f}"
+                    
+        styled_daily = pivot_daily.style.format(format_dict_daily).set_properties(**{
+            'background-color': '#f8fdff', 
+            'color': '#003f5c', 
+            'border-color': '#90e0ef'
+        })
+        
+        st.dataframe(styled_daily, use_container_width=True)
+        
+    else:
+        st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất (Tháng 07) cho Bưu Cục này.")
