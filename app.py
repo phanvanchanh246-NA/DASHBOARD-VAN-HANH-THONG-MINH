@@ -326,7 +326,7 @@ def get_real_data():
 
 df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHUNG CHO CẢ T6 & T7 THEO CHÍNH XÁC YÊU CẦU LINK GID 1862143946
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA BIỂU ĐỒ %GTC CHO TAB NĂNG SUẤT (THÁNG HIỆN TẠI)
 @st.cache_data(ttl=60)
 def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
@@ -361,12 +361,55 @@ def get_ns_gtc_data():
         for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
             if req not in df.columns: df[req] = 0.0
             
-        # KHÔNG XÓA DÒNG LỖI ĐỂ TRÁNH MẤT DATA THÁNG 6 NẾU THÁNG 6 LÀ DATA TỔNG
         return df.dropna(subset=['Ngày'])
     except Exception as e:
         return pd.DataFrame()
 
 df_ns_gtc_raw = get_ns_gtc_data()
+
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC (THÁNG 06) BẢO VỆ CHỐNG LỖI MẤT DỮ LIỆU
+@st.cache_data(ttl=60)
+def get_prev_month_gtc_data():
+    url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
+    try:
+        df = pd.read_csv(url_ns_gtc_prev)
+        df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục', 'Bưu Cục': 'Bưu Cục',
+            'Nhân viên': 'Nhân Viên', 'nhân viên': 'Nhân Viên', 'Tên nhân viên': 'Nhân Viên', 'Nhân Viên': 'Nhân Viên', 'Tên Nhân Viên': 'Nhân Viên',
+            'Loại hàng': 'Loại Hàng', 'loại hàng': 'Loại Hàng', 'Phân loại': 'Loại Hàng', 'Loại Hàng': 'Loại Hàng',
+            'Đơn giao tính lương': 'Đơn giao tính lương', 'Số đơn giao tính lương': 'Đơn giao tính lương', 'Đơn Giao Tính Lương': 'Đơn giao tính lương', 'Đơn giao': 'Đơn giao tính lương', 'Số đơn GTC': 'Đơn giao tính lương', 'Đơn GTC': 'Đơn giao tính lương',
+            'Số đơn gán Giao': 'Số đơn gán Giao', 'Số đơn gán giao': 'Số đơn gán Giao', 'Số đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán Giao': 'Số đơn gán Giao', 'Đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán': 'Số đơn gán Giao'
+        }
+        df = df.rename(columns=mapping)
+        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
+        if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
+        
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
+        
+        if 'Ngày' in df.columns:
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        
+        df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
+        
+        if 'Nhân Viên' in df.columns:
+            df['Nhân Viên'] = df['Nhân Viên'].astype(str).str.strip()
+        else:
+            df['Nhân Viên'] = "Chưa phân loại"
+            
+        if 'Loại Hàng' in df.columns:
+            df['Loại Hàng'] = df['Loại Hàng'].astype(str).str.strip()
+            
+        for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
+            if req not in df.columns: df[req] = 0.0
+            
+        # KHÔNG SỬ DỤNG LỆNH df.dropna(subset=['Ngày']) ĐỂ TRÁNH LỖI XÓA DỮ LIỆU BẢNG TỔNG
+        return df
+    except Exception as e:
+        return pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao'])
+
+df_ns_prev_raw = get_prev_month_gtc_data()
 
 @st.cache_data(ttl=60)
 def get_customer_data():
@@ -1172,7 +1215,7 @@ with tab4:
             elif ai_role_kd == "Góc nhìn Quản lý khu vực (AM)":
                 role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Phân tích 3 phần: 1. Đánh giá tốc độ chạy doanh thu của khu vực, 2. Cảnh báo tỷ lệ rớt đơn ở phễu khách hàng tiềm năng, 3. Đưa ra chỉ đạo thúc đẩy đội ngũ Nhân viên xử lý/Sales khu vực chốt deal khẩn cấp. Viết dứt khoát, máu lửa."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN SALES/XỬ LÝ ĐƠN. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN SALES/XỬ LÝ ĐƠN. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Mọi người" hoặc "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ hoặc chiến lược để anh em chốt deal khẩn cấp.'
                 
             d_start_kd = date_range_kd[0].strftime('%d/%m/%Y')
             d_end_kd = date_range_kd[1].strftime('%d/%m/%Y') if len(date_range_kd) > 1 else d_start_kd
@@ -1265,8 +1308,8 @@ with tab5:
         df_thi_dua = pd.merge(grp_t7, grp_t6[['Nhân Viên', col_prev]], on='Nhân Viên', how='left')
         df_thi_dua[col_prev] = df_thi_dua[col_prev].fillna(0.0)
         
-        # BẢO VỆ CHIA KHÔNG TỶ LỆ CẢI THIỆN
-        df_thi_dua['Tỷ Lệ Cải Thiện'] = (df_thi_dua[col_curr] / df_thi_dua[col_prev].replace({0.0: np.nan, 0: np.nan})).fillna(0.0)
+        # THAY ĐỔI LOGIC: TỶ LỆ CẢI THIỆN = PHÉP TRỪ (Tháng này - Tháng trước)
+        df_thi_dua['Tỷ Lệ Cải Thiện'] = df_thi_dua[col_curr] - df_thi_dua[col_prev]
         
         df_thi_dua.rename(columns={'Số đơn gán Giao': 'Tổng Đơn Gán', 'Đơn giao tính lương': 'Tổng Đơn GTC'}, inplace=True)
         
@@ -1290,7 +1333,7 @@ with tab5:
             'Tổng Đơn GTC': "{:,.0f}",
             col_curr: "{:.2f}%",
             col_prev: "{:.2f}%",
-            'Tỷ Lệ Cải Thiện': "{:.2f}x",
+            'Tỷ Lệ Cải Thiện': "{:+.2f}%",  # Hiển thị số âm/dương bằng phần trăm
             'Xếp Hạng Gán': "{:.0f}",
             'Xếp Hạng %GTC': "{:.0f}",
             'Xếp Hạng Cải Thiện': "{:.0f}",
@@ -1380,7 +1423,7 @@ with tab5:
                     Top 3 Xuất sắc nhất: {top_3}
                     Top 3 Cần cố gắng: {bottom_3}
                     
-                    (LƯU Ý DÀNH CHO AI: Điều kiện nhận thưởng là %GTC của {col_curr} phải >= 80%. Tỷ lệ cải thiện tính bằng {col_curr} / {col_prev}. Xếp hạng tổng dựa trên trung bình thứ hạng của 3 tiêu chí: Số lượng gán, %GTC, %Cải thiện. Xếp hạng càng thấp (1,2,3) thì càng giỏi).
+                    (LƯU Ý DÀNH CHO AI: Điều kiện nhận thưởng là %GTC của {col_curr} phải >= 80%. Mức độ cải thiện tính bằng {col_curr} trừ đi {col_prev} (điểm % phần trăm). Xếp hạng tổng dựa trên trung bình thứ hạng của 3 tiêu chí: Số lượng gán, %GTC, %Cải thiện. Xếp hạng càng thấp (1,2,3) thì càng giỏi).
                     
                     {role_prompt}
                     Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
