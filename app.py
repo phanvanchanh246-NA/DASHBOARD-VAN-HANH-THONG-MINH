@@ -273,6 +273,7 @@ def get_real_data():
         df_vh_c = clean_dataframe_numbers(df_vh_c, text_cols_vh)
         df_ns = clean_dataframe_numbers(df_ns, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
+        # Bù trừ cho các cột phần trăm để chống lỗi tàng hình
         for df_target in [df_vh_tq, df_vh_c]:
             for col in ['GTC', 'GTC_TTS', 'Trả Hàng', 'ODR']:
                 if col in df_target.columns:
@@ -839,7 +840,8 @@ with tab2:
         df_gtc_filtered = df_ns_gtc_raw[mask_gtc_chart].copy()
         if not df_gtc_filtered.empty:
             df_gtc_nv = df_gtc_filtered.groupby('Ngày').agg({'Đơn giao tính lương': 'sum', 'Số đơn gán Giao': 'sum'}).reset_index()
-            df_gtc_nv['%GTC'] = np.where(df_gtc_nv['Số đơn gán Giao'] > 0, (df_gtc_nv['Đơn giao tính lương'] / df_gtc_nv['Số đơn gán Giao']) * 100, 0.0)
+            # SỬA LỖI ZeroDivisionError TẠI ĐÂY
+            df_gtc_nv['%GTC'] = (df_gtc_nv['Đơn giao tính lương'] / df_gtc_nv['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
         else:
             df_gtc_nv = pd.DataFrame(columns=['Ngày', 'Đơn giao tính lương', 'Số đơn gán Giao', '%GTC'])
     else:
@@ -1261,13 +1263,15 @@ with tab5:
     if not df_t7.empty:
         # Group T7
         grp_t7 = df_t7.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
-        grp_t7['%GTC Tháng 07'] = np.where(grp_t7['Số đơn gán Giao'] > 0, (grp_t7['Đơn giao tính lương'] / grp_t7['Số đơn gán Giao']) * 100, 0.0)
+        # SỬA LỖI ZeroDivisionError tại đây:
+        grp_t7['%GTC Tháng 07'] = (grp_t7['Đơn giao tính lương'] / grp_t7['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
         
         # Group T6
         if not df_t6.empty:
             if 'Số đơn gán Giao' in df_t6.columns and 'Đơn giao tính lương' in df_t6.columns and df_t6['Số đơn gán Giao'].sum() > 0:
                 grp_t6 = df_t6.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
-                grp_t6['%GTC Tháng 06'] = np.where(grp_t6['Số đơn gán Giao'] > 0, (grp_t6['Đơn giao tính lương'] / grp_t6['Số đơn gán Giao']) * 100, 0.0)
+                # SỬA LỖI ZeroDivisionError tại đây:
+                grp_t6['%GTC Tháng 06'] = (grp_t6['Đơn giao tính lương'] / grp_t6['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
             elif '%GTC' in df_t6.columns:
                 grp_t6 = df_t6.groupby('Nhân Viên').agg({'%GTC': 'mean'}).reset_index()
                 grp_t6.rename(columns={'%GTC': '%GTC Tháng 06'}, inplace=True)
@@ -1280,8 +1284,8 @@ with tab5:
         df_thi_dua = pd.merge(grp_t7, grp_t6[['Nhân Viên', '%GTC Tháng 06']], on='Nhân Viên', how='left')
         df_thi_dua['%GTC Tháng 06'] = df_thi_dua['%GTC Tháng 06'].fillna(0.0)
         
-        # Tính tỷ lệ cải thiện:
-        df_thi_dua['Tỷ Lệ Cải Thiện'] = np.where(df_thi_dua['%GTC Tháng 06'] > 0, df_thi_dua['%GTC Tháng 07'] / df_thi_dua['%GTC Tháng 06'], 0.0)
+        # SỬA LỖI ZeroDivisionError tại đây: Tính tỷ lệ cải thiện an toàn
+        df_thi_dua['Tỷ Lệ Cải Thiện'] = (df_thi_dua['%GTC Tháng 07'] / df_thi_dua['%GTC Tháng 06'].replace({0.0: np.nan, 0: np.nan})).fillna(0.0)
         
         # Rename cols
         df_thi_dua.rename(columns={'Số đơn gán Giao': 'Tổng Đơn Gán', 'Đơn giao tính lương': 'Tổng Đơn GTC'}, inplace=True)
@@ -1335,7 +1339,8 @@ with tab5:
         
         # Group to avoid duplicates
         grp_daily = df_daily.groupby(['Nhân Viên', 'Ngày', 'Ngày Str']).agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
-        grp_daily['%GTC'] = np.where(grp_daily['Số đơn gán Giao'] > 0, (grp_daily['Đơn giao tính lương'] / grp_daily['Số đơn gán Giao']) * 100, 0.0)
+        # SỬA LỖI ZeroDivisionError tại đây:
+        grp_daily['%GTC'] = (grp_daily['Đơn giao tính lương'] / grp_daily['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
         
         # Pivot
         pivot_daily = grp_daily.pivot(index='Nhân Viên', columns='Ngày Str', values=['Số đơn gán Giao', 'Đơn giao tính lương', '%GTC'])
