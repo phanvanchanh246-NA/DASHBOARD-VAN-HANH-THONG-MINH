@@ -740,6 +740,13 @@ with tab2:
         gtc_m = calc_gtc(df_m)
         gtc_m_prev = calc_gtc(df_m_prev)
         
+        df_gtc_curr_kl = df_ns_gtc_base[(df_ns_gtc_base['Ngày'] >= curr_start) & (df_ns_gtc_base['Ngày'] <= curr_end)]
+        df_gtc_prev_kl = df_ns_gtc_base[(df_ns_gtc_base['Ngày'] >= prev_start) & (df_ns_gtc_base['Ngày'] <= prev_end)]
+        
+        sl_gtc_curr_kl = df_gtc_curr_kl['Đơn giao tính lương'].sum()
+        sl_gtc_prev_kl = df_gtc_prev_kl['Đơn giao tính lương'].sum()
+        diff_sl_gtc_kl = sl_gtc_curr_kl - sl_gtc_prev_kl
+        
         sl_n = df_n['Đơn giao tính lương'].sum()
         sl_n_prev = df_n_prev['Đơn giao tính lương'].sum()
         sl_w = df_w['Đơn giao tính lương'].sum()
@@ -748,8 +755,15 @@ with tab2:
         sl_m_prev = df_m_prev['Đơn giao tính lương'].sum()
         
     else:
+        sl_gtc_curr_kl = sl_gtc_prev_kl = diff_sl_gtc_kl = 0
         gtc_n = gtc_n_prev = gtc_w = gtc_w_prev = gtc_m = gtc_m_prev = 0.0
         sl_n = sl_n_prev = sl_w = sl_w_prev = sl_m = sl_m_prev = 0
+
+    st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 15px;'>So sánh Sản Lượng GTC (Logic Kỳ Lương)</div>", unsafe_allow_html=True)
+    m_slkl1, m_slkl2, m_slkl3 = st.columns(3)
+    m_slkl1.metric(f"SL GTC Hiện Tại ({curr_name})", f"{sl_gtc_curr_kl:,.0f} đơn")
+    m_slkl2.metric(f"SL GTC Kỳ Trước ({prev_name})", f"{sl_gtc_prev_kl:,.0f} đơn")
+    m_slkl3.metric("Tăng/Giảm so với kỳ trước", f"{diff_sl_gtc_kl:,.0f} đơn", f"{diff_sl_gtc_kl:,.0f} đơn")
 
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333; margin-top: 25px;'>So sánh Năng suất %GTC (Mốc ngày {max_date_ns.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
     m_gtc1, m_gtc2, m_gtc3 = st.columns(3)
@@ -936,9 +950,9 @@ with tab3:
     gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
     def create_gauge(title, value, target):
         steps = [
-            {'range': [0, target * 0.8], 'color': "#FF7F50"},
-            {'range': [target * 0.8, target], 'color': "#48CAE4"},
-            {'range': [target, 100], 'color': "#00F2FE"}
+            {'range': [0, target * 0.8], 'color': "#FF7F50"},   # Fail: Cam san hô (Coral)
+            {'range': [target * 0.8, target], 'color': "#48CAE4"}, # Warn: Xanh lam sáng (Light blue)
+            {'range': [target, 100], 'color': "#00F2FE"}        # Success: Xanh ngọc lấp lánh
         ]
         delta_inc = "#00F2FE"
         delta_dec = "#FF7F50"
@@ -949,7 +963,7 @@ with tab3:
             delta = {'reference': target, 'increasing': {'color': delta_inc}, 'decreasing': {'color': delta_dec}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#333", 'tickfont': dict(weight="bold")},
-                'bar': {'color': "#2C3E50", 'thickness': 0.25},
+                'bar': {'color': "#2C3E50", 'thickness': 0.25}, # Kim đo đổi thành Xanh Navy Đậm cho nổi bật
                 'steps': steps,
                 'borderwidth': 2,
                 'bordercolor': "#e2e2e2",
