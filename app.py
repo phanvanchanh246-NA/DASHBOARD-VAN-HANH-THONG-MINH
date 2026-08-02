@@ -95,6 +95,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ĐỊNH DẠNG CHUNG CHO DÒNG TIÊU ĐỀ BẢNG (HEADER) MÀU XANH DA TRỜI BẮT MẮT
+th_props = [
+    ('background-color', '#29B6F6'), # Xanh da trời nhạt, sáng
+    ('color', '#ffffff'),            # Chữ trắng tương phản
+    ('font-weight', '900'),          # In đậm mạnh
+    ('font-size', '15px'),           # Kích thước chữ
+    ('text-align', 'center'),        # Căn giữa
+    ('text-transform', 'uppercase')  # In hoa
+]
+header_styles = [dict(selector="th", props=th_props)]
+
 # ==========================================
 # BẢO MẬT ĐĂNG NHẬP
 # ==========================================
@@ -117,14 +128,15 @@ if not st.session_state.authenticated:
     check_login()
     st.stop()
 
-# Nút Đăng xuất ở thanh bên
+# Nút Đăng xuất ở thanh bên (Đã loại bỏ AI Chatbot chật chội)
 with st.sidebar:
     if st.button("🚪 Đăng xuất", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
         
     st.divider()
-    st.markdown("👨‍💻 **Tài khoản:** Quản trị viên")
+    st.markdown("👨‍💻 **Tài khoản:** Quản trị viên GHN")
+    st.markdown("🌐 **Khu vực:** Toàn quốc")
 
 def styled_header(text, icon=""):
     st.markdown(f"""
@@ -346,7 +358,7 @@ def get_ns_gtc_data():
 
 df_ns_gtc_raw = get_ns_gtc_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC (THÁNG 06) BẢO VỆ CHỐNG LỖI MẤT DỮ LIỆU
+# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC BẢO VỆ CHỐNG LỖI MẤT DỮ LIỆU
 @st.cache_data(ttl=60)
 def get_prev_month_gtc_data():
     url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
@@ -383,7 +395,6 @@ def get_prev_month_gtc_data():
         for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
             if req not in df.columns: df[req] = 0.0
             
-        # KHÔNG SỬ DỤNG LỆNH df.dropna(subset=['Ngày']) ĐỂ TRÁNH LỖI XÓA DỮ LIỆU BẢNG TỔNG
         return df
     except Exception as e:
         return pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao'])
@@ -403,7 +414,7 @@ df_khachhang = get_customer_data()
 
 
 # ==========================================
-# 3. HÀM TRỢ LÝ AI & CSS ĐỊNH DẠNG BẢNG
+# 3. HÀM TRỢ LÝ AI
 # ==========================================
 st.markdown("""
     <div class="banner">
@@ -453,24 +464,6 @@ def render_ai_and_telegram(ai_result, tab_name, key_suffix):
                 st.error(f"Lỗi mạng: {e}")
 
 st.divider()
-
-# ĐỊNH DẠNG CHUNG CHO DÒNG TIÊU ĐỀ BẢNG (HEADER)
-th_props = [
-    ('background-color', '#FF6600'), # Cam an toàn
-    ('color', '#ffffff'),            # Chữ trắng tương phản
-    ('font-weight', '900'),          # In đậm mạnh
-    ('font-size', '15px'),           # Kích thước chữ
-    ('text-align', 'center'),        # Căn giữa
-    ('text-transform', 'uppercase')  # In hoa
-]
-header_styles = [dict(selector="th", props=th_props)]
-
-
-# ==========================================
-# 4. GIAO DIỆN CÁC TAB BIỂU ĐỒ 
-# ==========================================
-# ĐÃ BỔ SUNG TAB 6 DÀNH RIÊNG CHO TRỢ LÝ AI
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🚚 VẬN HÀNH CHI TIẾT", "👥 NĂNG SUẤT & LƯƠNG", "🎯 VẬN HÀNH THEO KPI", "💰 KINH DOANH", "🏆 THI ĐUA GTC", "🤖 TRỢ LÝ AI"])
 
 # ----------------- TAB 1: VẬN HÀNH -----------------
 with tab1:
@@ -1082,7 +1075,7 @@ with tab4:
         bc_list_kd = ["Tất cả", "Grand Total"] + [x for x in df_kinhdoanh['Bưu Cục'].unique() if str(x) not in ["Tất cả", "Grand Total"]]
         target_bc_kd = st.selectbox("✏️ Chọn khu vực muốn cài đặt KPI Doanh Thu:", bc_list_kd, key="set_bc_kd_tab4")
         
-        if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 710000000.0
+        if target_bc_kd not in st.session_state.kpi_dt_dict: st.session_state.kpi_dt_dict[target_bc_kd] = 2100000000.0
         
         st.session_state.kpi_dt_dict[target_bc_kd] = st.number_input(f"Mục tiêu Doanh thu VNĐ/Tháng ({target_bc_kd})", min_value=0.0, value=float(st.session_state.kpi_dt_dict[target_bc_kd]), step=10000000.0)
     
@@ -1127,7 +1120,7 @@ with tab4:
         rev_prev = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_m_prev) & (df_filtered_kd['Ngày'] <= end_m_prev)]['Doanh Thu'].sum()
         label_prev = "So với M-1 (Tháng trước)"
 
-    kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 710000000.0)
+    kpi_dt_val = st.session_state.kpi_dt_dict.get(buu_cuc_kd, 2100000000.0)
     
     if view_type == "Theo Ngày": kpi_dt_val = kpi_dt_val / 30
     elif view_type == "Theo Tuần": kpi_dt_val = (kpi_dt_val / 30) * 7
@@ -1436,8 +1429,8 @@ with tab5:
 
 # ----------------- TAB 6: TRỢ LÝ AI -----------------
 with tab6:
-    styled_header("TRỢ LÝ AI PHÂN TÍCH & GIẢI ĐÁP", "🤖")
-    st.markdown("Tại đây bạn có thể yêu cầu AI phân tích dữ liệu chung, đưa ra lời khuyên hoặc đặt các câu hỏi về nghiệp vụ Logistics.")
+    styled_header("TRỢ LÝ AI PHÂN TÍCH ĐỘNG (ĐỌC DATA REAL-TIME)", "🤖")
+    st.markdown("Tại đây bạn có thể yêu cầu AI phân tích dữ liệu tổng hợp từ các Google Sheet đã kết nối. AI đã được học dữ liệu thực tế của bạn!")
     
     chat_container = st.container()
     with chat_container:
@@ -1445,7 +1438,7 @@ with tab6:
             with st.chat_message(chat["role"]):
                 st.markdown(chat["content"])
                 
-    if prompt_chat := st.chat_input("Nhập câu hỏi hoặc yêu cầu cho AI..."):
+    if prompt_chat := st.chat_input("Nhập câu hỏi (VD: Hôm nay ai giao nhiều đơn nhất? Doanh thu tuần qua?)..."):
         st.session_state.chat_history.append({"role": "user", "content": prompt_chat})
         with st.chat_message("user"): st.markdown(prompt_chat)
         
@@ -1453,11 +1446,44 @@ with tab6:
             if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
                 st.error("Chưa cấu hình API Key. Vui lòng thiết lập biến môi trường GEMINI_API_KEY.")
             else:
-                try:
-                    genai.configure(api_key=GEMINI_API_KEY.strip())
-                    model_chat = genai.GenerativeModel('gemini-3.6-flash')
-                    response_chat = model_chat.generate_content(f"Người dùng nói: {prompt_chat}. Hãy trả lời ngắn gọn, tập trung vào logistics và phân tích số liệu.")
-                    st.markdown(response_chat.text)
-                    st.session_state.chat_history.append({"role": "assistant", "content": response_chat.text})
-                except Exception as e:
-                    st.error(f"Lỗi AI: {e}")
+                with st.spinner("🧠 AI đang trích xuất dữ liệu từ Google Sheets để phân tích..."):
+                    try:
+                        # TRÍCH XUẤT DATA THẬT VÀO PROMPT
+                        context_data = ""
+                        try:
+                            if not df_ns_gtc_raw.empty:
+                                df_ai_ns = df_ns_gtc_raw.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+                                df_ai_ns['%GTC'] = (df_ai_ns['Đơn giao tính lương'] / df_ai_ns['Số đơn gán Giao'].replace({0: np.nan}) * 100).fillna(0).round(2)
+                                context_data += f"\n--- TỔNG HỢP NĂNG SUẤT NHÂN VIÊN GTC ---\n{df_ai_ns.to_csv(index=False)}\n"
+                                
+                            if not df_vh_tongquan.empty:
+                                max_d_vh = df_vh_tongquan['Ngày'].max()
+                                df_ai_vh = df_vh_tongquan[df_vh_tongquan['Ngày'] >= (max_d_vh - timedelta(days=7))]
+                                df_ai_vh_grp = df_ai_vh.groupby(['Ngày', 'Bưu Cục']).agg({'Volume': 'sum', 'GTC': 'mean', 'ODR': 'mean'}).reset_index()
+                                df_ai_vh_grp['Ngày'] = df_ai_vh_grp['Ngày'].dt.strftime('%d-%m-%Y')
+                                context_data += f"\n--- TỔNG HỢP VẬN HÀNH 7 NGÀY GẦN NHẤT ---\n{df_ai_vh_grp.to_csv(index=False)}\n"
+
+                            if not df_kinhdoanh.empty:
+                                max_d_kd = df_kinhdoanh['Ngày'].max()
+                                df_ai_kd = df_kinhdoanh[df_kinhdoanh['Ngày'] >= (max_d_kd - timedelta(days=7))]
+                                df_ai_kd_grp = df_ai_kd.groupby(['Ngày', 'Bưu Cục']).agg({'Doanh Thu': 'sum'}).reset_index()
+                                df_ai_kd_grp['Ngày'] = df_ai_kd_grp['Ngày'].dt.strftime('%d-%m-%Y')
+                                context_data += f"\n--- TỔNG HỢP DOANH THU 7 NGÀY GẦN NHẤT ---\n{df_ai_kd_grp.to_csv(index=False)}\n"
+                        except Exception as e:
+                            context_data = "Lỗi trích xuất: " + str(e)
+                            
+                        full_prompt = f"""Bạn là Trợ lý Giám đốc Vận hành Logistics của GHN. 
+Hệ thống đã tự động trích xuất các dữ liệu thực tế sau từ Google Sheets:
+{context_data}
+
+Câu hỏi của người quản lý: {prompt_chat}
+Yêu cầu bắt buộc: Dựa ĐÚNG vào số liệu trên để trả lời. Trả lời ngắn gọn, nêu đích danh tên nhân viên hoặc số liệu cụ thể. Trình bày bằng markdown (in đậm số liệu quan trọng)."""
+
+                        genai.configure(api_key=GEMINI_API_KEY.strip())
+                        model_chat = genai.GenerativeModel('gemini-3.6-flash')
+                        detailed_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.3)
+                        response_chat = model_chat.generate_content(full_prompt, generation_config=detailed_config)
+                        st.markdown(response_chat.text)
+                        st.session_state.chat_history.append({"role": "assistant", "content": response_chat.text})
+                    except Exception as e:
+                        st.error(f"Lỗi AI: {e}")
