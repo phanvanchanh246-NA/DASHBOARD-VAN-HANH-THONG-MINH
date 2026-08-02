@@ -465,6 +465,19 @@ def render_ai_and_telegram(ai_result, tab_name, key_suffix):
 
 st.divider()
 
+# ==========================================
+# 4. GIAO DIỆN CÁC TAB BIỂU ĐỒ 
+# ==========================================
+# ĐÃ BỔ SUNG TAB 6 DÀNH RIÊNG CHO TRỢ LÝ AI
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🚚 VẬN HÀNH CHI TIẾT", 
+    "👥 NĂNG SUẤT & LƯƠNG", 
+    "🎯 VẬN HÀNH THEO KPI", 
+    "💰 KINH DOANH", 
+    "🏆 THI ĐUA GTC", 
+    "🤖 TRỢ LÝ AI"
+])
+
 # ----------------- TAB 1: VẬN HÀNH -----------------
 with tab1:
     col1, col2, col3 = st.columns(3)
