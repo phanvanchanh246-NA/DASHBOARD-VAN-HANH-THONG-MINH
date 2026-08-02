@@ -1094,7 +1094,7 @@ with tab4:
     
     t4_col1, t4_col2, t4_col3 = st.columns(3)
     with t4_col1:
-        date_range_kd = st.date_input("Chọn thời gian", [df_kinhdoanh['Ngày'].max() - timedelta(days=31), df_kinhdoanh['Ngày'].max()], key="date_kd")
+        date_range_kd = st.date_input("Chọn thời gian", [df_kinhdoanh['Ngày'].max() - timedelta(days=7), df_kinhdoanh['Ngày'].max()], key="date_kd")
     with t4_col2:
         buu_cuc_kd = st.selectbox("Chọn Bưu cục để XEM số liệu", bc_list_kd, key="bc_kd")
     with t4_col3:
@@ -1438,12 +1438,18 @@ with tab5:
         else:
             st.warning("⚠️ Dữ liệu không có cột Ngày để hiển thị bảng hằng ngày.")
     else:
-        st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất cho Bưu Cục này.")
+        st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất (Tháng 07) cho Bưu Cục này.")
 
 # ----------------- TAB 6: TRỢ LÝ AI -----------------
 with tab6:
     styled_header("TRỢ LÝ AI PHÂN TÍCH ĐỘNG (ĐỌC DATA REAL-TIME)", "🤖")
-    st.markdown("Tại đây bạn có thể yêu cầu AI phân tích dữ liệu tổng hợp từ các Google Sheet đã kết nối. AI đã được học dữ liệu thực tế của bạn!")
+    st.markdown("Tại đây bạn có thể yêu cầu AI phân tích dữ liệu tổng hợp từ TẤT CẢ các Google Sheet đã kết nối. Trợ lý sẽ đọc đúng theo khoảng thời gian bạn chọn bên dưới!")
+    
+    # Thêm bộ lọc thời gian cho AI
+    min_date_ai = df_vh_tongquan['Ngày'].min() if not df_vh_tongquan.empty else datetime.today().date()
+    max_date_ai = df_vh_tongquan['Ngày'].max() if not df_vh_tongquan.empty else datetime.today().date()
+    
+    date_range_ai = st.date_input("🗓️ Chọn khoảng thời gian để AI đọc dữ liệu:", [max_date_ai - timedelta(days=7), max_date_ai], key="date_ai")
     
     chat_container = st.container()
     with chat_container:
@@ -1451,7 +1457,7 @@ with tab6:
             with st.chat_message(chat["role"]):
                 st.markdown(chat["content"])
                 
-    if prompt_chat := st.chat_input("Nhập câu hỏi (VD: Hôm nay ai giao nhiều đơn nhất? Doanh thu tuần qua?)..."):
+    if prompt_chat := st.chat_input("Nhập câu hỏi (VD: Doanh thu tuần qua? Ai có %GTC cao nhất?)..."):
         st.session_state.chat_history.append({"role": "user", "content": prompt_chat})
         with st.chat_message("user"): st.markdown(prompt_chat)
         
@@ -1459,44 +1465,78 @@ with tab6:
             if not GEMINI_API_KEY or GEMINI_API_KEY == "ĐIỀN_API_KEY_GEMINI_CỦA_BẠN_VÀO_ĐÂY":
                 st.error("Chưa cấu hình API Key. Vui lòng thiết lập biến môi trường GEMINI_API_KEY.")
             else:
-                with st.spinner("🧠 AI đang trích xuất dữ liệu từ Google Sheets để phân tích..."):
+                with st.spinner("🧠 AI đang trích xuất toàn bộ dữ liệu từ 6 Google Sheets để phân tích..."):
                     try:
-                        # TRÍCH XUẤT DATA THẬT VÀO PROMPT
-                        context_data = ""
-                        try:
-                            if not df_ns_gtc_raw.empty:
-                                df_ai_ns = df_ns_gtc_raw.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
-                                df_ai_ns['%GTC'] = (df_ai_ns['Đơn giao tính lương'] / df_ai_ns['Số đơn gán Giao'].replace({0: np.nan}) * 100).fillna(0).round(2)
-                                context_data += f"\n--- TỔNG HỢP NĂNG SUẤT NHÂN VIÊN GTC ---\n{df_ai_ns.to_csv(index=False)}\n"
-                                
-                            if not df_vh_tongquan.empty:
-                                max_d_vh = df_vh_tongquan['Ngày'].max()
-                                df_ai_vh = df_vh_tongquan[df_vh_tongquan['Ngày'] >= (max_d_vh - timedelta(days=7))]
-                                df_ai_vh_grp = df_ai_vh.groupby(['Ngày', 'Bưu Cục']).agg({'Volume': 'sum', 'GTC': 'mean', 'ODR': 'mean'}).reset_index()
-                                df_ai_vh_grp['Ngày'] = df_ai_vh_grp['Ngày'].dt.strftime('%d-%m-%Y')
-                                context_data += f"\n--- TỔNG HỢP VẬN HÀNH 7 NGÀY GẦN NHẤT ---\n{df_ai_vh_grp.to_csv(index=False)}\n"
+                        if len(date_range_ai) == 2:
+                            ai_start = pd.to_datetime(date_range_ai[0])
+                            ai_end = pd.to_datetime(date_range_ai[1])
+                        else:
+                            ai_start = ai_end = pd.to_datetime(date_range_ai[0])
 
-                            if not df_kinhdoanh.empty:
-                                max_d_kd = df_kinhdoanh['Ngày'].max()
-                                df_ai_kd = df_kinhdoanh[df_kinhdoanh['Ngày'] >= (max_d_kd - timedelta(days=7))]
-                                df_ai_kd_grp = df_ai_kd.groupby(['Ngày', 'Bưu Cục']).agg({'Doanh Thu': 'sum'}).reset_index()
-                                df_ai_kd_grp['Ngày'] = df_ai_kd_grp['Ngày'].dt.strftime('%d-%m-%Y')
-                                context_data += f"\n--- TỔNG HỢP DOANH THU 7 NGÀY GẦN NHẤT ---\n{df_ai_kd_grp.to_csv(index=False)}\n"
-                        except Exception as e:
-                            context_data = "Lỗi trích xuất: " + str(e)
-                            
+                        context_data = ""
+                        
+                        # 1. Vận hành tổng quan
+                        if not df_vh_tongquan.empty:
+                            df_1 = df_vh_tongquan[(df_vh_tongquan['Ngày'] >= ai_start) & (df_vh_tongquan['Ngày'] <= ai_end)]
+                            if not df_1.empty:
+                                df_1_grp = df_1.groupby(['Ngày', 'Bưu Cục']).agg({'Volume': 'sum', 'GTC': 'mean', 'Trả Hàng': 'mean', 'ODR': 'mean'}).reset_index()
+                                df_1_grp['Ngày'] = df_1_grp['Ngày'].dt.strftime('%d/%m/%Y')
+                                context_data += f"\n--- 1. VẬN HÀNH TỔNG QUAN ---\n{df_1_grp.to_csv(index=False)}\n"
+                                
+                        # 2. Vận hành theo ca
+                        if not df_vh_ca.empty:
+                            df_2 = df_vh_ca[(df_vh_ca['Ngày'] >= ai_start) & (df_vh_ca['Ngày'] <= ai_end)]
+                            if not df_2.empty:
+                                df_2_grp = df_2.groupby(['Ngày', 'Bưu Cục', 'Ca']).agg({'Volume': 'sum', 'GTC': 'mean'}).reset_index()
+                                df_2_grp['Ngày'] = df_2_grp['Ngày'].dt.strftime('%d/%m/%Y')
+                                context_data += f"\n--- 2. VẬN HÀNH THEO CA ---\n{df_2_grp.to_csv(index=False)}\n"
+                                
+                        # 3. Nhân sự (Lương)
+                        if not df_nhansu.empty:
+                            df_3 = df_nhansu[(df_nhansu['Ngày'] >= ai_start) & (df_nhansu['Ngày'] <= ai_end)]
+                            if not df_3.empty:
+                                df_3_grp = df_3.groupby(['Ngày', 'Bưu Cục', 'Nhân Viên']).agg({'Số Đơn': 'sum', 'Tổng Lương': 'sum', 'Đơn Giá': 'mean'}).reset_index()
+                                df_3_grp['Ngày'] = df_3_grp['Ngày'].dt.strftime('%d/%m/%Y')
+                                context_data += f"\n--- 3. LƯƠNG & ĐƠN GIÁ NHÂN SỰ ---\n{df_3_grp.to_csv(index=False)}\n"
+                                
+                        # 4. Năng suất GTC (Gán vs Giao)
+                        if not df_ns_gtc_raw.empty:
+                            df_4 = df_ns_gtc_raw[(df_ns_gtc_raw['Ngày'] >= ai_start) & (df_ns_gtc_raw['Ngày'] <= ai_end)]
+                            if not df_4.empty:
+                                df_4_grp = df_4.groupby(['Ngày', 'Bưu Cục', 'Nhân Viên']).agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
+                                df_4_grp['%GTC'] = (df_4_grp['Đơn giao tính lương'] / df_4_grp['Số đơn gán Giao'].replace({0: np.nan, 0.0: np.nan}) * 100).fillna(0).round(2)
+                                df_4_grp['Ngày'] = df_4_grp['Ngày'].dt.strftime('%d/%m/%Y')
+                                context_data += f"\n--- 4. NĂNG SUẤT GTC (ĐƠN GÁN VS GIAO) ---\n{df_4_grp.to_csv(index=False)}\n"
+                                
+                        # 5. Kinh Doanh
+                        if not df_kinhdoanh.empty:
+                            df_5 = df_kinhdoanh[(df_kinhdoanh['Ngày'] >= ai_start) & (df_kinhdoanh['Ngày'] <= ai_end)]
+                            if not df_5.empty:
+                                df_5_grp = df_5.groupby(['Ngày', 'Bưu Cục']).agg({'Doanh Thu': 'sum', 'Khách Liên Hệ': 'sum', 'Khách Lên Đơn': 'sum', 'Doanh Thu KH Mới': 'sum'}).reset_index()
+                                df_5_grp['Ngày'] = df_5_grp['Ngày'].dt.strftime('%d/%m/%Y')
+                                context_data += f"\n--- 5. KINH DOANH DOANH THU ---\n{df_5_grp.to_csv(index=False)}\n"
+                                
+                        # 6. Khách hàng tiềm năng
+                        if not df_khachhang.empty:
+                            target_col = [c for c in df_khachhang.columns if 'loại khách hàng' in str(c).lower()]
+                            if target_col:
+                                df_6 = df_khachhang[df_khachhang[target_col[0]].astype(str).str.contains('tiềm năng', case=False, na=False)].head(30)
+                            else:
+                                df_6 = df_khachhang.head(30)
+                            context_data += f"\n--- 6. DANH SÁCH KHÁCH HÀNG TIỀM NĂNG (TÓM TẮT) ---\n{df_6.to_csv(index=False)}\n"
+
                         full_prompt = f"""Bạn là Trợ lý Giám đốc Vận hành Logistics của GHN. 
-Hệ thống đã tự động trích xuất các dữ liệu thực tế sau từ Google Sheets:
+Hệ thống đã tự động trích xuất các dữ liệu thực tế từ TẤT CẢ 6 Bảng Google Sheets trong khoảng thời gian {ai_start.strftime('%d/%m/%Y')} đến {ai_end.strftime('%d/%m/%Y')}:
 {context_data}
 
 Câu hỏi của người quản lý: {prompt_chat}
-Yêu cầu bắt buộc: Dựa ĐÚNG vào số liệu trên để trả lời. Trả lời ngắn gọn, nêu đích danh tên nhân viên hoặc số liệu cụ thể. Trình bày bằng markdown (in đậm số liệu quan trọng)."""
+Yêu cầu bắt buộc: Dựa ĐÚNG vào số liệu trên để trả lời. Trả lời ngắn gọn, nêu đích danh tên nhân viên, bưu cục hoặc số liệu cụ thể. Trình bày bằng markdown (in đậm số liệu quan trọng)."""
 
                         genai.configure(api_key=GEMINI_API_KEY.strip())
                         model_chat = genai.GenerativeModel('gemini-3.6-flash')
-                        detailed_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.3)
+                        detailed_config = genai.types.GenerationConfig(max_output_tokens=8192, temperature=0.2)
                         response_chat = model_chat.generate_content(full_prompt, generation_config=detailed_config)
                         st.markdown(response_chat.text)
                         st.session_state.chat_history.append({"role": "assistant", "content": response_chat.text})
                     except Exception as e:
-                        st.error(f"Lỗi AI: {e}")
+                        st.error(f"Lỗi khi AI đọc dữ liệu: {e}")
