@@ -933,7 +933,7 @@ with tab2:
             - Loại lương áp dụng: {ll_str_ns}
             
             Kết quả thực tế:
-            - Tổng số đơn gán (LTC): {tong_don_gan:,.0f} đơn
+            - Tổng số đơn gán (GTC): {tong_don_gan:,.0f} đơn
             - Tổng đơn giao thành công (GTC): {tong_don_giao:,.0f} đơn
             - Đơn giá trung bình: {avg_price_curr:,.0f} VNĐ
             - Tổng lương kỳ hiện tại ({curr_name}): {total_salary_curr:,.0f} đ (Tăng/giảm {diff_salary:,.0f} đ so với kỳ trước).
