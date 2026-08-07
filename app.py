@@ -416,7 +416,13 @@ def get_customer_data():
         df_kh = df_kh.rename(columns=mapping)
         if 'Bưu Cục' not in df_kh.columns: df_kh['Bưu Cục'] = "Chưa phân loại"
         
-        df_kh = clean_dataframe_numbers(df_kh, ['Ngày', 'Bưu Cục', 'Tên khách hàng', 'Loại Khách Hàng', 'Trạng Thái'])
+        # --- BẢO VỆ TUYỆT ĐỐI CỘT VĂN BẢN KHỎI BỊ XÓA NHẦM ---
+        # Chỉ những cột là số mới bị đẩy vào hàm dọn dẹp, toàn bộ cột chữ được bảo vệ
+        num_cols = ['Khách Liên Hệ', 'Khách Lên Đơn', 'Doanh Thu', 'Volume', 'Số đơn']
+        text_cols_to_protect = [c for c in df_kh.columns if c not in num_cols]
+        
+        df_kh = clean_dataframe_numbers(df_kh, text_cols_to_protect)
+        
         if 'Ngày' in df_kh.columns:
             df_kh['Ngày'] = pd.to_datetime(df_kh['Ngày'], errors='coerce')
         df_kh['Bưu Cục'] = df_kh['Bưu Cục'].astype(str).str.strip()
@@ -1356,17 +1362,18 @@ with tab4:
     st.markdown("---")
     st.markdown("""
         <div style="background: linear-gradient(135deg, #FF8C00, #ff5722); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+            st.markdown("---")
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #FF8C00, #ff5722); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
             <h3 style="color: white; margin: 0; font-weight: 900; text-transform: uppercase;">📋 Danh Sách Khách Hàng Tiềm Năng Chờ Chốt Deal</h3>
             <p style="color: #fff3cd; font-size: 14px; margin: 5px 0 0 0; font-style: italic;">(Chỉ hiển thị các khách hàng được đánh dấu phân loại "Khách hàng tiềm năng")</p>
         </div>
     """, unsafe_allow_html=True)
     
-    if not df_khachhang.empty:
-        target_col = [c for c in df_kh_plot.columns if 'loại khách hàng' in str(c).lower()]
-        if target_col:
-            df_kh_filtered = df_kh_plot[df_kh_plot[target_col[0]].astype(str).str.contains('tiềm năng', case=False, na=False)]
-        else:
-            df_kh_filtered = df_kh_plot
+    if not df_kh_plot.empty:
+        # NÂNG CẤP: Quét toàn bộ bảng, bất kỳ dòng nào chứa chữ "tiềm năng" ở bất kỳ cột nào đều được giữ lại
+        mask_tiem_nang = df_kh_plot.apply(lambda row: row.astype(str).str.contains('tiềm năng', case=False, na=False).any(), axis=1)
+        df_kh_filtered = df_kh_plot[mask_tiem_nang]
     else:
         df_kh_filtered = pd.DataFrame()
         
@@ -1379,7 +1386,7 @@ with tab4:
         st.dataframe(styled_df, use_container_width=True)
     else:
         st.info("Không có khách hàng tiềm năng nào trong khoảng thời gian/Bưu cục này.")
-
+        
     st.markdown("---")
     ai_role_kd = st.radio("🤖 Chọn đối tượng nhận báo cáo AI (Kinh Doanh):", ["Góc nhìn Giám Đốc", "Góc nhìn Quản lý khu vực (AM)", "Góc nhìn Nhân viên xử lý"], horizontal=True, key="role_kd")
 
