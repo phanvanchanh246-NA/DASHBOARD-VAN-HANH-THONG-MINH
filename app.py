@@ -1366,7 +1366,7 @@ with tab4:
             <p style="color: #fff3cd; font-size: 14px; margin: 5px 0 0 0; font-style: italic;">(Chỉ hiển thị các khách hàng được đánh dấu phân loại "Khách hàng tiềm năng")</p>
         </div>
     """, unsafe_allow_html=True)
-            st.markdown("---")
+    st.markdown("---")
     st.markdown("""
         <div style="background: linear-gradient(135deg, #FF8C00, #ff5722); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
             st.markdown("---")
