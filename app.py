@@ -1326,18 +1326,18 @@ with tab4:
             df_kh_curr = df_base_kh[(df_base_kh['Ngày'] >= start_curr) & (df_base_kh['Ngày'] <= end_curr)]
             df_kh_prev = df_base_kh[(df_base_kh['Ngày'] >= start_prev) & (df_base_kh['Ngày'] <= end_prev)]
 
-            grp_curr = df_kh_curr.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Tuần Hiện Tại'})
-            grp_prev = df_kh_prev.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Tuần Trước'})
+            grp_curr = df_kh_curr.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Kỳ Hiện Tại'})
+            grp_prev = df_kh_prev.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Kỳ Trước'})
 
             df_compare = pd.merge(grp_curr, grp_prev, on='Tên Khách Hàng', how='outer').fillna(0)
-            df_compare['Tăng Trưởng'] = df_compare['Tuần Hiện Tại'] - df_compare['Tuần Trước']
-            df_compare = df_compare.sort_values('Tuần Hiện Tại', ascending=False)
+            df_compare['Tăng Trưởng'] = df_compare['Kỳ Hiện Tại'] - df_compare['Tuần Trước']
+            df_compare = df_compare.sort_values('Kỳ Hiện Tại', ascending=False)
 
             styled_dt_kh = df_compare.style.set_properties(**{
                 'background-color': '#f0fdf4', 'color': '#166534', 'border-color': '#bbf7d0'
             }).format({
-                "Tuần Hiện Tại": "{:,.0f} ₫", 
-                "Tuần Trước": "{:,.0f} ₫",
+                "Kỳ Hiện Tại": "{:,.0f} ₫", 
+                "Kỳ Trước": "{:,.0f} ₫",
                 "Tăng Trưởng": "{:+,.0f} ₫"
             }).set_table_styles(header_styles)
             
