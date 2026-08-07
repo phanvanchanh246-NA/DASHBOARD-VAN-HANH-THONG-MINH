@@ -1360,7 +1360,12 @@ with tab4:
             st.info("Chưa có dữ liệu Doanh thu theo Khách hàng trong thời gian này.")
 
     st.markdown("---")
+    st.markdown("""
         <div style="background: linear-gradient(135deg, #FF8C00, #ff5722); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+            <h3 style="color: white; margin: 0; font-weight: 900; text-transform: uppercase;">&#128203; Danh Sách Khách Hàng Tiềm Năng Chờ Chốt Deal</h3>
+            <p style="color: #fff3cd; font-size: 14px; margin: 5px 0 0 0; font-style: italic;">(Chỉ hiển thị các khách hàng được đánh dấu phân loại "Khách hàng tiềm năng")</p>
+        </div>
+    """, unsafe_allow_html=True)
             st.markdown("---")
     st.markdown("""
         <div style="background: linear-gradient(135deg, #FF8C00, #ff5722); padding: 15px 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
