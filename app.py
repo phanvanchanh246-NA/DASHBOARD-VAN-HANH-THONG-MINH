@@ -32,7 +32,6 @@ if "ai_kpi_result" not in st.session_state: st.session_state.ai_kpi_result = "B�
 if "ai_kd_result" not in st.session_state: st.session_state.ai_kd_result = "Bấm nút '🔍 Cố vấn AI Kinh Doanh' để xem cố vấn chi tiết."
 if "ai_td_result" not in st.session_state: st.session_state.ai_td_result = "Bấm nút '🔍 AI Đánh giá Chương trình Thi đua' để xem cố vấn chi tiết."
 
-# Bộ nhớ cho Chatbot
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 
 # ==========================================
@@ -69,7 +68,6 @@ st.markdown("""
         color: #333333;
     }
     
-    /* Làm nổi bật các con số Metric */
     [data-testid="stMetricValue"] {
         font-weight: 900 !important;
         color: #007BFF !important;
@@ -95,7 +93,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ĐỊNH DẠNG CHUNG CHO DÒNG TIÊU ĐỀ BẢNG (HEADER) MÀU XANH DA TRỜI BẮT MẮT
 th_props = [
     ('background-color', '#29B6F6'), 
     ('color', '#ffffff'),            
@@ -206,7 +203,7 @@ def get_real_business_data():
         if 'Bưu Cục' not in df_kd.columns: df_kd['Bưu Cục'] = "Chưa phân loại"
         
         df_kd = clean_dataframe_numbers(df_kd, text_cols=['Ngày', 'Bưu Cục'])
-        df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'], errors='coerce', dayfirst=True)
+        df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'], errors='coerce')
         df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str).str.strip()
         for req in ['Doanh Thu', 'Khách Liên Hệ', 'Khách Lên Đơn', 'Doanh Thu KH Mới']:
             if req not in df_kd.columns: df_kd[req] = 0.0
@@ -276,9 +273,9 @@ def get_real_data():
             if not valid_vals.empty and valid_vals.max() <= 1.2:
                 df_ns['%GTC'] = df_ns['%GTC'] * 100
         
-        df_vh_tq['Ngày'] = pd.to_datetime(df_vh_tq['Ngày'], errors='coerce', dayfirst=True)
-        df_vh_c['Ngày'] = pd.to_datetime(df_vh_c['Ngày'], errors='coerce', dayfirst=True)
-        df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'], errors='coerce', dayfirst=True)
+        df_vh_tq['Ngày'] = pd.to_datetime(df_vh_tq['Ngày'], errors='coerce')
+        df_vh_c['Ngày'] = pd.to_datetime(df_vh_c['Ngày'], errors='coerce')
+        df_ns['Ngày'] = pd.to_datetime(df_ns['Ngày'], errors='coerce')
         
         for df in [df_vh_tq, df_vh_c]:
             df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
@@ -341,7 +338,7 @@ def get_ns_gtc_data():
         
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         if 'Ngày' in df.columns:
-            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce', dayfirst=True)
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         df['Nhân Viên'] = df['Nhân Viên'].astype(str).str.strip()
@@ -374,7 +371,7 @@ def get_prev_month_gtc_data():
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
         
         if 'Ngày' in df.columns:
-            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce', dayfirst=True)
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         
@@ -421,7 +418,7 @@ def get_customer_data():
         df_kh = clean_dataframe_numbers(df_kh, text_cols_to_protect)
         
         if 'Ngày' in df_kh.columns:
-            df_kh['Ngày'] = pd.to_datetime(df_kh['Ngày'], errors='coerce', dayfirst=True)
+            df_kh['Ngày'] = pd.to_datetime(df_kh['Ngày'], errors='coerce')
         df_kh['Bưu Cục'] = df_kh['Bưu Cục'].astype(str).str.strip()
         return df_kh
     except Exception as e:
@@ -452,7 +449,7 @@ def get_new_customer_revenue_data():
             
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Mã KH', 'Tên KH'])
         if 'Ngày' in df.columns:
-            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce', dayfirst=True)
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         return df
     except Exception as e:
@@ -467,10 +464,10 @@ def get_revenue_by_customer_data():
         df = pd.read_csv(url_dt_theo_kh)
         df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
         mapping = {
-            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày': 'Ngày',
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
-            'Doanh thu': 'Doanh Thu', 'Doanh Thu': 'Doanh Thu', 'doanh thu': 'Doanh Thu', 'DOANH THU': 'Doanh Thu',
-            'Khách hàng': 'Tên Khách Hàng', 'Tên khách hàng': 'Tên Khách Hàng', 'khách hàng': 'Tên Khách Hàng', 'Tên Khách Hàng': 'Tên Khách Hàng', 'Khách Hàng': 'Tên Khách Hàng'
+            'Doanh thu': 'Doanh Thu', 'Doanh Thu': 'Doanh Thu',
+            'Khách hàng': 'Tên Khách Hàng', 'Tên khách hàng': 'Tên Khách Hàng'
         }
         df = df.rename(columns=mapping)
         if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
@@ -479,7 +476,7 @@ def get_revenue_by_customer_data():
         
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Tên Khách Hàng', 'Mã Khách Hàng'])
         if 'Ngày' in df.columns:
-            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce', dayfirst=True)
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
         df['Tên Khách Hàng'] = df['Tên Khách Hàng'].astype(str).str.strip()
         return df
@@ -1317,43 +1314,34 @@ with tab4:
             st.info("Chưa có dữ liệu Doanh thu Khách hàng mới trong thời gian này.")
 
     with chart_kd4:
-        st.markdown(f"<div style='font-weight: 800; font-size: 18px; color: #333; margin-bottom: 15px;'>Bảng Doanh thu theo Khách Hàng (Kỳ Hiện Tại vs Kỳ Trước)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-weight: 800; font-size: 18px; color: #333; margin-bottom: 15px;'>Bảng Doanh thu theo Khách Hàng (Tuần nay vs Tuần trước)</div>", unsafe_allow_html=True)
         if not df_dt_theo_kh.empty:
-            if len(date_range_kd) == 2:
-                end_curr = pd.to_datetime(date_range_kd[1])
-                start_curr = pd.to_datetime(date_range_kd[0])
-            else:
-                end_curr = current_date
-                start_curr = end_curr - timedelta(days=6)
-
-            period_length = (end_curr - start_curr).days + 1
+            end_curr = current_date
+            start_curr = end_curr - timedelta(days=6)
             end_prev = start_curr - timedelta(days=1)
-            start_prev = end_prev - timedelta(days=period_length - 1)
+            start_prev = end_prev - timedelta(days=6)
 
             df_base_kh = df_dt_theo_kh[mask_dt_kh].copy() if not mask_dt_kh.empty else df_dt_theo_kh.copy()
 
             df_kh_curr = df_base_kh[(df_base_kh['Ngày'] >= start_curr) & (df_base_kh['Ngày'] <= end_curr)]
             df_kh_prev = df_base_kh[(df_base_kh['Ngày'] >= start_prev) & (df_base_kh['Ngày'] <= end_prev)]
 
-            grp_curr = df_kh_curr.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Kỳ Hiện Tại'})
-            grp_prev = df_kh_prev.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Kỳ Trước'})
+            grp_curr = df_kh_curr.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Tuần Hiện Tại'})
+            grp_prev = df_kh_prev.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Tuần Trước'})
 
             df_compare = pd.merge(grp_curr, grp_prev, on='Tên Khách Hàng', how='outer').fillna(0)
-            df_compare['Tăng Trưởng'] = df_compare['Kỳ Hiện Tại'] - df_compare['Kỳ Trước']
-            df_compare = df_compare.sort_values('Kỳ Hiện Tại', ascending=False)
+            df_compare['Tăng Trưởng'] = df_compare['Tuần Hiện Tại'] - df_compare['Tuần Trước']
+            df_compare = df_compare.sort_values('Tuần Hiện Tại', ascending=False)
+
+            styled_dt_kh = df_compare.style.set_properties(**{
+                'background-color': '#f0fdf4', 'color': '#166534', 'border-color': '#bbf7d0'
+            }).format({
+                "Tuần Hiện Tại": "{:,.0f} ₫", 
+                "Tuần Trước": "{:,.0f} ₫",
+                "Tăng Trưởng": "{:+,.0f} ₫"
+            }).set_table_styles(header_styles)
             
-            if df_compare.empty:
-                st.info("Không có dữ liệu Doanh thu trong khoảng thời gian này.")
-            else:
-                styled_dt_kh = df_compare.style.set_properties(**{
-                    'background-color': '#f0fdf4', 'color': '#166534', 'border-color': '#bbf7d0'
-                }).format({
-                    "Kỳ Hiện Tại": "{:,.0f} ₫", 
-                    "Kỳ Trước": "{:,.0f} ₫",
-                    "Tăng Trưởng": "{:+,.0f} ₫"
-                }).set_table_styles(header_styles)
-                
-                st.dataframe(styled_dt_kh, use_container_width=True, height=350)
+            st.dataframe(styled_dt_kh, use_container_width=True, height=350)
         else:
             st.info("Chưa có dữ liệu Doanh thu theo Khách hàng trong thời gian này.")
 
