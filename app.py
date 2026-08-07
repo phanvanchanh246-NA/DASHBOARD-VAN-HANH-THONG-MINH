@@ -128,7 +128,7 @@ if not st.session_state.authenticated:
     check_login()
     st.stop()
 
-# Nút Đăng xuất ở thanh bên (Đã loại bỏ AI Chatbot chật chội)
+# Nút Đăng xuất ở thanh bên
 with st.sidebar:
     if st.button("🚪 Đăng xuất", use_container_width=True):
         st.session_state.authenticated = False
@@ -191,89 +191,32 @@ def clean_dataframe_numbers(df, text_cols):
             df[col] = df[col].apply(parse_vn_num)
     return df
 
-# ==========================================
-# CẬP NHẬT & BỔ SUNG DATA TAB KINH DOANH
-# ==========================================
 @st.cache_data(ttl=60)
-def get_customer_data():
-    # Link lấy Phễu khách hàng và Danh sách KH tiềm năng
-    url_kh = "https://docs.google.com/spreadsheets/d/16ywqMY_QxFcRvOXEFsZGAxz0PGRiB1OPELzaUq-Whq8/export?format=csv&gid=942640433"
+def get_real_business_data():
+    url_kinhdoanh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1161540341"
     try:
-        df_kh = pd.read_csv(url_kh)
-        df_kh.columns = df_kh.columns.astype(str).str.strip().str.replace('\xa0', ' ')
-        mapping = {
-            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày': 'Ngày',
-            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
-            'Khách hàng liên hệ': 'Khách Liên Hệ', 'Khách liên hệ': 'Khách Liên Hệ',
-            'Khách hàng lên đơn': 'Khách Lên Đơn', 'Khách lên đơn': 'Khách Lên Đơn'
-        }
-        df_kh = df_kh.rename(columns=mapping)
-        if 'Bưu Cục' not in df_kh.columns: df_kh['Bưu Cục'] = "Chưa phân loại"
-        if 'Khách Liên Hệ' not in df_kh.columns: df_kh['Khách Liên Hệ'] = 0.0
-        if 'Khách Lên Đơn' not in df_kh.columns: df_kh['Khách Lên Đơn'] = 0.0
-        
-        df_kh = clean_dataframe_numbers(df_kh, ['Ngày', 'Bưu Cục', 'Tên khách hàng', 'loại khách hàng', 'Loại Khách Hàng'])
-        if 'Ngày' in df_kh.columns:
-            df_kh['Ngày'] = pd.to_datetime(df_kh['Ngày'], errors='coerce')
-        df_kh['Bưu Cục'] = df_kh['Bưu Cục'].astype(str).str.strip()
-        return df_kh.dropna(subset=['Ngày']) if 'Ngày' in df_kh.columns else df_kh
-    except Exception as e:
-        return pd.DataFrame()
-
-df_khachhang = get_customer_data()
-
-@st.cache_data(ttl=60)
-def get_new_customer_revenue_data():
-    # Link lấy Doanh thu khách hàng mới
-    url_dt_moi = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1798669626"
-    try:
-        df = pd.read_csv(url_dt_moi)
-        df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
-        mapping = {
+        df_kd = pd.read_csv(url_kinhdoanh)
+        df_kd.columns = df_kd.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        kd_mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
-            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
-            'Doanh thu': 'Doanh Thu', 'Doanh thu KH mới': 'Doanh Thu', 'Doanh Thu KH mới': 'Doanh Thu'
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục', 'Trạm': 'Bưu Cục', 'Cửa hàng': 'Bưu Cục',
+            'Doanh thu': 'Doanh Thu', 'Khách hàng liên hệ': 'Khách Liên Hệ',
+            'Khách hàng lên đơn': 'Khách Lên Đơn', 'Doanh thu KH mới': 'Doanh Thu KH Mới'
         }
-        df = df.rename(columns=mapping)
-        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
-        if 'Doanh Thu' not in df.columns: df['Doanh Thu'] = 0.0
+        df_kd = df_kd.rename(columns=kd_mapping)
+        if 'Bưu Cục' not in df_kd.columns: df_kd['Bưu Cục'] = "Chưa phân loại"
         
-        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục'])
-        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
-        df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
-        return df.dropna(subset=['Ngày'])
+        df_kd = clean_dataframe_numbers(df_kd, text_cols=['Ngày', 'Bưu Cục'])
+        df_kd['Ngày'] = pd.to_datetime(df_kd['Ngày'], errors='coerce')
+        df_kd['Bưu Cục'] = df_kd['Bưu Cục'].astype(str).str.strip()
+        for req in ['Doanh Thu', 'Khách Liên Hệ', 'Khách Lên Đơn', 'Doanh Thu KH Mới']:
+            if req not in df_kd.columns: df_kd[req] = 0.0
+        return df_kd.dropna(subset=['Ngày'])
     except Exception as e:
-        return pd.DataFrame()
+        st.error(f"🚨 Lỗi kết nối Google Sheets Kinh Doanh: {e}")
+        st.stop()
 
-df_dt_kh_moi = get_new_customer_revenue_data()
-
-@st.cache_data(ttl=60)
-def get_revenue_by_customer_data():
-    # Link lấy Doanh thu theo từng khách hàng
-    url_dt_theo_kh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=944526772"
-    try:
-        df = pd.read_csv(url_dt_theo_kh)
-        df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
-        mapping = {
-            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
-            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
-            'Doanh thu': 'Doanh Thu', 'Doanh Thu': 'Doanh Thu',
-            'Khách hàng': 'Tên Khách Hàng', 'Tên khách hàng': 'Tên Khách Hàng'
-        }
-        df = df.rename(columns=mapping)
-        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
-        if 'Tên Khách Hàng' not in df.columns: df['Tên Khách Hàng'] = "Khách lẻ"
-        if 'Doanh Thu' not in df.columns: df['Doanh Thu'] = 0.0
-        
-        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Tên Khách Hàng', 'Mã Khách Hàng'])
-        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
-        df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
-        df['Tên Khách Hàng'] = df['Tên Khách Hàng'].astype(str).str.strip()
-        return df.dropna(subset=['Ngày'])
-    except Exception as e:
-        return pd.DataFrame()
-
-df_dt_theo_kh = get_revenue_by_customer_data()
+df_kinhdoanh = get_real_business_data()
 
 @st.cache_data(ttl=60) 
 def get_real_data():
@@ -378,6 +321,8 @@ df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 @st.cache_data(ttl=60)
 def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
+    # Khai báo sẵn các cột bắt buộc để CHỐNG SẬP ứng dụng nếu file lỗi mạng hoặc trống
+    req_cols = ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao']
     try:
         df = pd.read_csv(url_ns_gtc)
         df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
@@ -390,28 +335,25 @@ def get_ns_gtc_data():
             'Số đơn gán Giao': 'Số đơn gán Giao', 'Số đơn gán giao': 'Số đơn gán Giao', 'Số đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán Giao': 'Số đơn gán Giao', 'Đơn gán': 'Số đơn gán Giao', 'Số Đơn Gán': 'Số đơn gán Giao'
         }
         df = df.rename(columns=mapping)
+        
+        # TỰ ĐỘNG BÙ CỘT NẾU SHEET BỊ THIẾU
         if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
         if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
+        if 'Loại Hàng' not in df.columns: df['Loại Hàng'] = "FULL"
+        if 'Đơn giao tính lương' not in df.columns: df['Đơn giao tính lương'] = 0.0
+        if 'Số đơn gán Giao' not in df.columns: df['Số đơn gán Giao'] = 0.0
         
         df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng'])
-        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        if 'Ngày' in df.columns:
+            df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
-        
-        if 'Nhân Viên' in df.columns:
-            df['Nhân Viên'] = df['Nhân Viên'].astype(str).str.strip()
-        else:
-            df['Nhân Viên'] = "Chưa phân loại"
+        df['Nhân Viên'] = df['Nhân Viên'].astype(str).str.strip()
+        df['Loại Hàng'] = df['Loại Hàng'].astype(str).str.strip()
             
-        if 'Loại Hàng' in df.columns:
-            df['Loại Hàng'] = df['Loại Hàng'].astype(str).str.strip()
-            
-        for req in ['Đơn giao tính lương', 'Số đơn gán Giao']:
-            if req not in df.columns: df[req] = 0.0
-            
-        return df.dropna(subset=['Ngày'])
-    except Exception as e:
-        return pd.DataFrame()
+        return df.dropna(subset=['Ngày']) if 'Ngày' in df.columns else df
+    except Exception:
+        return pd.DataFrame(columns=req_cols)
 
 df_ns_gtc_raw = get_ns_gtc_data()
 
@@ -458,16 +400,89 @@ def get_prev_month_gtc_data():
 
 df_ns_prev_raw = get_prev_month_gtc_data()
 
+# ==========================================
+# CẬP NHẬT & BỔ SUNG DATA TAB KINH DOANH
+# ==========================================
 @st.cache_data(ttl=60)
 def get_customer_data():
+    # Link lấy Phễu khách hàng và Danh sách KH tiềm năng
     url_kh = "https://docs.google.com/spreadsheets/d/16ywqMY_QxFcRvOXEFsZGAxz0PGRiB1OPELzaUq-Whq8/export?format=csv&gid=942640433"
     try:
         df_kh = pd.read_csv(url_kh)
-        return df_kh
+        df_kh.columns = df_kh.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày', 'Ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
+            'Khách hàng liên hệ': 'Khách Liên Hệ', 'Khách liên hệ': 'Khách Liên Hệ',
+            'Khách hàng lên đơn': 'Khách Lên Đơn', 'Khách lên đơn': 'Khách Lên Đơn'
+        }
+        df_kh = df_kh.rename(columns=mapping)
+        if 'Bưu Cục' not in df_kh.columns: df_kh['Bưu Cục'] = "Chưa phân loại"
+        if 'Khách Liên Hệ' not in df_kh.columns: df_kh['Khách Liên Hệ'] = 0.0
+        if 'Khách Lên Đơn' not in df_kh.columns: df_kh['Khách Lên Đơn'] = 0.0
+        
+        df_kh = clean_dataframe_numbers(df_kh, ['Ngày', 'Bưu Cục', 'Tên khách hàng', 'loại khách hàng', 'Loại Khách Hàng'])
+        if 'Ngày' in df_kh.columns:
+            df_kh['Ngày'] = pd.to_datetime(df_kh['Ngày'], errors='coerce')
+        df_kh['Bưu Cục'] = df_kh['Bưu Cục'].astype(str).str.strip()
+        return df_kh.dropna(subset=['Ngày']) if 'Ngày' in df_kh.columns else df_kh
     except Exception as e:
         return pd.DataFrame()
 
 df_khachhang = get_customer_data()
+
+@st.cache_data(ttl=60)
+def get_new_customer_revenue_data():
+    # Link lấy Doanh thu khách hàng mới
+    url_dt_moi = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=1798669626"
+    try:
+        df = pd.read_csv(url_dt_moi)
+        df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
+            'Doanh thu': 'Doanh Thu', 'Doanh thu KH mới': 'Doanh Thu', 'Doanh Thu KH mới': 'Doanh Thu'
+        }
+        df = df.rename(columns=mapping)
+        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
+        if 'Doanh Thu' not in df.columns: df['Doanh Thu'] = 0.0
+        
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục'])
+        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
+        return df.dropna(subset=['Ngày'])
+    except Exception as e:
+        return pd.DataFrame()
+
+df_dt_kh_moi = get_new_customer_revenue_data()
+
+@st.cache_data(ttl=60)
+def get_revenue_by_customer_data():
+    # Link lấy Doanh thu theo từng khách hàng
+    url_dt_theo_kh = "https://docs.google.com/spreadsheets/d/1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY/export?format=csv&gid=944526772"
+    try:
+        df = pd.read_csv(url_dt_theo_kh)
+        df.columns = df.columns.astype(str).str.strip().str.replace('\xa0', ' ')
+        mapping = {
+            'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
+            'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
+            'Doanh thu': 'Doanh Thu', 'Doanh Thu': 'Doanh Thu',
+            'Khách hàng': 'Tên Khách Hàng', 'Tên khách hàng': 'Tên Khách Hàng'
+        }
+        df = df.rename(columns=mapping)
+        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
+        if 'Tên Khách Hàng' not in df.columns: df['Tên Khách Hàng'] = "Khách lẻ"
+        if 'Doanh Thu' not in df.columns: df['Doanh Thu'] = 0.0
+        
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Tên Khách Hàng', 'Mã Khách Hàng'])
+        df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
+        df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
+        df['Tên Khách Hàng'] = df['Tên Khách Hàng'].astype(str).str.strip()
+        return df.dropna(subset=['Ngày'])
+    except Exception as e:
+        return pd.DataFrame()
+
+df_dt_theo_kh = get_revenue_by_customer_data()
 
 
 # ==========================================
@@ -525,7 +540,6 @@ st.divider()
 # ==========================================
 # 4. GIAO DIỆN CÁC TAB BIỂU ĐỒ 
 # ==========================================
-# ĐÃ BỔ SUNG TAB 6 DÀNH RIÊNG CHO TRỢ LÝ AI
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🚚 VẬN HÀNH CHI TIẾT", 
     "👥 NĂNG SUẤT & LƯƠNG", 
@@ -652,10 +666,9 @@ with tab1:
         fig_ca.add_trace(go.Bar(x=df_ca_sub['TrụcX'], y=df_ca_sub['Volume'], name=f"Volume {ca_name}", marker_color=c_bar, opacity=0.85), secondary_y=False)
         fig_ca.add_trace(go.Scatter(x=df_ca_sub['TrụcX'], y=df_ca_sub['GTC'], name=f"%GTC {ca_name}", mode='lines+markers', line=dict(color=c_line, width=3), marker=dict(size=8, color=c_line, line=dict(width=1, color='white'))), secondary_y=True)
 
-    fig_ca.update_layout(title=dict(text=f"Sản Lượng và Tỷ Lệ GTC Theo Ca Làm Việc ({view_mode_vh})", font=dict(size=18, family="Inter", color="#333")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', hovermode="x unified", barmode='group', legend=dict(font=dict(weight="bold")))
-    fig_ca.update_yaxes(title_text="Sản lượng", secondary_y=False, showgrid=True, gridcolor='#f0f0f0', title_font=dict(weight="bold"))
-    fig_ca.update_yaxes(title_text="% GTC", secondary_y=True, showgrid=False, range=[0, 100], title_font=dict(weight="bold"))
-    fig_ca.update_xaxes(title_font=dict(weight="bold"), tickfont=dict(weight="bold"))
+    fig_ca.update_layout(title="Sản Lượng và Tỷ Lệ GTC Theo Ca Làm Việc", plot_bgcolor='rgba(240, 248, 255, 0.5)', hovermode="x unified", barmode='group')
+    fig_ca.update_yaxes(title_text="Sản lượng", secondary_y=False)
+    fig_ca.update_yaxes(title_text="% GTC", secondary_y=True, range=[0, 100])
     st.plotly_chart(fig_ca, use_container_width=True)
 
     st.markdown("---")
@@ -663,7 +676,6 @@ with tab1:
     
     if st.button("🔍 Nhờ AI Phân tích Vận Hành", type="primary", key="btn_ai_vh"):
         with st.spinner("🔄 AI đang phân tích dữ liệu Vận Hành..."):
-            
             if ai_role_vh == "Góc nhìn Giám Đốc":
                 role_prompt = "Nhiệm vụ: Đóng vai Giám đốc vận hành. Phân tích CHUYÊN SÂU theo 3 phần: 1. Đánh giá tổng thể hiệu suất, 2. Phân tích Rủi ro vĩ mô, 3. Đề xuất hành động chiến lược. Viết chuyên nghiệp, uy quyền."
             elif ai_role_vh == "Góc nhìn Quản lý khu vực (AM)":
@@ -1223,7 +1235,7 @@ with tab4:
     elif view_type == "Theo Tuần": kpi_dt_val = (kpi_dt_val / 30) * 7
 
     st.markdown(f"<div style='font-weight: 800; font-size: 16px; color: #333;'>Hiệu suất Doanh thu ({view_type})</div>", unsafe_allow_html=True)
-    m_col1, m_col2, m_col3, m_col4 = st.columns(4) # Tăng lên 4 cột Metric
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
     m_col1.metric("Doanh Thu Hiện Tại", f"{rev_n:,.0f} đ", f"{(rev_n - kpi_dt_val)/kpi_dt_val*100:.1f}% vs KPI" if kpi_dt_val > 0 else "0%")
     m_col2.metric(label_prev, f"{rev_prev:,.0f} đ", f"{rev_n - rev_prev:,.0f} đ so với kỳ trước")
     m_col3.metric("Mục tiêu KPI (Theo bộ lọc)", f"{kpi_dt_val:,.0f} đ")
@@ -1324,7 +1336,6 @@ with tab4:
         df_kh_filtered = pd.DataFrame()
         
     if not df_kh_filtered.empty:
-        # Bỏ đi các cột tính toán để hiển thị bảng gọn gàng hơn
         cols_to_drop = ['Ngày', 'Khách Liên Hệ', 'Khách Lên Đơn']
         df_kh_display = df_kh_filtered.drop(columns=[c for c in cols_to_drop if c in df_kh_filtered.columns])
         styled_df = df_kh_display.style.set_properties(**{
@@ -1392,7 +1403,6 @@ with tab5:
         curr_start = pd.to_datetime(date_range_t5[0])
         curr_end = pd.to_datetime(date_range_t5[1])
         
-        # Tự động nhận diện Tháng Hiện Tại (Theo ngày kết thúc lọc) và Tháng Trước
         curr_m = curr_end.month
         curr_y = curr_end.year
         
@@ -1404,33 +1414,29 @@ with tab5:
         col_prev = f"%GTC Tháng {prev_m:02d}"
         
         if not df_t5_base.empty and 'Ngày' in df_t5_base.columns:
-            # Dữ liệu Tháng Hiện Tại (Theo bộ lọc của người dùng)
             df_t7 = df_t5_base[(df_t5_base['Ngày'] >= curr_start) & (df_t5_base['Ngày'] <= curr_end)].copy()
-            # Dữ liệu Tháng Trước (Lấy từ cơ sở dữ liệu tổng để không bị cắt xén)
             df_t6 = df_t5_base[(df_t5_base['Ngày'].dt.month == prev_m) & (df_t5_base['Ngày'].dt.year == prev_y)].copy()
         else:
-            df_t7 = pd.DataFrame()
-            df_t6 = pd.DataFrame()
+            df_t7 = pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Số đơn gán Giao', 'Đơn giao tính lương'])
+            df_t6 = pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Số đơn gán Giao', 'Đơn giao tính lương'])
     else:
         df_t7 = df_t5_base.copy()
-        df_t6 = pd.DataFrame()
+        df_t6 = pd.DataFrame(columns=['Ngày', 'Bưu Cục', 'Nhân Viên', 'Số đơn gán Giao', 'Đơn giao tính lương'])
         col_curr = "%GTC Tháng Hiện Tại"
         col_prev = "%GTC Tháng Trước"
         
     if buu_cuc_t5 != "Tất cả":
-        if not df_t7.empty and 'Bưu Cục' in df_t7.columns:
+        if 'Bưu Cục' in df_t7.columns:
             df_t7 = df_t7[df_t7['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_t5).strip().lower()]
-        if not df_t6.empty and 'Bưu Cục' in df_t6.columns:
+        if 'Bưu Cục' in df_t6.columns:
             df_t6 = df_t6[df_t6['Bưu Cục'].astype(str).str.strip().str.lower() == str(buu_cuc_t5).strip().lower()]
         
     if not df_t7.empty:
         grp_t7 = df_t7.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
-        # BẢO VỆ CHIA KHÔNG
         grp_t7[col_curr] = (grp_t7['Đơn giao tính lương'] / grp_t7['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
         
         if not df_t6.empty:
             grp_t6 = df_t6.groupby('Nhân Viên').agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
-            # BẢO VỆ CHIA KHÔNG
             grp_t6[col_prev] = (grp_t6['Đơn giao tính lương'] / grp_t6['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
         else:
             grp_t6 = pd.DataFrame(columns=['Nhân Viên', col_prev])
@@ -1438,19 +1444,16 @@ with tab5:
         df_thi_dua = pd.merge(grp_t7, grp_t6[['Nhân Viên', col_prev]], on='Nhân Viên', how='left')
         df_thi_dua[col_prev] = df_thi_dua[col_prev].fillna(0.0)
         
-        # TỶ LỆ CẢI THIỆN = PHÉP TRỪ
         df_thi_dua['Tỷ Lệ Cải Thiện'] = df_thi_dua[col_curr] - df_thi_dua[col_prev]
         
         df_thi_dua.rename(columns={'Số đơn gán Giao': 'Tổng Đơn Gán', 'Đơn giao tính lương': 'Tổng Đơn GTC'}, inplace=True)
         
-        # XẾP HẠNG
         df_thi_dua['Xếp Hạng Gán'] = df_thi_dua['Tổng Đơn Gán'].rank(method='min', ascending=False)
         df_thi_dua['Xếp Hạng %GTC'] = df_thi_dua[col_curr].rank(method='min', ascending=False)
         df_thi_dua['Xếp Hạng Cải Thiện'] = df_thi_dua['Tỷ Lệ Cải Thiện'].rank(method='min', ascending=False)
         
         df_thi_dua['Tổng Điểm'] = (df_thi_dua['Xếp Hạng Gán'] + df_thi_dua['Xếp Hạng %GTC'] + df_thi_dua['Xếp Hạng Cải Thiện']) / 3
         
-        # BỔ SUNG LOGIC TIE-BREAKER: Ưu tiên %GTC tháng hiện tại nếu bằng điểm
         df_thi_dua['Tie_Breaker'] = -df_thi_dua[col_curr]
         df_thi_dua['Xếp Hạng Tổng'] = df_thi_dua[['Tổng Điểm', 'Tie_Breaker']].apply(tuple, axis=1).rank(method='min')
         df_thi_dua = df_thi_dua.drop(columns=['Tie_Breaker'])
@@ -1474,10 +1477,10 @@ with tab5:
             'Tổng Điểm': "{:.2f}",
             'Xếp Hạng Tổng': "{:.0f}"
         }).set_properties(**{
-            'background-color': '#FFF4E6',  # Vàng cam nhạt (Năng động)
-            'color': '#D35400',             # Cam đậm cháy
-            'border-color': '#FF9F43',      # Viền cam sáng
-            'font-weight': '600'            # Làm đậm các con số thi đua
+            'background-color': '#FFF4E6', 
+            'color': '#D35400',             
+            'border-color': '#FF9F43',      
+            'font-weight': '600'            
         }).set_table_styles(header_styles)
         
         st.dataframe(styled_thi_dua, use_container_width=True)
@@ -1490,7 +1493,6 @@ with tab5:
             df_daily['Ngày Str'] = df_daily['Ngày'].dt.strftime('%d/%m')
             
             grp_daily = df_daily.groupby(['Nhân Viên', 'Ngày', 'Ngày Str']).agg({'Số đơn gán Giao': 'sum', 'Đơn giao tính lương': 'sum'}).reset_index()
-            # BẢO VỆ CHIA KHÔNG
             grp_daily['%GTC'] = (grp_daily['Đơn giao tính lương'] / grp_daily['Số đơn gán Giao'].replace({0.0: np.nan, 0: np.nan}) * 100).fillna(0.0)
             
             pivot_daily = grp_daily.pivot(index='Nhân Viên', columns='Ngày Str', values=['Số đơn gán Giao', 'Đơn giao tính lương', '%GTC'])
@@ -1525,10 +1527,10 @@ with tab5:
                         format_dict_daily[col] = "{:,.0f}"
                         
             styled_daily = pivot_daily.style.format(format_dict_daily).set_properties(**{
-                'background-color': '#E1F5FE',  # Xanh dương nhạt (Tươi sáng)
-                'color': '#0277BD',             # Xanh lam đậm
-                'border-color': '#29B6F6',      # Viền xanh da trời
-                'font-weight': '500'            # Làm rõ số liệu
+                'background-color': '#E1F5FE',  
+                'color': '#0277BD',             
+                'border-color': '#29B6F6',      
+                'font-weight': '500'            
             }).set_table_styles(header_styles)
             
             st.dataframe(styled_daily, use_container_width=True)
@@ -1570,14 +1572,13 @@ with tab5:
         else:
             st.warning("⚠️ Dữ liệu không có cột Ngày để hiển thị bảng hằng ngày.")
     else:
-        st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất (Tháng 07) cho Bưu Cục này.")
+        st.warning("⚠️ Không có dữ liệu Thi đua & Năng suất cho Bưu Cục này.")
 
 # ----------------- TAB 6: TRỢ LÝ AI -----------------
 with tab6:
     styled_header("TRỢ LÝ AI PHÂN TÍCH ĐỘNG (ĐỌC DATA REAL-TIME)", "🤖")
     st.markdown("Tại đây bạn có thể yêu cầu AI phân tích dữ liệu tổng hợp từ TẤT CẢ các Google Sheet đã kết nối. Trợ lý sẽ đọc đúng theo khoảng thời gian bạn chọn bên dưới!")
     
-    # Thêm bộ lọc thời gian cho AI
     min_date_ai = df_vh_tongquan['Ngày'].min() if not df_vh_tongquan.empty else datetime.today().date()
     max_date_ai = df_vh_tongquan['Ngày'].max() if not df_vh_tongquan.empty else datetime.today().date()
     
@@ -1658,7 +1659,7 @@ with tab6:
                             context_data += f"\n--- 6. DANH SÁCH KHÁCH HÀNG TIỀM NĂNG (TÓM TẮT) ---\n{df_6.to_csv(index=False)}\n"
 
                         full_prompt = f"""Bạn là Trợ lý Giám đốc Vận hành Logistics của GHN. 
-Hệ thống đã tự động trích xuất các dữ liệu thực tế từ TẤT CẢ 6 Bảng Google Sheets trong khoảng thời gian {ai_start.strftime('%d/%m/%Y')} đến {ai_end.strftime('%d/%m/%Y')}:
+Hệ thống đã tự động trích xuất các dữ liệu thực tế từ TẤT CẢ Bảng Google Sheets trong khoảng thời gian {ai_start.strftime('%d/%m/%Y')} đến {ai_end.strftime('%d/%m/%Y')}:
 {context_data}
 
 Câu hỏi của người quản lý: {prompt_chat}
