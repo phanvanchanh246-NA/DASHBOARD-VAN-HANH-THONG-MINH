@@ -32,7 +32,6 @@ if "ai_kpi_result" not in st.session_state: st.session_state.ai_kpi_result = "B�
 if "ai_kd_result" not in st.session_state: st.session_state.ai_kd_result = "Bấm nút '🔍 Cố vấn AI Kinh Doanh' để xem cố vấn chi tiết."
 if "ai_td_result" not in st.session_state: st.session_state.ai_td_result = "Bấm nút '🔍 AI Đánh giá Chương trình Thi đua' để xem cố vấn chi tiết."
 
-# Bộ nhớ cho Chatbot
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 
 # ==========================================
@@ -69,7 +68,6 @@ st.markdown("""
         color: #333333;
     }
     
-    /* Làm nổi bật các con số Metric */
     [data-testid="stMetricValue"] {
         font-weight: 900 !important;
         color: #007BFF !important;
@@ -95,7 +93,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ĐỊNH DẠNG CHUNG CHO DÒNG TIÊU ĐỀ BẢNG (HEADER) MÀU XANH DA TRỜI BẮT MẮT
 th_props = [
     ('background-color', '#29B6F6'), 
     ('color', '#ffffff'),            
