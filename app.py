@@ -97,12 +97,12 @@ st.markdown("""
 
 # ĐỊNH DẠNG CHUNG CHO DÒNG TIÊU ĐỀ BẢNG (HEADER) MÀU XANH DA TRỜI BẮT MẮT
 th_props = [
-    ('background-color', '#29B6F6'), # Xanh da trời nhạt, sáng
-    ('color', '#ffffff'),            # Chữ trắng tương phản
-    ('font-weight', '900'),          # In đậm mạnh
-    ('font-size', '15px'),           # Kích thước chữ
-    ('text-align', 'center'),        # Căn giữa
-    ('text-transform', 'uppercase')  # In hoa
+    ('background-color', '#29B6F6'), 
+    ('color', '#ffffff'),            
+    ('font-weight', '900'),          
+    ('font-size', '15px'),           
+    ('text-align', 'center'),        
+    ('text-transform', 'uppercase')  
 ]
 header_styles = [dict(selector="th", props=th_props)]
 
@@ -128,7 +128,6 @@ if not st.session_state.authenticated:
     check_login()
     st.stop()
 
-# Nút Đăng xuất ở thanh bên
 with st.sidebar:
     if st.button("🚪 Đăng xuất", use_container_width=True):
         st.session_state.authenticated = False
@@ -321,7 +320,6 @@ df_vh_tongquan, df_vh_ca, df_nhansu = get_real_data()
 @st.cache_data(ttl=60)
 def get_ns_gtc_data():
     url_ns_gtc = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
-    # Khai báo sẵn các cột bắt buộc để CHỐNG SẬP ứng dụng nếu file lỗi mạng hoặc trống
     req_cols = ['Ngày', 'Bưu Cục', 'Nhân Viên', 'Loại Hàng', 'Đơn giao tính lương', 'Số đơn gán Giao']
     try:
         df = pd.read_csv(url_ns_gtc)
@@ -336,7 +334,6 @@ def get_ns_gtc_data():
         }
         df = df.rename(columns=mapping)
         
-        # TỰ ĐỘNG BÙ CỘT NẾU SHEET BỊ THIẾU
         if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
         if 'Nhân Viên' not in df.columns: df['Nhân Viên'] = "Chưa phân loại"
         if 'Loại Hàng' not in df.columns: df['Loại Hàng'] = "FULL"
@@ -357,7 +354,6 @@ def get_ns_gtc_data():
 
 df_ns_gtc_raw = get_ns_gtc_data()
 
-# LẤY DỮ LIỆU ĐẶC BIỆT: DATA %GTC CHO THÁNG TRƯỚC BẢO VỆ CHỐNG LỖI MẤT DỮ LIỆU
 @st.cache_data(ttl=60)
 def get_prev_month_gtc_data():
     url_ns_gtc_prev = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/export?format=csv&gid=1862143946"
@@ -414,14 +410,13 @@ def get_customer_data():
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
             'Khách hàng liên hệ': 'Khách Liên Hệ', 'Khách liên hệ': 'Khách Liên Hệ',
             'Khách hàng lên đơn': 'Khách Lên Đơn', 'Khách lên đơn': 'Khách Lên Đơn',
-            'loại khách hàng': 'Loại Khách Hàng', 'Loại khách hàng': 'Loại Khách Hàng'
+            'loại khách hàng': 'Loại Khách Hàng', 'Loại khách hàng': 'Loại Khách Hàng',
+            'Trạng thái': 'Trạng Thái', 'trạng thái': 'Trạng Thái', 'Trạng Thái': 'Trạng Thái'
         }
         df_kh = df_kh.rename(columns=mapping)
         if 'Bưu Cục' not in df_kh.columns: df_kh['Bưu Cục'] = "Chưa phân loại"
-        if 'Khách Liên Hệ' not in df_kh.columns: df_kh['Khách Liên Hệ'] = 0.0
-        if 'Khách Lên Đơn' not in df_kh.columns: df_kh['Khách Lên Đơn'] = 0.0
         
-        df_kh = clean_dataframe_numbers(df_kh, ['Ngày', 'Bưu Cục', 'Tên khách hàng', 'Loại Khách Hàng'])
+        df_kh = clean_dataframe_numbers(df_kh, ['Ngày', 'Bưu Cục', 'Tên khách hàng', 'Loại Khách Hàng', 'Trạng Thái'])
         if 'Ngày' in df_kh.columns:
             df_kh['Ngày'] = pd.to_datetime(df_kh['Ngày'], errors='coerce')
         df_kh['Bưu Cục'] = df_kh['Bưu Cục'].astype(str).str.strip()
@@ -440,13 +435,19 @@ def get_new_customer_revenue_data():
         mapping = {
             'Thời Gian': 'Ngày', 'Thời gian': 'Ngày', 'ngày': 'Ngày',
             'Bưu cục': 'Bưu Cục', 'bưu cục': 'Bưu Cục', 'Khu vực': 'Bưu Cục',
-            'Doanh thu': 'Doanh Thu', 'Doanh thu KH mới': 'Doanh Thu', 'Doanh Thu KH mới': 'Doanh Thu'
+            'Doanh thu': 'Doanh Thu', 'Doanh thu KH mới': 'Doanh Thu', 'Doanh Thu KH mới': 'Doanh Thu',
+            'Mã KH': 'Mã KH', 'Mã Khách Hàng': 'Mã KH', 'Mã khách hàng': 'Mã KH',
+            'Tên KH': 'Tên KH', 'Tên khách hàng': 'Tên KH', 'Tên Khách Hàng': 'Tên KH', 'Khách hàng': 'Tên KH',
+            'Volume': 'Volume', 'Sản lượng': 'Volume', 'Số đơn': 'Volume'
         }
         df = df.rename(columns=mapping)
-        if 'Bưu Cục' not in df.columns: df['Bưu Cục'] = "Chưa phân loại"
-        if 'Doanh Thu' not in df.columns: df['Doanh Thu'] = 0.0
         
-        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục'])
+        for c in ['Bưu Cục', 'Mã KH', 'Tên KH']:
+            if c not in df.columns: df[c] = "Chưa xác định"
+        for c in ['Doanh Thu', 'Volume']:
+            if c not in df.columns: df[c] = 0.0
+            
+        df = clean_dataframe_numbers(df, ['Ngày', 'Bưu Cục', 'Mã KH', 'Tên KH'])
         if 'Ngày' in df.columns:
             df['Ngày'] = pd.to_datetime(df['Ngày'], errors='coerce')
         df['Bưu Cục'] = df['Bưu Cục'].astype(str).str.strip()
@@ -1271,12 +1272,7 @@ with tab4:
         df_plot_kd_display['Ngày'] = df_plot_kd_display['Ngày'].dt.to_period('M').apply(lambda r: r.start_time)
     df_plot_kd_grouped = df_plot_kd_display.groupby('Ngày').agg({'Doanh Thu': 'sum'}).reset_index()
 
-    # 2. Dữ liệu Phễu từ file Khách hàng mới
-    df_kh_plot = df_khachhang[mask_kh_range].copy() if not df_khachhang.empty else pd.DataFrame()
-    total_lh = df_kh_plot['Khách Liên Hệ'].sum() if not df_kh_plot.empty and 'Khách Liên Hệ' in df_kh_plot.columns else 0
-    total_ld = df_kh_plot['Khách Lên Đơn'].sum() if not df_kh_plot.empty and 'Khách Lên Đơn' in df_kh_plot.columns else 0
-
-    # VẼ DÒNG 1: BIỂU ĐỒ DOANH THU TỔNG & PHỄU KH MỚI
+    # VẼ DÒNG 1: BIỂU ĐỒ DOANH THU TỔNG & PHỄU TRẠNG THÁI KH MỚI TỰ ĐỘNG
     chart_kd1, chart_kd2 = st.columns(2)
     with chart_kd1:
         fig_rev = px.bar(df_plot_kd_grouped, x='Ngày', y='Doanh Thu', title=f"Biểu đồ Doanh Thu Tổng & KPI ({buu_cuc_kd})", color_discrete_sequence=['#007BFF'])
@@ -1287,42 +1283,72 @@ with tab4:
         st.plotly_chart(fig_rev, use_container_width=True)
 
     with chart_kd2:
-        fig_funnel = go.Figure(go.Funnel(
-            y=["Khách Liên Hệ", "Khách Lên Đơn (Chuyển đổi)"],
-            x=[total_lh, total_ld], textinfo="value+percent initial",
-            marker={"color": ["#FF8C00", "#28a745"]} 
-        ))
-        fig_funnel.update_layout(title=dict(text=f"Phễu chuyển đổi KH Mới ({view_type})", font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
-        st.plotly_chart(fig_funnel, use_container_width=True)
+        df_kh_plot = df_khachhang[mask_kh_range].copy() if not df_khachhang.empty else pd.DataFrame()
+        if not df_kh_plot.empty and 'Trạng Thái' in df_kh_plot.columns:
+            funnel_data = df_kh_plot.groupby('Trạng Thái').size().reset_index(name='Số Lượng')
+            funnel_data = funnel_data.sort_values('Số Lượng', ascending=False)
+            
+            fig_funnel = go.Figure(go.Funnel(
+                y=funnel_data['Trạng Thái'],
+                x=funnel_data['Số Lượng'], textinfo="value+percent initial",
+                marker={"color": ["#FF8C00", "#28a745", "#007BFF", "#17a2b8", "#6c757d"]} 
+            ))
+            fig_funnel.update_layout(title=dict(text=f"Phễu trạng thái KH Mới ({view_type})", font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
+            st.plotly_chart(fig_funnel, use_container_width=True)
+        else:
+            st.info("Không tìm thấy dữ liệu Trạng Thái Khách hàng.")
 
-    # VẼ DÒNG 2: BIỂU ĐỒ DOANH THU KH MỚI & BẢNG DOANH THU THEO KHÁCH HÀNG
+    # VẼ DÒNG 2: BẢNG DOANH THU KH MỚI & BẢNG DOANH THU SO SÁNH (TUẦN HIỆN TẠI VS TUẦN TRƯỚC)
     chart_kd3, chart_kd4 = st.columns(2)
     with chart_kd3:
+        st.markdown(f"<div style='font-weight: 800; font-size: 18px; color: #333; margin-bottom: 15px;'>Bảng Doanh Thu Khách Hàng Mới</div>", unsafe_allow_html=True)
         df_dt_moi_plot = df_dt_kh_moi[mask_dt_moi_range].copy() if not df_dt_kh_moi.empty else pd.DataFrame()
         if not df_dt_moi_plot.empty:
-            if view_type == "Theo Tuần":
-                df_dt_moi_plot['Ngày'] = df_dt_moi_plot['Ngày'].dt.to_period('W').apply(lambda r: r.start_time)
-            elif view_type == "Theo Tháng":
-                df_dt_moi_plot['Ngày'] = df_dt_moi_plot['Ngày'].dt.to_period('M').apply(lambda r: r.start_time)
-            df_dt_moi_grouped = df_dt_moi_plot.groupby('Ngày').agg({'Doanh Thu': 'sum'}).reset_index()
+            req_cols_new = ['Mã KH', 'Tên KH']
+            avail_cols_new = [c for c in req_cols_new if c in df_dt_moi_plot.columns]
             
-            fig_rev_new = px.area(df_dt_moi_grouped, x='Ngày', y='Doanh Thu', title=f"Biến động Doanh thu Khách hàng mới ({buu_cuc_kd})", color_discrete_sequence=['#4facfe'])
-            fig_rev_new.update_layout(title=dict(font=dict(size=18, family="Inter", color="#333", weight="bold")), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff')
-            fig_rev_new.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
-            st.plotly_chart(fig_rev_new, use_container_width=True)
+            if avail_cols_new:
+                df_new_cust_table = df_dt_moi_plot.groupby(avail_cols_new).agg({'Doanh Thu': 'sum', 'Volume': 'sum'}).reset_index()
+                df_new_cust_table = df_new_cust_table.sort_values(by='Doanh Thu', ascending=False)
+                
+                styled_dt_moi = df_new_cust_table.style.set_properties(**{
+                    'background-color': '#f8fdff', 'color': '#003f5c', 'border-color': '#90e0ef'
+                }).format({"Doanh Thu": "{:,.0f} ₫", "Volume": "{:,.0f}"}).set_table_styles(header_styles)
+                
+                st.dataframe(styled_dt_moi, use_container_width=True, height=350)
+            else:
+                st.info("Thiếu cột Mã KH hoặc Tên KH trong dữ liệu gốc.")
         else:
             st.info("Chưa có dữ liệu Doanh thu Khách hàng mới trong thời gian này.")
 
     with chart_kd4:
-        st.markdown(f"<div style='font-weight: 800; font-size: 18px; color: #333; margin-bottom: 15px;'>Bảng Doanh thu theo Khách Hàng</div>", unsafe_allow_html=True)
-        df_dt_kh_plot = df_dt_theo_kh[mask_dt_kh_range].copy() if not df_dt_theo_kh.empty else pd.DataFrame()
-        if not df_dt_kh_plot.empty:
-            df_kh_table = df_dt_kh_plot.groupby('Tên Khách Hàng').agg({'Doanh Thu': 'sum'}).reset_index()
-            df_kh_table = df_kh_table.sort_values(by='Doanh Thu', ascending=False)
-            
-            styled_dt_kh = df_kh_table.style.set_properties(**{
+        st.markdown(f"<div style='font-weight: 800; font-size: 18px; color: #333; margin-bottom: 15px;'>Bảng Doanh thu theo Khách Hàng (Tuần nay vs Tuần trước)</div>", unsafe_allow_html=True)
+        if not df_dt_theo_kh.empty:
+            end_curr = current_date
+            start_curr = end_curr - timedelta(days=6)
+            end_prev = start_curr - timedelta(days=1)
+            start_prev = end_prev - timedelta(days=6)
+
+            df_base_kh = df_dt_theo_kh[mask_dt_kh].copy() if not mask_dt_kh.empty else df_dt_theo_kh.copy()
+
+            df_kh_curr = df_base_kh[(df_base_kh['Ngày'] >= start_curr) & (df_base_kh['Ngày'] <= end_curr)]
+            df_kh_prev = df_base_kh[(df_base_kh['Ngày'] >= start_prev) & (df_base_kh['Ngày'] <= end_prev)]
+
+            grp_curr = df_kh_curr.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Tuần Hiện Tại'})
+            grp_prev = df_kh_prev.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Tuần Trước'})
+
+            df_compare = pd.merge(grp_curr, grp_prev, on='Tên Khách Hàng', how='outer').fillna(0)
+            df_compare['Tăng Trưởng'] = df_compare['Tuần Hiện Tại'] - df_compare['Tuần Trước']
+            df_compare = df_compare.sort_values('Tuần Hiện Tại', ascending=False)
+
+            styled_dt_kh = df_compare.style.set_properties(**{
                 'background-color': '#f0fdf4', 'color': '#166534', 'border-color': '#bbf7d0'
-            }).format({"Doanh Thu": "{:,.0f} ₫"}).set_table_styles(header_styles)
+            }).format({
+                "Tuần Hiện Tại": "{:,.0f} ₫", 
+                "Tuần Trước": "{:,.0f} ₫",
+                "Tăng Trưởng": "{:+,.0f} ₫"
+            }).set_table_styles(header_styles)
+            
             st.dataframe(styled_dt_kh, use_container_width=True, height=350)
         else:
             st.info("Chưa có dữ liệu Doanh thu theo Khách hàng trong thời gian này.")
@@ -1364,10 +1390,16 @@ with tab4:
             elif ai_role_kd == "Góc nhìn Quản lý khu vực (AM)":
                 role_prompt = "Nhiệm vụ: Đóng vai Quản lý khu vực (AM). Phân tích 3 phần: 1. Đánh giá tốc độ chạy doanh thu của khu vực, 2. Cảnh báo tỷ lệ rớt đơn ở phễu khách hàng tiềm năng, 3. Đưa ra chỉ đạo thúc đẩy đội ngũ Sales khu vực chốt deal khẩn cấp. Viết dứt khoát, máu lửa."
             else:
-                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN SALES. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét tỷ lệ chốt sale thực tế, 3. Đưa ra mẹo nhỏ để anh em chốt deal khẩn cấp.'
+                role_prompt = 'Nhiệm vụ: Đóng vai Trợ lý Kinh doanh gửi tin báo cho NHÓM NHÂN VIÊN SALES. Xưng hô thân thiện, máu lửa (dùng "Mình" với "Team Sales"). Phân tích 3 phần: 1. Khen ngợi/Nhắc nhở tiến độ chạy số hôm nay, 2. Nhận xét trạng thái phễu chốt sale thực tế, 3. Đưa ra mẹo nhỏ để anh em chốt deal khẩn cấp.'
                 
             d_start_kd = date_range_kd[0].strftime('%d/%m/%Y')
             d_end_kd = date_range_kd[1].strftime('%d/%m/%Y') if len(date_range_kd) > 1 else d_start_kd
+            
+            # Tính toán tóm tắt Phễu cho AI đọc
+            funnel_summary = ""
+            if not df_kh_plot.empty and 'Trạng Thái' in df_kh_plot.columns:
+                funnel_counts = df_kh_plot.groupby('Trạng Thái').size().reset_index(name='Số Lượng')
+                funnel_summary = ", ".join([f"{row['Trạng Thái']}: {row['Số Lượng']}" for idx, row in funnel_counts.iterrows()])
             
             prompt_kd = f"""
             Dữ liệu Kinh Doanh Đã Lọc:
@@ -1379,7 +1411,7 @@ with tab4:
             - KPI Doanh thu: {kpi_dt_val:,.0f} đ
             - Doanh thu thực tế hiện tại: {rev_n:,.0f} đ (So với kỳ trước: {rev_prev:,.0f} đ)
             - Doanh thu dự kiến đến cuối tháng: {expected_rev_end_month:,.0f} đ
-            - Phễu Khách hàng mới: {total_lh} liên hệ -> {total_ld} lên đơn (chuyển đổi).
+            - Phễu Khách hàng mới (Số lượng theo Trạng Thái): {funnel_summary}
             
             {role_prompt}
             Yêu cầu BẮT BUỘC: Viết súc tích, phân bổ ý rõ ràng. Tuyệt đối không được bỏ dở câu. Kết thúc báo cáo bằng dòng chữ [HOÀN TẤT BÁO CÁO].
