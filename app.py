@@ -1205,7 +1205,7 @@ with tab4:
         start_w_prev = start_w - timedelta(days=7)
         end_w_prev = start_w_prev + timedelta(days=6)
         rev_prev = df_filtered_kd[(df_filtered_kd['Ngày'] >= start_w_prev) & (df_filtered_kd['Ngày'] <= end_w_prev)]['Doanh Thu'].sum()
-        label_prev = "So với W-1 (Tuần trước)"
+        label_prev = "So với W-1 (Kỳ trước)"
     else: 
         start_m = current_date.replace(day=1)
         next_month = start_m.replace(day=28) + timedelta(days=4)
@@ -1314,7 +1314,7 @@ with tab4:
             st.info("Chưa có dữ liệu Doanh thu Khách hàng mới trong thời gian này.")
 
     with chart_kd4:
-        st.markdown(f"<div style='font-weight: 800; font-size: 18px; color: #333; margin-bottom: 15px;'>Bảng Doanh thu theo Khách Hàng (Tuần nay vs Tuần trước)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-weight: 800; font-size: 18px; color: #333; margin-bottom: 15px;'>Bảng Doanh thu theo Khách Hàng (Kỳ này vs Kỳ trước)</div>", unsafe_allow_html=True)
         if not df_dt_theo_kh.empty:
             end_curr = current_date
             start_curr = end_curr - timedelta(days=6)
@@ -1330,7 +1330,7 @@ with tab4:
             grp_prev = df_kh_prev.groupby('Tên Khách Hàng')['Doanh Thu'].sum().reset_index().rename(columns={'Doanh Thu': 'Kỳ Trước'})
 
             df_compare = pd.merge(grp_curr, grp_prev, on='Tên Khách Hàng', how='outer').fillna(0)
-            df_compare['Tăng Trưởng'] = df_compare['Kỳ Hiện Tại'] - df_compare['Tuần Trước']
+            df_compare['Tăng Trưởng'] = df_compare['Kỳ Hiện Tại'] - df_compare['Kỳ Trước']
             df_compare = df_compare.sort_values('Kỳ Hiện Tại', ascending=False)
 
             styled_dt_kh = df_compare.style.set_properties(**{
