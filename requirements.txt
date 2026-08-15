@@ -1,3 +1,4 @@
+# Không cần matplotlib: bảng đã tự tô màu bằng CSS thay cho background_gradient
 streamlit>=1.38.0
 pandas>=2.2.0
 numpy>=1.26.0
