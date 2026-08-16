@@ -61,7 +61,7 @@ def check_login():
     with st.form("login_form"):
         user_id = st.text_input("Mã Nhân Viên (ID)")
         password = st.text_input("Mật khẩu", type="password")
-        submitted = st.form_submit_button("Đăng Nhập Hàng Tôn")
+        submitted = st.form_submit_button("Đăng Nhập")
         
         if submitted:
             if user_id == "ADMIN" and password == "123": # Thay bằng tài khoản thật
