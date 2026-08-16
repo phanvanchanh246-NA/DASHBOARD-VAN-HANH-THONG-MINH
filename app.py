@@ -658,10 +658,17 @@ ROLE_STYLE = {
 CLOSE = "Viết súc tích, chia ý rõ ràng, không bỏ dở câu. Kết thúc bằng dòng [HẾT]."
 
 
+ROLE_DEFAULT_VOICE = {"admin": "Giám đốc", "manager": "Quản lý khu vực", "staff": "Nhân viên"}
+
+
 def ai_panel(key: str, label: str, build_prompt, tab: str):
+    voices = list(ROLE_STYLE)
+    default_voice = ROLE_DEFAULT_VOICE.get(AUTH.get("role", "staff"), "Quản lý khu vực")
     c1, c2 = st.columns([1, 2.4])
     with c1:
-        role = st.selectbox("Viết cho ai", list(ROLE_STYLE), key=f"r_{key}")
+        role = st.selectbox("Viết cho ai", voices,
+                            index=voices.index(default_voice) if default_voice in voices else 0,
+                            key=f"r_{key}")
     with c2:
         st.markdown("<div style='height:26px'></div>", unsafe_allow_html=True)
         if st.button(label, type="primary", key=f"b_{key}", use_container_width=True):
@@ -697,9 +704,14 @@ with st.spinner("Đang tổng hợp số liệu cho báo cáo..."):
     DF_NSGTC = base_frame("ns_gtc")
 
 ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC)
-REF = max([f["Ngày"].max() for f in (M_GTC, M_DT, DF_NSGTC)
-           if f is not None and not f.empty and f["Ngày"].notna().any()]
-          or [pd.Timestamp.today().normalize()])
+
+# Ngày mới nhất thực sự có trong dữ liệu — dùng làm mặc định cho bộ lọc toàn cục.
+REF_DATA = max([f["Ngày"].max() for f in (M_GTC, M_DT, DF_NSGTC)
+                if f is not None and not f.empty and f["Ngày"].notna().any()]
+               or [pd.Timestamp.today().normalize()])
+DATA_MIN = min([f["Ngày"].min() for f in (M_GTC, M_DT, DF_NSGTC)
+                if f is not None and not f.empty and f["Ngày"].notna().any()]
+               or [REF_DATA - timedelta(days=90)])
 
 
 def kpi_target(keys, fallback, exclude=(), bc="Tất cả"):
@@ -726,6 +738,19 @@ with st.sidebar:
     st.markdown("<div class='toc-label'>Mục lục</div>", unsafe_allow_html=True)
     notes = ROLE_NOTES.get(AUTH["role"], ROLE_NOTES["staff"])
     page = st.radio("Mục lục", notes, label_visibility="collapsed")
+
+    # ── Bộ lọc toàn cục: chọn một lần, mọi ghi chú cùng theo ──────────
+    st.markdown("<div class='toc-label' style='margin-top:18px;'>Bộ lọc toàn cục</div>",
+                unsafe_allow_html=True)
+    g_ref = st.date_input("Ngày phân tích", value=REF_DATA.date(),
+                          min_value=DATA_MIN.date(), max_value=REF_DATA.date(), key="g_ref")
+    REF = pd.to_datetime(g_ref)
+    st.selectbox("Bưu cục", ALL_BC, key="g_bc")
+    if REF != REF_DATA:
+        st.markdown(f"<div style='font-size:10.5px;color:var(--brassd);margin-top:-6px;'>"
+                    f"Đang xem lùi so với ngày mới nhất ({REF_DATA:%d.%m}).</div>",
+                    unsafe_allow_html=True)
+
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
     if st.button("Cập nhật số liệu", use_container_width=True):
         st.cache_data.clear()
@@ -734,12 +759,20 @@ with st.sidebar:
         st.session_state.auth = None
         st.rerun()
     st.markdown(f"<div style='font-size:10.5px;color:var(--slate);margin-top:16px;line-height:1.6;'>"
-                f"Số liệu đến {REF:%d.%m.%Y}<br>Tổng hợp lúc {datetime.now():%H:%M}</div>",
+                f"Số liệu đến {REF_DATA:%d.%m.%Y}<br>Tổng hợp lúc {datetime.now():%H:%M}</div>",
                 unsafe_allow_html=True)
     errs = st.session_state.get("errs", {})
     if errs:
         st.markdown(f"<div style='font-size:10.5px;color:var(--burg);margin-top:8px;'>"
                     f"{len(errs)} nguồn chưa đọc được: {esc(', '.join(errs))}</div>", unsafe_allow_html=True)
+
+def page_scope(key: str, label: str = "Phạm vi") -> str:
+    """Ô chọn bưu cục của trang, mặc định lấy theo bộ lọc toàn cục ở sidebar.
+    Người dùng vẫn đổi riêng cho trang này được mà không ảnh hưởng trang khác."""
+    g = st.session_state.get("g_bc", "Tất cả")
+    idx = ALL_BC.index(g) if g in ALL_BC else 0
+    return st.selectbox(label, ALL_BC, index=idx, key=key)
+
 
 # ── letterhead chung cho mọi trang ───────────────────────────────────
 st.markdown(f"""<div class="letterhead">
@@ -751,7 +784,7 @@ st.markdown(f"""<div class="letterhead">
 # TRANG BÌA
 # ════════════════════════════════════════════════════════════════════
 if page == "Trang bìa":
-    bc = st.selectbox("Phạm vi báo cáo", ALL_BC, key="bc_home")
+    bc = page_scope("bc_home", "Phạm vi báo cáo")
     g_gtc, g_tra, g_tts, g_odr, g_gtb, g_dt = (scope(x, bc) for x in
                                                (M_GTC, M_TRA, M_TTS, M_ODR, M_GTB, M_DT))
     (dA, dB), (pA, pB) = period_pair(REF, "Ngày")
@@ -820,25 +853,44 @@ if page == "Trang bìa":
     st.markdown(f"<div class='notice'><div class='cap'>Điểm cần lưu ý</div><ol>{items}</ol></div>",
                 unsafe_allow_html=True)
 
-    sub_head("Ghi chú bổ sung — chưa nối nguồn dữ liệu")
+    sub_head("Tin nhắn nhóm và tác phong")
     c1, c2 = st.columns(2)
     with c1:
-        empty("Tác phong & kỷ luật: thêm một sheet chấm công hoặc vi phạm vào SOURCES để mục này tự hiện.")
+        st.markdown("<div style='font-size:11px;color:var(--slate);margin-bottom:6px;'>"
+                    "Dán trực tiếp đoạn hội thoại Zalo hoặc Telegram vào đây. Nội dung chỉ dùng "
+                    "cho lần phân tích này, không được lưu lại ở đâu.</div>", unsafe_allow_html=True)
+        chat_paste = st.text_area("Nội dung nhóm cần AI đọc", height=150, key="chat_paste",
+                                  placeholder="Dán đoạn chat vào đây...")
+        if chat_paste.strip():
+            st.markdown(f"<div style='font-size:11px;color:var(--forest);'>"
+                        f"Đã nhận {len(chat_paste.strip().splitlines())} dòng — sẽ đưa vào phần "
+                        f"nhận định bên dưới.</div>", unsafe_allow_html=True)
     with c2:
         if CHAT_LOG_CSV:
             try:
                 df_chat = pd.read_csv(CHAT_LOG_CSV).tail(300)
-                st.markdown(f"<div style='font-size:11px;color:var(--slate);'>Đã nạp {len(df_chat)} tin nhắn gần nhất.</div>",
+                st.markdown(f"<div style='font-size:11px;color:var(--slate);'>"
+                            f"Nguồn tự động: đã nạp {len(df_chat)} tin nhắn gần nhất.</div>",
                             unsafe_allow_html=True)
             except Exception as exc:  # noqa: BLE001
                 df_chat = pd.DataFrame()
-                empty(f"Không đọc được nguồn tin nhắn: {exc}")
+                empty(f"Không đọc được nguồn tin nhắn tự động: {exc}")
         else:
             df_chat = pd.DataFrame()
-            empty("Tin nhắn nhóm: đặt biến CHAT_LOG_CSV trỏ tới sheet có cột Ngày, Nhóm, Người gửi, Nội dung.")
+            empty("Chưa nối nguồn tin nhắn tự động. Đặt biến CHAT_LOG_CSV trỏ tới sheet có cột "
+                  "Ngày, Nhóm, Người gửi, Nội dung nếu muốn AI đọc hằng ngày mà không phải dán tay.")
+        empty("Tác phong & kỷ luật: thêm một sheet chấm công hoặc vi phạm vào SOURCES để mục này tự hiện.")
+
+    def chat_context() -> str:
+        parts = []
+        if chat_paste.strip():
+            parts.append("[Đoạn chat dán tay]\n" + chat_paste.strip()[:6000])
+        if not df_chat.empty:
+            parts.append("[Log tin nhắn tự động]\n" + df_chat.to_csv(index=False)[:6000])
+        return "\n\n".join(parts) or "(chưa có dữ liệu tin nhắn)"
 
     def p_home(role):
-        ctx = df_chat.to_csv(index=False)[:6000] if not df_chat.empty else "(chưa nối nguồn tin nhắn)"
+        ctx = chat_context()
         return f"""Bạn là trợ lý điều hành khu vực GHN, viết cho một bản báo cáo chính thức. Ngày dữ liệu {REF:%d/%m/%Y}, phạm vi {bc}.
 GTC tổng {v_gtc:.2f}% / mốc {t_gtc:.2f}%. GTC TikTok {v_tts:.2f}% / mốc {t_tts:.2f}%.
 ODR TikTok {v_odr:.2f}% / mốc {t_odr:.2f}% (càng cao càng tốt, thấp là bị sàn phạt).
@@ -862,7 +914,7 @@ Nếu có dữ liệu tin nhắn, thêm phần TÂM LÝ ĐỘI NGŨ.
 elif page == "Ghi chú 01 · Vận hành":
     c1, c2, c3 = st.columns([1.1, 1.6, 1.3])
     with c1:
-        bc = st.selectbox("Phạm vi", ALL_BC, key="bc_vh")
+        bc = page_scope("bc_vh")
     with c2:
         quick = st.radio("Khung thời gian", ["Ngày", "Tuần", "Tháng", "Tự chọn"], horizontal=True, key="q_vh")
     lo = M_GTC["Ngày"].min() if not M_GTC.empty else REF - timedelta(days=60)
@@ -949,7 +1001,7 @@ Ba phần: hiệu suất, điểm nóng, việc làm ngay.
 elif page == "Ghi chú 02 · Kinh doanh":
     c1, c2, c3 = st.columns([1.1, 1.6, 1.3])
     with c1:
-        bc = st.selectbox("Phạm vi", ALL_BC, key="bc_kd")
+        bc = page_scope("bc_kd")
     with c2:
         view = st.radio("Gộp theo", ["Ngày", "Tuần", "Tháng"], horizontal=True, key="v_kd")
     lo = M_DT["Ngày"].min() if not M_DT.empty else REF - timedelta(days=60)
@@ -1072,7 +1124,7 @@ Ba phần: tiến độ so với mục tiêu, phễu đang nghẽn ở đâu, vi
 elif page == "Ghi chú 03 · Năng suất & Lương":
     c1, c2, c3 = st.columns([1.1, 1.3, 1.4])
     with c1:
-        bc = st.selectbox("Phạm vi", ALL_BC, key="bc_ns")
+        bc = page_scope("bc_ns")
     nv_l, nv_g = pick_col(DF_LUONG, [["nhan vien"]]), pick_col(DF_NSGTC, [["nhan vien"]])
     staff = set()
     for df, col in ((DF_LUONG, nv_l), (DF_NSGTC, nv_g)):
@@ -1240,7 +1292,7 @@ Ba phần: năng suất và thu nhập đang lên hay xuống, nguyên nhân ngh
 elif page == "Ghi chú 04 · Chỉ tiêu KPI":
     c1, c2 = st.columns([1.1, 2])
     with c1:
-        bc = st.selectbox("Phạm vi", ALL_BC, key="bc_kpi")
+        bc = page_scope("bc_kpi")
     with c2:
         a0, b0 = date_pick("Khoảng ngày", REF.replace(day=1), REF, "d_kpi")
 
@@ -1332,7 +1384,7 @@ else:
     with c1:
         aA, aB = date_pick("Khoảng ngày AI được đọc", REF - timedelta(days=7), REF, "d_ai")
     with c2:
-        bc = st.selectbox("Phạm vi", ALL_BC, key="bc_ai")
+        bc = page_scope("bc_ai")
 
     note_head("PL", "Hỏi đáp dữ liệu", f"Phạm vi {bc} · dữ liệu {aA:%d.%m.%Y} – {aB:%d.%m.%Y}")
 
