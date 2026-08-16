@@ -61,24 +61,24 @@ CACHE_TTL = 300
 # ── Bảng màu: báo cáo tài chính — mực xanh đen, giấy ngà, đồng trầm ──
 # ── Hệ màu: dark analytics — nền tối, số liệu phát sáng ────────────
 # Tên biến giữ nguyên để không phải sửa toàn bộ phần thân, chỉ đổi giá trị.
-INK      = "#E8EDF7"   # CHỮ CHÍNH (sáng, trên nền tối)
-INK_2    = "#8FA3C4"   # chữ phụ sáng vừa
-PAPER    = "#080B14"   # NỀN TRANG — xanh đen sâu
-CARD     = "#111726"   # nền thẻ / nền biểu đồ
-RULE     = "#212B42"   # viền mảnh
-RULE_STR = "#2E3B57"   # viền đậm hơn
-BRASS    = "#F97C1B"   # CAM GHN phát sáng — nhấn thương hiệu
-BRASS_DP = "#FFA24D"   # cam sáng hơn cho chữ trên nền tối
-FOREST   = "#2DD48F"   # xanh lá neon — số dương
-BURGUNDY = "#FF5470"   # đỏ hồng neon — số âm
-SLATE    = "#7D8DAA"   # chữ mờ
+INK      = "#1B2534"   # chữ chính — xanh đen
+INK_2    = "#54627A"   # chữ phụ
+PAPER    = "#EEF1F7"   # nền trang — xám xanh rất nhạt như ảnh mẫu
+CARD     = "#FFFFFF"   # nền thẻ trắng
+RULE     = "#E4E8F0"   # viền mảnh
+RULE_STR = "#CFD6E4"   # viền đậm hơn
+BRASS    = "#F97316"   # CAM GHN — nhấn thương hiệu
+BRASS_DP = "#C2540A"   # cam đậm cho chữ trên nền sáng
+FOREST   = "#16A34A"   # xanh lá — số dương
+BURGUNDY = "#DC2626"   # đỏ — số âm
+SLATE    = "#8492A8"   # chữ mờ
 
 # Màu phụ cho biểu đồ nhiều chuỗi (lấy tinh thần neon của ảnh mẫu)
-CYAN     = "#22D3EE"
-BLUE     = "#3B82F6"   # xanh da trời GHN
-VIOLET   = "#A78BFA"
-AMBER    = "#FBBF24"
-PINK     = "#F472B6"
+CYAN     = "#0EA5E9"
+BLUE     = "#2563EB"   # xanh da trời GHN
+VIOLET   = "#7C3AED"
+AMBER    = "#F59E0B"
+PINK     = "#DB2777"
 
 SHEET_VH = "1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4"
 SHEET_KD = "1dEC78RcXYcA7e2SVFmjhOfuP-DY57_FXkOCpRpln4vY"
@@ -115,16 +115,16 @@ ROLE_NOTES = {"admin": NOTES, "manager": NOTES,
 # ════════════════════════════════════════════════════════════════════
 pio.templates["report"] = go.layout.Template(layout=dict(
     font=dict(family="Inter, sans-serif", size=12, color=SLATE),
-    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", hovermode="x unified",
+    plot_bgcolor=CARD, paper_bgcolor=CARD, hovermode="x unified",
     colorway=[CYAN, BRASS, VIOLET, FOREST, AMBER, PINK, BLUE],
     margin=dict(l=46, r=16, t=16, b=36),
     xaxis=dict(showgrid=False, linecolor=RULE, linewidth=1, ticks="outside",
                tickcolor=RULE, ticklen=4, tickfont=dict(size=10.5, color=SLATE)),
-    yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.06)", gridwidth=1, zeroline=False,
+    yaxis=dict(showgrid=True, gridcolor="#EEF1F6", gridwidth=1, zeroline=False,
                tickfont=dict(size=10.5, color=SLATE)),
     legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="left", x=0,
                 font=dict(size=10.5, color=INK_2)),
-    hoverlabel=dict(bgcolor="#1A2236", bordercolor=RULE_STR,
+    hoverlabel=dict(bgcolor=CARD, bordercolor=RULE_STR,
                     font=dict(family="Inter", size=12, color=INK)),
 ))
 pio.templates.default = "report"
@@ -142,10 +142,7 @@ st.markdown(f"""
 
 /* nền tối có quầng sáng nhẹ ở góc, như ảnh mẫu */
 .stApp {{
-  background:
-    radial-gradient(1200px 620px at 12% -8%, rgba(59,130,246,.13), transparent 62%),
-    radial-gradient(1000px 560px at 88% 4%, rgba(249,124,27,.10), transparent 60%),
-    {PAPER};
+  background:{PAPER};
   color:{INK};
 }}
 html, body, [class*="css"] {{ font-family:'Inter',sans-serif; color:{INK}; }}
@@ -156,9 +153,9 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 /* ── thanh trên cùng ─────────────────────────────────────────────── */
 .topbar {{
   display:flex; justify-content:space-between; align-items:center; gap:14px;
-  background:linear-gradient(180deg, rgba(28,38,60,.92), rgba(17,23,38,.92));
-  border:1px solid {RULE}; border-radius:14px; padding:14px 20px; margin-bottom:14px;
-  box-shadow:0 8px 30px rgba(0,0,0,.42);
+  background:{CARD};
+  border:1px solid {RULE}; border-radius:12px; padding:14px 20px; margin-bottom:14px;
+  box-shadow:0 1px 3px rgba(27,37,52,.06);
 }}
 .topbar .tt {{ font-size:16px; font-weight:700; letter-spacing:.02em; color:{INK}; }}
 .topbar .ts {{
@@ -167,13 +164,14 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 }}
 .topbar .meta {{ text-align:right; font-family:'JetBrains Mono',monospace; font-size:10.5px;
   letter-spacing:.1em; text-transform:uppercase; color:{SLATE}; line-height:1.8; }}
-.topbar .meta b {{ color:{CYAN}; font-weight:600; }}
+.topbar .meta b {{ color:{INK}; font-weight:600; }}
 
 /* ── thẻ số liệu lớn ─────────────────────────────────────────────── */
 .hl-row {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(184px,1fr)); gap:12px; margin:14px 0; }}
 .hl {{
-  position:relative; background:linear-gradient(165deg, rgba(34,45,70,.72), rgba(17,23,38,.92));
-  border:1px solid {RULE}; border-radius:14px; padding:16px 18px 15px; overflow:hidden;
+  position:relative; background:{CARD};
+  border:1px solid {RULE}; border-radius:12px; padding:16px 18px 15px; overflow:hidden;
+  box-shadow:0 1px 3px rgba(27,37,52,.05);
 }}
 .hl::after {{
   content:''; position:absolute; left:0; right:0; top:0; height:2px;
@@ -187,9 +185,8 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 .hl .num {{
   font-size:33px; font-weight:700; color:{INK}; line-height:1;
   font-variant-numeric:tabular-nums; letter-spacing:-.02em;
-  text-shadow:0 0 22px rgba(34,211,238,.30);
 }}
-.hl .num small {{ font-size:13px; font-weight:500; color:{SLATE}; text-shadow:none; margin-left:2px; }}
+.hl .num small {{ font-size:13px; font-weight:500; color:{SLATE}; margin-left:2px; }}
 .hl .delta {{
   font-family:'JetBrains Mono',monospace; font-size:11px; margin-top:9px;
   font-variant-numeric:tabular-nums; font-weight:500;
@@ -198,8 +195,9 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 
 /* ── panel bọc biểu đồ ───────────────────────────────────────────── */
 .panel {{
-  background:linear-gradient(165deg, rgba(28,38,60,.55), rgba(17,23,38,.88));
-  border:1px solid {RULE}; border-radius:14px; padding:14px 16px 6px; margin-bottom:12px;
+  background:{CARD};
+  border:1px solid {RULE}; border-radius:12px; padding:14px 16px 6px; margin-bottom:12px;
+  box-shadow:0 1px 3px rgba(27,37,52,.05);
 }}
 
 /* ── đầu mục ─────────────────────────────────────────────────────── */
@@ -207,7 +205,7 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
   border-bottom:1px solid {RULE}; overflow:hidden; }}
 .note-head .ghost {{
   position:absolute; right:0; top:-26px; font-size:96px; font-weight:800;
-  color:{CYAN}; opacity:.055; line-height:1; user-select:none; pointer-events:none;
+  color:{INK}; opacity:.05; line-height:1; user-select:none; pointer-events:none;
 }}
 .note-head .eyebrow {{
   font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.16em;
@@ -227,9 +225,10 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 
 /* ── thư điều hành / khối AI ─────────────────────────────────────── */
 .letter {{
-  background:linear-gradient(165deg, rgba(28,38,60,.6), rgba(17,23,38,.9));
+  background:{CARD};
   border:1px solid {RULE}; border-left:3px solid {BRASS};
-  border-radius:14px; padding:20px 24px; margin:14px 0;
+  border-radius:12px; padding:20px 24px; margin:14px 0;
+  box-shadow:0 1px 3px rgba(27,37,52,.05);
 }}
 .letter .kicker {{
   font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.16em;
@@ -238,7 +237,7 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 .letter p {{ font-size:14.5px; line-height:1.8; color:{INK}; margin:0; }}
 .letter .dropcap {{
   float:left; font-size:44px; font-weight:800; line-height:.85;
-  padding:3px 10px 0 0; color:{BRASS}; text-shadow:0 0 24px rgba(249,124,27,.4);
+  padding:3px 10px 0 0; color:{BRASS};
 }}
 .letter .sign {{
   text-align:right; margin-top:12px; font-family:'JetBrains Mono',monospace;
@@ -247,8 +246,9 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 
 /* ── điểm cần lưu ý ──────────────────────────────────────────────── */
 .notice {{
-  background:linear-gradient(165deg, rgba(28,38,60,.6), rgba(17,23,38,.9));
-  border:1px solid {RULE}; border-radius:14px; padding:16px 20px; margin:14px 0;
+  background:{CARD};
+  border:1px solid {RULE}; border-radius:12px; padding:16px 20px; margin:14px 0;
+  box-shadow:0 1px 3px rgba(27,37,52,.05);
 }}
 .notice .cap {{
   font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.16em;
@@ -257,14 +257,14 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 .notice ol {{ margin:0; padding-left:19px; }}
 .notice li {{ font-size:13px; line-height:1.8; color:{INK}; margin-bottom:8px; }}
 .notice li:last-child {{ margin-bottom:0; }}
-.notice li b {{ font-variant-numeric:tabular-nums; font-weight:700; color:{CYAN}; }}
+.notice li b {{ font-variant-numeric:tabular-nums; font-weight:700; color:{INK}; }}
 .notice li .tag {{
   font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.1em;
   text-transform:uppercase; padding:2px 8px; border-radius:999px; margin-right:8px; font-weight:600;
 }}
-.tag-high {{ background:rgba(255,84,112,.14); color:{BURGUNDY}; border:1px solid rgba(255,84,112,.32); }}
-.tag-mid  {{ background:rgba(251,191,36,.13); color:{AMBER};    border:1px solid rgba(251,191,36,.3); }}
-.tag-ok   {{ background:rgba(45,212,143,.13); color:{FOREST};   border:1px solid rgba(45,212,143,.3); }}
+.tag-high {{ background:#FEF2F2; color:{BURGUNDY}; border:1px solid #FECACA; }}
+.tag-mid  {{ background:#FFFBEB; color:{BRASS_DP};  border:1px solid #FDE68A; }}
+.tag-ok   {{ background:#F0FDF4; color:{FOREST};   border:1px solid #BBF7D0; }}
 
 /* ── bảng ────────────────────────────────────────────────────────── */
 table.ledger {{ width:100%; border-collapse:collapse; margin:10px 0 4px; font-size:12.5px; }}
@@ -279,25 +279,25 @@ table.ledger th {{
 }}
 table.ledger th:first-child, table.ledger td:first-child {{ text-align:left; }}
 table.ledger td {{
-  text-align:right; padding:9px 0; border-bottom:1px solid rgba(255,255,255,.045);
+  text-align:right; padding:9px 0; border-bottom:1px solid {RULE};
   font-variant-numeric:tabular-nums; color:{INK};
 }}
 table.ledger tr.total td {{
   border-top:1px solid {RULE_STR}; border-bottom:none;
-  font-weight:700; color:{CYAN}; padding-top:11px;
+  font-weight:700; color:{INK}; padding-top:11px;
 }}
 table.ledger td.up {{ color:{FOREST}; }} table.ledger td.down {{ color:{BURGUNDY}; }}
 table.ledger td.name {{ font-variant-numeric:normal; color:{INK_2}; }}
 table.ledger td span.up {{ color:{FOREST}; }} table.ledger td span.down {{ color:{BURGUNDY}; }}
 
 .empty {{
-  background:rgba(17,23,38,.6); border:1px dashed {RULE_STR}; border-radius:12px;
+  background:{CARD}; border:1px dashed {RULE_STR}; border-radius:12px;
   padding:22px; text-align:center; color:{SLATE}; font-size:12.5px; margin:12px 0; line-height:1.7;
 }}
 
 /* ── thanh bên ───────────────────────────────────────────────────── */
 section[data-testid="stSidebar"] {{
-  background:linear-gradient(180deg, #0D1220, #0A0E1A);
+  background:{CARD};
   border-right:1px solid {RULE};
 }}
 section[data-testid="stSidebar"] .block-container {{ padding-top:1.2rem; }}
@@ -309,24 +309,24 @@ section[data-testid="stSidebar"] [role="radiogroup"] label {{
   font-size:12.5px !important; padding:8px 10px; border-radius:9px;
   border:1px solid transparent; margin-bottom:2px; color:{INK_2} !important;
 }}
-section[data-testid="stSidebar"] [role="radiogroup"] label:hover {{ background:rgba(255,255,255,.035); }}
+section[data-testid="stSidebar"] [role="radiogroup"] label:hover {{ background:#F4F6FA; }}
 section[data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"] {{
-  color:{INK} !important; background:rgba(59,130,246,.14);
-  border-color:rgba(59,130,246,.34); font-weight:600;
+  color:{BLUE} !important; background:#EFF5FF;
+  border-color:#BFDBFE; font-weight:600;
 }}
 
 /* ── điều khiển Streamlit ────────────────────────────────────────── */
 .stButton>button {{
-  border-radius:10px; border:1px solid {RULE_STR}; background:rgba(255,255,255,.035);
+  border-radius:8px; border:1px solid {RULE_STR}; background:{CARD};
   color:{INK}; font-size:11.5px; letter-spacing:.05em; text-transform:uppercase;
   font-weight:600; padding:.52rem 1.05rem;
 }}
-.stButton>button:hover {{ border-color:{CYAN}; color:{CYAN}; background:rgba(34,211,238,.09); }}
+.stButton>button:hover {{ border-color:{BLUE}; color:{BLUE}; background:#EFF5FF; }}
 .stButton>button[kind="primary"] {{
-  background:linear-gradient(135deg,{BLUE},{CYAN}); color:#04121C;
-  border:none; font-weight:700;
+  background:{BLUE}; color:#FFFFFF;
+  border:none; font-weight:600;
 }}
-.stButton>button[kind="primary"]:hover {{ filter:brightness(1.12); color:#04121C; }}
+.stButton>button[kind="primary"]:hover {{ filter:brightness(1.08); color:#FFFFFF; }}
 
 label, .stSelectbox label, .stRadio label, .stDateInput label,
 .stMultiSelect label, .stNumberInput label, .stTextArea label {{
@@ -334,12 +334,12 @@ label, .stSelectbox label, .stRadio label, .stDateInput label,
   letter-spacing:.14em !important; text-transform:uppercase; color:{SLATE} !important;
 }}
 div[data-baseweb="select"]>div, div[data-baseweb="input"]>div, .stTextArea textarea {{
-  border-radius:10px !important; border-color:{RULE} !important;
-  background:rgba(255,255,255,.035) !important; color:{INK} !important;
+  border-radius:8px !important; border-color:{RULE_STR} !important;
+  background:{CARD} !important; color:{INK} !important;
 }}
 div[data-testid="stDataFrame"] {{ border:1px solid {RULE}; border-radius:12px; overflow:hidden; }}
-div[data-testid="stExpander"] {{ border:1px solid {RULE}; border-radius:12px; background:rgba(17,23,38,.55); }}
-[data-testid="stChatMessage"] {{ background:rgba(17,23,38,.7); border:1px solid {RULE}; border-radius:12px; }}
+div[data-testid="stExpander"] {{ border:1px solid {RULE}; border-radius:12px; background:{CARD}; }}
+[data-testid="stChatMessage"] {{ background:{CARD}; border:1px solid {RULE}; border-radius:12px; }}
 hr {{ border-color:{RULE}; }}
 .stAlert {{ border-radius:12px; }}
 
@@ -434,13 +434,9 @@ if st.session_state.auth is None:
     _, mid, _ = st.columns([1, 1.15, 1])
     with mid:
         st.write("")
-        # Logo GHN gốc có nền trắng — đặt trên tấm trắng bo góc để giữ nguyên bản,
-        # không bị lọt thỏm giữa nền tối.
-        st.markdown("<div style='background:#fff;border-radius:12px;padding:14px 18px;"
-                    "display:inline-block;margin-bottom:16px;'>", unsafe_allow_html=True)
         if LOGO.exists():
             st.image(str(LOGO), width=210)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.write("")
         st.markdown(
             "<div style='font-family:JetBrains Mono,monospace;font-size:10px;letter-spacing:.18em;"
             "text-transform:uppercase;color:var(--brassd);font-weight:600;'>Trung tâm vận hành chiến lược</div>"
@@ -644,16 +640,30 @@ def daily(df, how="wavg") -> pd.DataFrame:
     return g[["Ngày", "Giá Trị", "Trọng Số"]].sort_values("Ngày")
 
 
+def is_total_row(name) -> bool:
+    """Sheet của GHN có dòng tổng, đặt tên không thống nhất giữa các tab:
+    'Grand Total' ở File1/File3/TTS, 'Tổng số' ở sheet Trả hàng."""
+    return norm(name) in ("grand total", "tong so", "tong cong", "total", "tong")
+
+
 def scope(df, bc):
+    """Phạm vi 'Tất cả' lấy thẳng dòng tổng của sheet (theo yêu cầu), không tự cộng.
+    Phạm vi một bưu cục thì lọc đúng bưu cục đó và loại dòng tổng ra."""
     if df is None or df.empty or "Bưu Cục" not in df.columns:
         return df if df is not None else pd.DataFrame()
     out = df
-    if not IS_ALL_BC:
-        allow = [norm(x) for x in ALLOWED_BC]
-        out = out[out["Bưu Cục"].map(lambda x: norm(x) in allow)]
     if bc and bc != "Tất cả":
-        out = out[out["Bưu Cục"].map(norm) == norm(bc)]
-    return out
+        return out[out["Bưu Cục"].map(norm) == norm(bc)]
+
+    if not IS_ALL_BC:
+        # Tài khoản bị giới hạn bưu cục: không được xem dòng tổng toàn khu vực,
+        # nên gộp từ chính các bưu cục được phân quyền.
+        allow = [norm(x) for x in ALLOWED_BC]
+        return out[out["Bưu Cục"].map(lambda x: norm(x) in allow)]
+
+    totals = out[out["Bưu Cục"].map(is_total_row)]
+    # Nếu sheet nào không có dòng tổng thì mới tự gộp từ các bưu cục.
+    return totals if not totals.empty else out[~out["Bưu Cục"].map(is_total_row)]
 
 
 def bc_options(*frames):
@@ -661,7 +671,8 @@ def bc_options(*frames):
     for f in frames:
         if f is not None and not f.empty and "Bưu Cục" in f.columns:
             vals |= set(f["Bưu Cục"].dropna().astype(str).str.strip())
-    vals = {v for v in vals if v and v.lower() not in ("nan", "chưa phân loại")}
+    vals = {v for v in vals
+            if v and v.lower() not in ("nan", "chưa phân loại") and not is_total_row(v)}
     if not IS_ALL_BC:
         allow = [norm(x) for x in ALLOWED_BC]
         vals = {v for v in vals if norm(v) in allow}
@@ -797,12 +808,19 @@ def ai_panel(key: str, label: str, build_prompt, tab: str):
 # NẠP DỮ LIỆU
 # ════════════════════════════════════════════════════════════════════
 with st.spinner("Đang tổng hợp số liệu cho báo cáo..."):
+    # Từ khóa dò cột đã đối chiếu với tên cột THẬT trong sheet (đọc ngày 16/08/2026):
+    #   File1_BuuCuc / File2_TTS : Ngày | Cấp Quản Lý | Bưu cục | Volume | % Gán | % GTC | % Chuyển trả | Leadtime
+    #   File3_TheoCa             : thêm cột "Loại Hàng (Ca)"
+    #   Tỷ lệ Trả hàng           : Ngày | Cấp Quản Lý | Bưu cục | % Vol | % Return
     M_GTC = metric_frame("gtc_tong", [["% gtc"], ["gtc"], ["giao thanh cong"]])
-    M_TRA = metric_frame("tra_hang", [["tra hang"], ["tra"]])
-    M_GTB = metric_frame("gtb_thu_tien", [["gtb"], ["thu tien"]])
-    M_TTS = metric_frame("gtc_tts", [["gtc tts"], ["% gtc"], ["gtc"]])
-    M_ODR = metric_frame("odr_tts", [["odr"], ["ontime"], ["dung han"]])
-    M_CA = metric_frame("sl_gtc_ca", [["% gtc"], ["gtc"]], extra_dim=[["ca"], ["loai hang"]])
+    M_TRA = metric_frame("tra_hang", [["% return"], ["return"], ["chuyen tra"], ["tra hang"], ["tra"]])
+    M_GTB = metric_frame("gtb_thu_tien", [["gtb"], ["thu tien"], ["% gtb"]])
+    M_TTS = metric_frame("gtc_tts", [["% gtc"], ["gtc tts"], ["gtc"]])
+    M_ODR = metric_frame("odr_tts", [["odr"], ["ontime"], ["dung han"], ["% odr"]])
+    M_CA = metric_frame("sl_gtc_ca", [["% gtc"], ["gtc"]], extra_dim=[["loai hang"], ["ca"]])
+    # Hai chỉ số có sẵn trong sheet nhưng chưa nằm trong yêu cầu ban đầu — đưa lên dashboard luôn.
+    M_GAN = metric_frame("gtc_tong", [["% gan"], ["gan"]])
+    M_LEAD = metric_frame("gtc_tong", [["leadtime"], ["lead time"]], is_pct=False)
     M_DT = metric_frame("kd_doanh_thu", [["doanh thu"]], weight_keys=None, is_pct=False)
     DF_KPI = base_frame("kpi_vh")
     DF_KHM = base_frame("kd_kh_moi")
@@ -821,11 +839,31 @@ DATA_MIN = min([f["Ngày"].min() for f in (M_GTC, M_DT, DF_NSGTC)
                or [REF_DATA - timedelta(days=90)])
 
 
-def kpi_target(keys, fallback, exclude=(), bc="Tất cả"):
+def kpi_target(keys, fallback, exclude=(), bc="Tất cả", ref=None):
+    """Đọc mốc KPI từ sheet KPI (cấu trúc thật: Tháng | Bưu cục | %GTC Tổng | %GTC TTS |
+    %Trả hàng | Doanh thu). Lọc đúng tháng của kỳ báo cáo và đúng bưu cục.
+    Sheet đang trống ở thời điểm dựng app — khi bạn điền số vào là dashboard tự nhận."""
     if DF_KPI.empty:
         return float(fallback)
-    df = scope(DF_KPI, bc)
-    df = df if not df.empty else DF_KPI
+    df = DF_KPI
+
+    # Lọc theo tháng nếu sheet có cột Tháng
+    mcol = pick_col(df, [["thang"]])
+    if mcol is not None and ref is not None:
+        want = pd.to_numeric(df[mcol], errors="coerce")
+        same = df[want == ref.month]
+        if not same.empty:
+            df = same
+
+    # Phạm vi "Tất cả" thì lấy dòng tổng, ngược lại lấy đúng bưu cục
+    if "Bưu Cục" in df.columns:
+        if bc and bc != "Tất cả":
+            pick = df[df["Bưu Cục"].map(norm) == norm(bc)]
+        else:
+            pick = df[df["Bưu Cục"].map(is_total_row)]
+        if not pick.empty:
+            df = pick
+
     col = pick_col(df, keys, exclude=exclude)
     if col is None:
         return float(fallback)
@@ -838,10 +876,7 @@ def kpi_target(keys, fallback, exclude=(), bc="Tất cả"):
 # ════════════════════════════════════════════════════════════════════
 with st.sidebar:
     if LOGO.exists():
-        st.markdown("<div style='background:#fff;border-radius:10px;padding:9px 12px;"
-                    "margin-bottom:4px;'>", unsafe_allow_html=True)
         st.image(str(LOGO), width=150)
-        st.markdown("</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:11px;color:var(--slate);margin:10px 0 18px;line-height:1.6;'>"
                 f"{esc(AUTH['ten'])} · {esc(AUTH['role'])}<br>{esc(' / '.join(ALLOWED_BC))}</div>",
                 unsafe_allow_html=True)
@@ -907,9 +942,9 @@ if page == "Tổng quan":
     (dA, dB), (pA, pB) = period_pair(REF, "Ngày")
     (mA, mB), _ = period_pair(REF, "Tháng")
 
-    t_gtc = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0, exclude=["tts", "tiktok"], bc=bc)
-    t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc)
-    t_tra = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc)
+    t_gtc = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0, exclude=["tts", "tiktok"], bc=bc, ref=REF)
+    t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc, ref=REF)
+    t_tra = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc, ref=REF)
     t_odr = 98.0
     st.session_state.kpi_manual.setdefault(f"dt_{bc}", 71_000_000.0)
     t_dt = float(st.session_state.kpi_manual[f"dt_{bc}"])
@@ -1489,9 +1524,9 @@ elif page == "Tiến độ KPI":
 
     note_head("04", "Tiến độ hoàn thành KPI", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
 
-    t_gtc = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0, exclude=["tts", "tiktok"], bc=bc)
-    t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc)
-    t_tra = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc)
+    t_gtc = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0, exclude=["tts", "tiktok"], bc=bc, ref=REF)
+    t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc, ref=REF)
+    t_tra = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc, ref=REF)
 
     with st.expander("Chỉnh mốc KPI"):
         e1, e2, e3 = st.columns(3)
