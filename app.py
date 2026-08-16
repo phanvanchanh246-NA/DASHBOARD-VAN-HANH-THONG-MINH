@@ -105,11 +105,10 @@ SALARY_PARTS = {
     "LHH GTBTT": "Lương hoa hồng giao thất bại thu tiền",
 }
 
-NOTES = ["Trang bìa", "Ghi chú 01 · Vận hành", "Ghi chú 02 · Kinh doanh",
-         "Ghi chú 03 · Năng suất & Lương", "Ghi chú 04 · Chỉ tiêu KPI",
-         "Phụ lục · Hỏi đáp dữ liệu"]
+NOTES = ["Tổng quan", "Vận hành", "Kinh doanh",
+         "Năng suất & Lương", "Tiến độ KPI", "AI cố vấn"]
 ROLE_NOTES = {"admin": NOTES, "manager": NOTES,
-              "staff": ["Trang bìa", "Ghi chú 01 · Vận hành", "Ghi chú 03 · Năng suất & Lương"]}
+              "staff": ["Tổng quan", "Vận hành", "Năng suất & Lương"]}
 
 # ════════════════════════════════════════════════════════════════════
 # HỆ THIẾT KẾ
@@ -362,7 +361,7 @@ def esc(x) -> str:
 
 def note_head(no: str, title: str, sub: str = ""):
     st.markdown(f"<div class='note-head'><div class='ghost'>{no}</div>"
-                f"<div class='eyebrow'>Ghi chú {no}</div><h2>{title}</h2>"
+                f"<div class='eyebrow'>Phần {no}</div><h2>{title}</h2>"
                 f"<div class='sub'>{sub}</div></div>", unsafe_allow_html=True)
 
 
@@ -901,7 +900,7 @@ st.markdown(f"""<div class="topbar">
 # ════════════════════════════════════════════════════════════════════
 # TRANG BÌA
 # ════════════════════════════════════════════════════════════════════
-if page == "Trang bìa":
+if page == "Tổng quan":
     bc = page_scope("bc_home", "Phạm vi báo cáo")
     g_gtc, g_tra, g_tts, g_odr, g_gtb, g_dt = (scope(x, bc) for x in
                                                (M_GTC, M_TRA, M_TTS, M_ODR, M_GTB, M_DT))
@@ -1090,8 +1089,8 @@ Nếu có dữ liệu tin nhắn, thêm phần TÂM LÝ ĐỘI NGŨ.
 # ════════════════════════════════════════════════════════════════════
 # GHI CHÚ 01 · VẬN HÀNH
 # ════════════════════════════════════════════════════════════════════
-elif page == "Ghi chú 01 · Vận hành":
-    c1, c2, c3 = st.columns([1.1, 1.6, 1.3])
+elif page == "Vận hành":
+    c1, c2, c3, c4 = st.columns([1, 1.4, 1.15, 1.15])
     with c1:
         bc = page_scope("bc_vh")
     with c2:
@@ -1107,13 +1106,26 @@ elif page == "Ghi chú 01 · Vận hành":
         a0, b0 = lo, REF
     with c3:
         a0, b0 = date_pick("Khoảng ngày", a0, b0, "d_vh")
+    with c4:
+        lh_all = (sorted({x for x in M_CA["Chiều"].dropna().astype(str).str.strip().unique()
+                          if x and x.lower() != "nan"})
+                  if "Chiều" in M_CA.columns else [])
+        lh_pick = st.multiselect("Loại hàng / ca", lh_all, default=lh_all, key="lh_vh")
 
-    note_head("01", "Vận hành", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+    note_head("01", "Vận hành", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}"
+                                + (f" · {len(lh_pick)}/{len(lh_all)} loại hàng" if lh_all else ""))
 
     def S(frame):
         return sl(scope(frame, bc), a0, b0)
 
     s_gtc, s_tra, s_gtb, s_tts, s_odr, s_ca = (S(x) for x in (M_GTC, M_TRA, M_GTB, M_TTS, M_ODR, M_CA))
+
+    # Chỉ sheet "sản lượng theo ca" mới có cột loại hàng, nên bộ lọc này áp cho khối 1.6.
+    if lh_pick and "Chiều" in s_ca.columns:
+        s_ca = s_ca[s_ca["Chiều"].isin(lh_pick)]
+    if lh_all and len(lh_pick) < len(lh_all):
+        st.markdown("<div class='fig-cap'>Bộ lọc loại hàng chỉ áp cho mục 1.6 — các sheet GTC, "
+                    "trả hàng, GTB, TTS không có cột loại hàng</div>", unsafe_allow_html=True)
 
     for label, frame_full, frame_sc, unit, hib, color in [
         ("1.1 · GTC tổng", M_GTC, s_gtc, "%", True, INK),
@@ -1177,7 +1189,7 @@ Ba phần: hiệu suất, điểm nóng, việc làm ngay.
 # ════════════════════════════════════════════════════════════════════
 # GHI CHÚ 02 · KINH DOANH
 # ════════════════════════════════════════════════════════════════════
-elif page == "Ghi chú 02 · Kinh doanh":
+elif page == "Kinh doanh":
     c1, c2, c3 = st.columns([1.1, 1.6, 1.3])
     with c1:
         bc = page_scope("bc_kd")
@@ -1300,7 +1312,7 @@ Ba phần: tiến độ so với mục tiêu, phễu đang nghẽn ở đâu, vi
 # ════════════════════════════════════════════════════════════════════
 # GHI CHÚ 03 · NĂNG SUẤT & LƯƠNG
 # ════════════════════════════════════════════════════════════════════
-elif page == "Ghi chú 03 · Năng suất & Lương":
+elif page == "Năng suất & Lương":
     c1, c2, c3 = st.columns([1.1, 1.3, 1.4])
     with c1:
         bc = page_scope("bc_ns")
@@ -1468,14 +1480,14 @@ Ba phần: năng suất và thu nhập đang lên hay xuống, nguyên nhân ngh
 # ════════════════════════════════════════════════════════════════════
 # GHI CHÚ 04 · KPI
 # ════════════════════════════════════════════════════════════════════
-elif page == "Ghi chú 04 · Chỉ tiêu KPI":
+elif page == "Tiến độ KPI":
     c1, c2 = st.columns([1.1, 2])
     with c1:
         bc = page_scope("bc_kpi")
     with c2:
         a0, b0 = date_pick("Khoảng ngày", REF.replace(day=1), REF, "d_kpi")
 
-    note_head("04", "Chỉ tiêu KPI", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+    note_head("04", "Tiến độ hoàn thành KPI", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
 
     t_gtc = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0, exclude=["tts", "tiktok"], bc=bc)
     t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc)
@@ -1565,7 +1577,7 @@ else:
     with c2:
         bc = page_scope("bc_ai")
 
-    note_head("PL", "Hỏi đáp dữ liệu", f"Phạm vi {bc} · dữ liệu {aA:%d.%m.%Y} – {aB:%d.%m.%Y}")
+    note_head("05", "AI cố vấn", f"Phạm vi {bc} · dữ liệu {aA:%d.%m.%Y} – {aB:%d.%m.%Y}")
 
     if not st.session_state.chat:
         empty("Hỏi bằng tiếng Việt thường ngày. Ví dụ: bưu cục nào GTC thấp nhất tuần qua, "
