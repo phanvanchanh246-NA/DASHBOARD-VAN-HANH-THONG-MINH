@@ -105,10 +105,21 @@ SALARY_PARTS = {
     "LHH GTBTT": "Lương hoa hồng giao thất bại thu tiền",
 }
 
-NOTES = ["Tổng quan", "Vận hành", "Kinh doanh",
-         "Năng suất & Lương", "Tiến độ KPI", "AI cố vấn"]
-ROLE_NOTES = {"admin": NOTES, "manager": NOTES,
-              "staff": ["Tổng quan", "Vận hành", "Năng suất & Lương"]}
+GROUPS: dict[str, list[str]] = {
+    "Tổng quan": ["Tổng quan"],
+    "Vận hành": ["GTC tổng", "Sản lượng theo ca", "Tỷ lệ trả hàng", "GTB thu tiền",
+                 "GTC TikTok Shop", "ODR TikTok Shop", "Gán & Leadtime"],
+    "Kinh doanh": ["Doanh thu & KPI", "Khách hàng mới", "Phễu tiếp xúc", "Khách hàng tiềm năng"],
+    "Năng suất & Lương": ["Kỳ lương", "Đơn giá", "Sản lượng gán & GTC",
+                          "Lương tổng", "Xếp hạng nhân viên"],
+    "Tiến độ KPI": ["Tiến độ KPI"],
+    "AI cố vấn": ["AI cố vấn"],
+}
+ROLE_GROUPS = {
+    "admin": list(GROUPS),
+    "manager": list(GROUPS),
+    "staff": ["Tổng quan", "Vận hành", "Năng suất & Lương"],
+}
 
 # ════════════════════════════════════════════════════════════════════
 # HỆ THIẾT KẾ
@@ -167,6 +178,30 @@ h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 .topbar .meta b {{ color:{INK}; font-weight:600; }}
 
 /* ── thẻ số liệu lớn ─────────────────────────────────────────────── */
+/* ── thẻ số nhỏ có biểu đồ bên trong (hàng đầu như ảnh mẫu) ────────── */
+.tile-cap {{ font-size:11.5px; font-weight:600; color:{SLATE}; letter-spacing:.02em; }}
+.tile-num {{ font-size:27px; font-weight:700; color:{INK}; line-height:1.15; margin-top:3px;
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em; }}
+.tile-delta {{ font-size:11px; font-weight:500; margin-top:1px; font-variant-numeric:tabular-nums; }}
+
+/* ── tiêu đề bên trong panel ───────────────────────────────────────── */
+.panel-title {{ font-size:15px; font-weight:700; color:{INK}; letter-spacing:-.01em; }}
+.panel-sub {{ font-size:11px; color:{SLATE}; margin-top:2px; margin-bottom:6px; }}
+
+/* ── danh sách bưu cục (như Branches list) ─────────────────────────── */
+.blist {{ margin-top:6px; }}
+.brow {{ display:flex; justify-content:space-between; align-items:center;
+  padding:11px 2px; border-bottom:1px solid {RULE}; }}
+.brow:last-child {{ border-bottom:none; }}
+.bname {{ font-size:13px; font-weight:600; color:{INK}; }}
+.bsub {{ display:block; font-size:10.5px; font-weight:400; color:{SLATE};
+  font-variant-numeric:tabular-nums; margin-top:1px; }}
+.bdg {{ font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px;
+  font-variant-numeric:tabular-nums; white-space:nowrap; }}
+.bdg-ok  {{ background:#DCFCE7; color:{FOREST}; }}
+.bdg-mid {{ background:#FEF3C7; color:{BRASS_DP}; }}
+.bdg-bad {{ background:#FEE2E2; color:{BURGUNDY}; }}
+
 .hl-row {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(184px,1fr)); gap:12px; margin:14px 0; }}
 .hl {{
   position:relative; background:{CARD};
@@ -301,6 +336,14 @@ section[data-testid="stSidebar"] {{
   border-right:1px solid {RULE};
 }}
 section[data-testid="stSidebar"] .block-container {{ padding-top:1.2rem; }}
+.toc-sub {{
+  font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.16em;
+  text-transform:uppercase; color:{BRASS_DP}; font-weight:600; margin:14px 0 4px 4px;
+}}
+section[data-testid="stSidebar"] div[data-testid="stRadio"]:nth-of-type(2) [role="radiogroup"] label {{
+  padding-left:20px; font-size:12px !important;
+}}
+
 .toc-label {{
   font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:.18em;
   text-transform:uppercase; color:{SLATE}; font-weight:600; margin:4px 0 10px;
@@ -357,6 +400,77 @@ hr {{ border-color:{RULE}; }}
 
 def esc(x) -> str:
     return html_lib.escape(str(x))
+
+
+def hex_fade(hex_color: str, alpha: float) -> str:
+    """Chuyển #RRGGBB sang rgba() để tô nền biểu đồ nhạt."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def delta_line(delta: float, unit: str, higher_is_better=True) -> str:
+    """Dòng chênh lệch dưới con số lớn trong thẻ."""
+    good = (delta > 0) == higher_is_better
+    cls = "d-flat" if abs(delta) < 1e-9 else ("d-up" if good else "d-down")
+    arrow = "" if abs(delta) < 1e-9 else ("▲" if delta > 0 else "▼")
+    if unit == "%":
+        txt = f"{arrow} {abs(delta):,.2f} pp so với hôm qua"
+    elif unit == "đ":
+        txt = f"{arrow} {abs(delta)/1_000_000:,.1f} tr đ so với hôm qua"
+    else:
+        txt = f"{arrow} {abs(delta):,.0f} đơn so với hôm qua"
+    return f"<div class='tile-delta {cls}'>{txt}</div>"
+
+
+def raw_table(df: pd.DataFrame, value_label: str, key: str, unit: str = "%"):
+    """Bảng dữ liệu thô để tra cứu từng dòng, kèm nút tải CSV."""
+    if df is None or df.empty:
+        empty("Không có dữ liệu chi tiết trong khoảng đã chọn.")
+        return
+    show = df[["Ngày", "Bưu Cục", "Trọng Số", "Giá Trị"]].rename(
+        columns={"Trọng Số": "Sản lượng", "Giá Trị": value_label}).sort_values("Ngày", ascending=False)
+    cfg = {"Ngày": st.column_config.DateColumn("Ngày", format="DD/MM/YYYY"),
+           "Sản lượng": st.column_config.NumberColumn(format="%,d")}
+    cfg[value_label] = st.column_config.NumberColumn(
+        format="%.2f%%" if unit == "%" else ("%,.2f" if unit == "h" else "%,.0f"))
+    st.dataframe(show, use_container_width=True, hide_index=True, height=280, column_config=cfg)
+    st.download_button("Tải CSV dữ liệu chi tiết", show.to_csv(index=False).encode("utf-8-sig"),
+                       file_name=f"{key}.csv", mime="text/csv", key=f"dl_{key}")
+
+
+def bc_compare_chart(df: pd.DataFrame, target: float | None, unit: str = "%",
+                     higher_is_better: bool = True):
+    """So sánh chỉ số giữa các bưu cục trong khoảng đã lọc — thanh ngang."""
+    if df is None or df.empty:
+        empty("Không có dữ liệu để so sánh giữa các bưu cục.")
+        return
+    d = df[~df["Bưu Cục"].map(is_total_row)]
+    if d.empty:
+        empty("Không có dữ liệu theo từng bưu cục (chỉ có dòng tổng).")
+        return
+    g = (d.assign(_p=d["Giá Trị"].fillna(0) * d["Trọng Số"])
+          .groupby("Bưu Cục", as_index=False).agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
+    g = g[g["w"] > 0]
+    if g.empty:
+        empty("Không đủ dữ liệu để so sánh.")
+        return
+    g["r"] = g["_p"] / g["w"]
+    g = g.sort_values("r")
+    if target:
+        colors = [FOREST if (v >= target) == higher_is_better else BURGUNDY for v in g["r"]]
+    else:
+        colors = [BLUE] * len(g)
+    fig = go.Figure(go.Bar(
+        x=g["r"], y=g["Bưu Cục"], orientation="h", marker=dict(color=colors, line=dict(width=0)),
+        text=[f"{v:,.2f}%" if unit == "%" else f"{v:,.1f}" for v in g["r"]],
+        textposition="outside", textfont=dict(size=10.5, color=INK_2),
+        customdata=g["w"], hovertemplate="%{y}<br>%{x:.2f}<br>Sản lượng %{customdata:,.0f}<extra></extra>"))
+    if target:
+        fig.add_vline(x=target, line_dash="dot", line_color=SLATE, line_width=1.5)
+    fig.update_layout(height=max(160, 46 * len(g)), margin=dict(l=6, r=44, t=6, b=28))
+    fig.update_xaxes(ticksuffix="%" if unit == "%" else "", showgrid=True, gridcolor="#EEF1F6")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def note_head(no: str, title: str, sub: str = ""):
@@ -880,11 +994,22 @@ with st.sidebar:
     st.markdown(f"<div style='font-size:11px;color:var(--slate);margin:10px 0 18px;line-height:1.6;'>"
                 f"{esc(AUTH['ten'])} · {esc(AUTH['role'])}<br>{esc(' / '.join(ALLOWED_BC))}</div>",
                 unsafe_allow_html=True)
-    st.markdown("<div class='toc-label'>Mục lục</div>", unsafe_allow_html=True)
-    notes = ROLE_NOTES.get(AUTH["role"], ROLE_NOTES["staff"])
-    page = st.radio("Mục lục", notes, label_visibility="collapsed")
 
-    # ── Bộ lọc toàn cục: chọn một lần, mọi ghi chú cùng theo ──────────
+    st.markdown("<div class='toc-label'>Mục lục</div>", unsafe_allow_html=True)
+    role_groups = ROLE_GROUPS.get(AUTH["role"], ROLE_GROUPS["staff"])
+    group = st.radio("Nhóm", role_groups, label_visibility="collapsed", key="nav_group")
+
+    subitems = GROUPS[group]
+    if len(subitems) > 1:
+        st.markdown(f"<div class='toc-sub'>{esc(group)}</div>", unsafe_allow_html=True)
+        # Mỗi nhóm giữ mục con đã chọn riêng, đổi nhóm không làm mất lựa chọn cũ.
+        sub_key = f"nav_sub_{group}"
+        sub = st.radio("Mục", subitems, label_visibility="collapsed", key=sub_key)
+    else:
+        sub = subitems[0]
+    page = sub  # phần thân trang bên dưới dùng biến `page` để định tuyến
+
+    # ── Bộ lọc toàn cục: chọn một lần, mọi trang cùng theo ────────────
     st.markdown("<div class='toc-label' style='margin-top:18px;'>Bộ lọc toàn cục</div>",
                 unsafe_allow_html=True)
     g_ref = st.date_input("Ngày phân tích", value=REF_DATA.date(),
@@ -935,7 +1060,7 @@ st.markdown(f"""<div class="topbar">
 # ════════════════════════════════════════════════════════════════════
 # TRANG BÌA
 # ════════════════════════════════════════════════════════════════════
-if page == "Tổng quan":
+if group == "Tổng quan":
     bc = page_scope("bc_home", "Phạm vi báo cáo")
     g_gtc, g_tra, g_tts, g_odr, g_gtb, g_dt = (scope(x, bc) for x in
                                                (M_GTC, M_TRA, M_TTS, M_ODR, M_GTB, M_DT))
@@ -955,24 +1080,168 @@ if page == "Tổng quan":
     p_odr, p_tra = val(g_odr, pA, pB), val(g_tra, pA, pB)
     v_dt = val(g_dt, mA, mB, "sum")
 
-    st.markdown("<div class='letter'><div class='kicker'>Thư điều hành</div>"
-                f"<p><span class='dropcap'>{'K' if v_gtc >= t_gtc else 'T'}</span>"
-                f"{'ết quả vận hành khu vực ' + esc(bc) + ' đang bám sát mục tiêu đề ra' if v_gtc >= t_gtc else 'ỷ lệ giao thành công tại khu vực ' + esc(bc) + ' đang thấp hơn mục tiêu đề ra'}, "
-                f"đạt {v_gtc:,.2f}% trên tổng sản lượng ngày {REF:%d/%m}, so với mốc {t_gtc:,.2f}%. "
-                f"Doanh thu lũy kế tháng {mA:%m/%Y} ghi nhận {v_dt/1_000_000:,.1f} triệu đồng. "
-                f"Báo cáo chi tiết theo từng mục được trình bày ở các ghi chú kèm theo.</p>"
-                f"<div class='sign'>Tổng hợp tự động · {datetime.now():%d/%m/%Y %H:%M}</div></div>",
-                unsafe_allow_html=True)
+    # ── Hàng thẻ số có biểu đồ nhỏ bên trong (như hàng Visits/Orders của mẫu) ──
+    win_a = REF - timedelta(days=13)
+    d_gtc = daily(sl(g_gtc, win_a, REF))
+    d_tts = daily(sl(g_tts, win_a, REF))
+    d_dt = daily(sl(g_dt, win_a, REF), "sum")
 
-    highlights = "".join([
-        highlight("GTC tổng", v_gtc, v_gtc - p_gtc, "%"),
-        highlight("GTC TikTok", v_tts, v_tts - p_tts, "%"),
-        highlight("ODR TikTok", v_odr, v_odr - p_odr, "%"),
-        highlight("Trả hàng", v_tra, v_tra - p_tra, "%", higher_is_better=False),
-        highlight("Doanh thu tháng", v_dt, None, "đ"),
-    ])
-    st.markdown(f"<div class='hl-row'>{highlights}</div>", unsafe_allow_html=True)
+    def mini(kind, xs, ys, color):
+        """Biểu đồ tí hon trong thẻ: đường cho tỷ lệ, cột cho sản lượng và tiền."""
+        f = go.Figure()
+        if kind == "line":
+            f.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=color, width=2),
+                                   fill="tozeroy", fillcolor=hex_fade(color, .10),
+                                   hovertemplate="%{y:.2f}%<extra></extra>"))
+        else:
+            f.add_trace(go.Bar(x=xs, y=ys, marker_color=color, marker_line_width=0,
+                               hovertemplate="%{y:,.0f}<extra></extra>"))
+        f.update_layout(height=64, margin=dict(l=0, r=0, t=4, b=0),
+                        xaxis=dict(visible=False), yaxis=dict(visible=False),
+                        showlegend=False, hovermode="x")
+        return f
 
+    vol_now = float(sl(g_gtc, dA, dB)["Trọng Số"].sum())
+    vol_prev = float(sl(g_gtc, pA, pB)["Trọng Số"].sum())
+
+    tiles = [
+        ("Sản lượng hôm nay", f"{vol_now:,.0f}", vol_now - vol_prev, "đơn", True,
+         "bar", d_gtc["Ngày"], d_gtc["Trọng Số"], BLUE),
+        ("%GTC tổng", f"{v_gtc:,.2f}%", v_gtc - p_gtc, "%", True,
+         "line", d_gtc["Ngày"], d_gtc["Giá Trị"], CYAN),
+        ("%GTC TikTok", f"{v_tts:,.2f}%", v_tts - p_tts, "%", True,
+         "line", d_tts["Ngày"], d_tts["Giá Trị"], VIOLET),
+        ("Doanh thu tháng", f"{v_dt/1_000_000:,.1f} tr", None, "đ", True,
+         "bar", d_dt["Ngày"], d_dt["Giá Trị"], BRASS),
+    ]
+    cols = st.columns(4)
+    for col, (cap, valtxt, delta, unit, hib, kind, xs, ys, color) in zip(cols, tiles):
+        with col:
+            with st.container(border=True):
+                st.markdown(f"<div class='tile-cap'>{esc(cap)}</div>"
+                            f"<div class='tile-num'>{valtxt}</div>"
+                            + (delta_line(delta, unit, hib) if delta is not None
+                               else "<div class='tile-delta d-flat'>lũy kế tháng này</div>"),
+                            unsafe_allow_html=True)
+                if len(ys) > 1:
+                    st.plotly_chart(mini(kind, xs, ys, color), use_container_width=True,
+                                    config={"displayModeBar": False})
+
+    # ── Biểu đồ nhiều đường + danh sách bưu cục (như Traffic Sources / Branches list) ──
+    left, right = st.columns([1.75, 1])
+    with left:
+        with st.container(border=True):
+            st.markdown("<div class='panel-title'>Diễn biến các chỉ số vận hành</div>"
+                        "<div class='panel-sub'>30 ngày gần nhất · tất cả là tỷ lệ phần trăm</div>",
+                        unsafe_allow_html=True)
+            w30 = REF - timedelta(days=29)
+            lines = [("%GTC tổng", daily(sl(g_gtc, w30, REF)), BLUE),
+                     ("%GTC TikTok", daily(sl(g_tts, w30, REF)), CYAN),
+                     ("ODR TikTok", daily(sl(g_odr, w30, REF)), VIOLET),
+                     ("%Trả hàng", daily(sl(g_tra, w30, REF)), BRASS)]
+            lines = [(n, d, c) for n, d, c in lines if not d.empty]
+            if lines:
+                fig = go.Figure()
+                for name, d, color in lines:
+                    fig.add_trace(go.Scatter(x=d["Ngày"], y=d["Giá Trị"], name=name,
+                                             mode="lines+markers",
+                                             line=dict(color=color, width=2.2, shape="spline"),
+                                             marker=dict(size=5)))
+                fig.add_hline(y=t_gtc, line_dash="dot", line_color=SLATE, line_width=1,
+                              annotation_text="mốc GTC", annotation_position="top left",
+                              annotation_font=dict(size=9, color=SLATE))
+                fig.update_yaxes(ticksuffix="%")
+                fig.update_layout(height=326, margin=dict(l=42, r=14, t=30, b=30))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                empty("Chưa có dữ liệu vận hành trong 30 ngày gần nhất.")
+
+    with right:
+        with st.container(border=True):
+            st.markdown("<div class='panel-title'>Danh sách bưu cục</div>"
+                        "<div class='panel-sub'>%GTC lũy kế tháng · so với mốc</div>",
+                        unsafe_allow_html=True)
+            src = sl(M_GTC, mA, mB)
+            src = src[~src["Bưu Cục"].map(is_total_row)] if not src.empty else src
+            if not IS_ALL_BC and not src.empty:
+                allow = [norm(x) for x in ALLOWED_BC]
+                src = src[src["Bưu Cục"].map(lambda x: norm(x) in allow)]
+            if not src.empty:
+                bl = (src.assign(_p=src["Giá Trị"].fillna(0) * src["Trọng Số"])
+                      .groupby("Bưu Cục", as_index=False)
+                      .agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
+                bl = bl[bl["w"] > 0]
+                bl["r"] = bl["_p"] / bl["w"]
+                bl = bl.sort_values("r", ascending=False)
+                rows = ""
+                for _, r in bl.iterrows():
+                    ok = r["r"] >= t_gtc
+                    cls = "bdg-ok" if ok else ("bdg-mid" if r["r"] >= t_gtc * .95 else "bdg-bad")
+                    rows += (f"<div class='brow'>"
+                             f"<div class='bname'>{esc(r['Bưu Cục'])}"
+                             f"<span class='bsub'>{r['w']:,.0f} đơn</span></div>"
+                             f"<span class='bdg {cls}'>{r['r']:,.1f}%</span></div>")
+                st.markdown(f"<div class='blist'>{rows}</div>", unsafe_allow_html=True)
+            else:
+                empty("Chưa có dữ liệu theo bưu cục trong tháng.")
+
+    # ── Đồng hồ KPI + bảng theo dõi (như Website Traffic / Task manager) ──
+    gcol, tcol = st.columns([1, 1.75])
+    with gcol:
+        with st.container(border=True):
+            st.markdown("<div class='panel-title'>Tiến độ %GTC tháng</div>"
+                        "<div class='panel-sub'>lũy kế so với mốc KPI</div>",
+                        unsafe_allow_html=True)
+            m_gtc = val(g_gtc, mA, mB)
+            tgt = max(t_gtc, 0.5)
+            gfig = go.Figure(go.Indicator(
+                mode="gauge+number", value=m_gtc,
+                number={"suffix": "%", "valueformat": ".2f", "font": {"size": 34, "color": INK}},
+                gauge={"axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": RULE_STR,
+                                "tickfont": {"size": 9, "color": SLATE}},
+                       "bar": {"color": BLUE, "thickness": .30},
+                       "bgcolor": PAPER, "borderwidth": 0,
+                       "steps": [{"range": [0, tgt * .8], "color": "#FEE2E2"},
+                                 {"range": [tgt * .8, tgt], "color": "#FEF3C7"},
+                                 {"range": [tgt, 100], "color": "#DCFCE7"}],
+                       "threshold": {"line": {"color": BURGUNDY, "width": 3},
+                                     "thickness": .82, "value": tgt}}))
+            gfig.update_layout(height=250, margin=dict(l=18, r=18, t=10, b=6))
+            st.plotly_chart(gfig, use_container_width=True)
+            gap = m_gtc - t_gtc
+            st.markdown(f"<div class='fig-cap' style='text-align:center;'>"
+                        f"Mốc {t_gtc:,.2f}% · {'vượt' if gap >= 0 else 'còn thiếu'} "
+                        f"{abs(gap):,.2f} điểm phần trăm</div>", unsafe_allow_html=True)
+
+    with tcol:
+        with st.container(border=True):
+            st.markdown("<div class='panel-title'>Theo dõi từng ngày</div>"
+                        "<div class='panel-sub'>7 ngày gần nhất · đối chiếu với mốc KPI</div>",
+                        unsafe_allow_html=True)
+            d7 = daily(sl(g_gtc, REF - timedelta(days=6), REF))
+            d7t = daily(sl(g_tra, REF - timedelta(days=6), REF))
+            if not d7.empty:
+                d7 = d7.merge(d7t[["Ngày", "Giá Trị"]].rename(columns={"Giá Trị": "tra"}),
+                              on="Ngày", how="left")
+                rows = ""
+                for _, r in d7.sort_values("Ngày", ascending=False).iterrows():
+                    ok = r["Giá Trị"] >= t_gtc
+                    cls = "bdg-ok" if ok else ("bdg-mid" if r["Giá Trị"] >= t_gtc * .95 else "bdg-bad")
+                    label = "Đạt" if ok else ("Sát mốc" if r["Giá Trị"] >= t_gtc * .95 else "Chưa đạt")
+                    tra_txt = f"{r['tra']:,.2f}%" if pd.notna(r.get("tra")) else "—"
+                    rows += (f"<tr><td class='name'>{r['Ngày']:%d/%m}</td>"
+                             f"<td>{r['Trọng Số']:,.0f}</td>"
+                             f"<td>{r['Giá Trị']:,.2f}%</td>"
+                             f"<td>{tra_txt}</td>"
+                             f"<td><span class='bdg {cls}'>{label}</span></td></tr>")
+                st.markdown(
+                    "<table class='ledger'><thead><tr><th>Ngày</th><th>Sản lượng</th>"
+                    "<th>%GTC</th><th>%Trả hàng</th><th>Trạng thái</th></tr></thead>"
+                    f"<tbody>{rows}</tbody></table>", unsafe_allow_html=True)
+            else:
+                empty("Chưa có dữ liệu 7 ngày gần nhất.")
+
+    # ── Điểm cần lưu ý ────────────────────────────────────────────────
     checks = [("GTC tổng", v_gtc, t_gtc, True, "%", "tỷ lệ giao thành công toàn khu vực"),
               ("GTC TikTok", v_tts, t_tts, True, "%", "đơn sàn TikTok Shop"),
               ("ODR TikTok", v_odr, t_odr, True, "%", "cam kết đúng hạn với sàn, thấp là bị phạt"),
@@ -997,75 +1266,15 @@ if page == "Tổng quan":
                        f"thiếu <b>{abs(gap):,.2f}</b> điểm phần trăm. {why.capitalize()}.")
             else:
                 txt = (f"<b>{esc(name)}</b> đạt <b>{v/1_000_000:,.1f} tr đ</b>, thấp hơn mốc "
-                       f"<b>{t/1_000_000:,.0f} tr đ</b> — thiếu <b>{abs(gap)/1_000_000:,.1f} tr đ</b>. {why.capitalize()}.")
+                       f"<b>{t/1_000_000:,.0f} tr đ</b> — thiếu <b>{abs(gap)/1_000_000:,.1f} tr đ</b>. "
+                       f"{why.capitalize()}.")
             items += f"<li><span class='tag {tag}'>{label}</span>{txt}</li>"
     else:
-        items = "<li><span class='tag tag-ok'>Đạt mốc</span>Toàn bộ chỉ số đang bám sát hoặc vượt mục tiêu đề ra.</li>"
+        items = ("<li><span class='tag tag-ok'>Đạt mốc</span>Toàn bộ chỉ số đang bám sát hoặc "
+                 "vượt mục tiêu đề ra.</li>")
 
     st.markdown(f"<div class='notice'><div class='cap'>Điểm cần lưu ý</div><ol>{items}</ol></div>",
                 unsafe_allow_html=True)
-
-    # ── Xếp hạng bưu cục + xu hướng 30 ngày ──────────────────────────
-    r1, r2 = st.columns([1, 1.25])
-    with r1:
-        sub_head("Xếp hạng bưu cục theo %GTC")
-        rank_src = sl(scope(M_GTC, "Tất cả" if bc == "Tất cả" else bc), *period_pair(REF, "Tháng")[0])
-        if not rank_src.empty:
-            rk = (rank_src.assign(_p=rank_src["Giá Trị"].fillna(0) * rank_src["Trọng Số"])
-                  .groupby("Bưu Cục", as_index=False)
-                  .agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
-            rk = rk[rk["w"] > 0]
-            rk["%GTC"] = rk["_p"] / rk["w"]
-            rk = rk.sort_values("%GTC").tail(12)
-            colors = [BURGUNDY if v < t_gtc else (AMBER if v < t_gtc * 1.05 else FOREST)
-                      for v in rk["%GTC"]]
-            fig = go.Figure(go.Bar(
-                x=rk["%GTC"], y=rk["Bưu Cục"], orientation="h",
-                marker=dict(color=colors, line=dict(width=0)),
-                text=[f"{v:,.1f}%" for v in rk["%GTC"]], textposition="outside",
-                textfont=dict(size=10, color=INK_2),
-                customdata=rk["w"],
-                hovertemplate="%{y}<br>%GTC %{x:.2f}%<br>Sản lượng %{customdata:,.0f} đơn<extra></extra>"))
-            fig.add_vline(x=t_gtc, line_dash="dot", line_color=CYAN, line_width=1.5)
-            fig.update_layout(height=max(260, 26 * len(rk)), hovermode="closest",
-                              margin=dict(l=6, r=44, t=8, b=28))
-            fig.update_xaxes(ticksuffix="%", showgrid=True, gridcolor="rgba(255,255,255,.05)")
-            fig.update_yaxes(showgrid=False, tickfont=dict(size=10.5))
-            st.plotly_chart(fig, use_container_width=True)
-            st.markdown(f"<div class='fig-cap'>Lũy kế tháng · đường xanh là mốc {t_gtc:,.1f}%</div>",
-                        unsafe_allow_html=True)
-        else:
-            empty("Chưa có dữ liệu GTC theo bưu cục trong tháng này.")
-
-    with r2:
-        sub_head("Xu hướng 30 ngày")
-        trend = daily(sl(g_gtc, REF - timedelta(days=29), REF))
-        trend_tra = daily(sl(g_tra, REF - timedelta(days=29), REF))
-        if not trend.empty:
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-            fig.add_trace(go.Bar(x=trend["Ngày"], y=trend["Trọng Số"], name="Sản lượng",
-                                 marker_color="rgba(59,130,246,.30)", marker_line_width=0),
-                          secondary_y=False)
-            fig.add_trace(go.Scatter(x=trend["Ngày"], y=trend["Giá Trị"], name="%GTC",
-                                     mode="lines", line=dict(color=CYAN, width=2.4),
-                                     fill="tozeroy", fillcolor="rgba(34,211,238,.08)"),
-                          secondary_y=True)
-            if not trend_tra.empty:
-                fig.add_trace(go.Scatter(x=trend_tra["Ngày"], y=trend_tra["Giá Trị"],
-                                         name="%Trả hàng", mode="lines",
-                                         line=dict(color=BRASS, width=1.8, dash="dot")),
-                              secondary_y=True)
-            fig.add_hline(y=t_gtc, line_dash="dot", line_color="rgba(255,255,255,.28)",
-                          line_width=1, secondary_y=True)
-            fig.update_yaxes(showgrid=False, secondary_y=False)
-            fig.update_yaxes(ticksuffix="%", secondary_y=True)
-            fig.update_layout(height=340, margin=dict(l=44, r=44, t=26, b=30))
-            st.plotly_chart(fig, use_container_width=True)
-            st.markdown("<div class='fig-cap'>Cột là sản lượng · đường sáng là %GTC · "
-                        "đường cam đứt là tỷ lệ trả hàng</div>", unsafe_allow_html=True)
-        else:
-            empty("Chưa có dữ liệu 30 ngày gần nhất.")
-
     sub_head("Tin nhắn nhóm và tác phong")
     c1, c2 = st.columns(2)
     with c1:
@@ -1124,169 +1333,315 @@ Nếu có dữ liệu tin nhắn, thêm phần TÂM LÝ ĐỘI NGŨ.
 # ════════════════════════════════════════════════════════════════════
 # GHI CHÚ 01 · VẬN HÀNH
 # ════════════════════════════════════════════════════════════════════
-elif page == "Vận hành":
-    c1, c2, c3, c4 = st.columns([1, 1.4, 1.15, 1.15])
-    with c1:
-        bc = page_scope("bc_vh")
-    with c2:
-        quick = st.radio("Khung thời gian", ["Ngày", "Tuần", "Tháng", "Tự chọn"], horizontal=True, key="q_vh")
-    lo = M_GTC["Ngày"].min() if not M_GTC.empty else REF - timedelta(days=60)
-    if quick == "Ngày":
-        a0, b0 = REF, REF
-    elif quick == "Tuần":
-        a0, b0 = REF - timedelta(days=REF.weekday()), REF
-    elif quick == "Tháng":
-        a0, b0 = REF.replace(day=1), REF
-    else:
-        a0, b0 = lo, REF
-    with c3:
-        a0, b0 = date_pick("Khoảng ngày", a0, b0, "d_vh")
-    with c4:
-        lh_all = (sorted({x for x in M_CA["Chiều"].dropna().astype(str).str.strip().unique()
-                          if x and x.lower() != "nan"})
-                  if "Chiều" in M_CA.columns else [])
-        lh_pick = st.multiselect("Loại hàng / ca", lh_all, default=lh_all, key="lh_vh")
+elif group == "Vận hành":
 
-    note_head("01", "Vận hành", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}"
-                                + (f" · {len(lh_pick)}/{len(lh_all)} loại hàng" if lh_all else ""))
-
-    def S(frame):
-        return sl(scope(frame, bc), a0, b0)
-
-    s_gtc, s_tra, s_gtb, s_tts, s_odr, s_ca = (S(x) for x in (M_GTC, M_TRA, M_GTB, M_TTS, M_ODR, M_CA))
-
-    # Chỉ sheet "sản lượng theo ca" mới có cột loại hàng, nên bộ lọc này áp cho khối 1.6.
-    if lh_pick and "Chiều" in s_ca.columns:
-        s_ca = s_ca[s_ca["Chiều"].isin(lh_pick)]
-    if lh_all and len(lh_pick) < len(lh_all):
-        st.markdown("<div class='fig-cap'>Bộ lọc loại hàng chỉ áp cho mục 1.6 — các sheet GTC, "
-                    "trả hàng, GTB, TTS không có cột loại hàng</div>", unsafe_allow_html=True)
-
-    for label, frame_full, frame_sc, unit, hib, color in [
-        ("1.1 · GTC tổng", M_GTC, s_gtc, "%", True, INK),
-        ("1.2 · Tỷ lệ trả hàng", M_TRA, s_tra, "%", False, BURGUNDY),
-        ("1.3 · Tỷ lệ GTB thu tiền", M_GTB, s_gtb, "%", True, FOREST),
-        ("1.4 · GTC TikTok Shop", M_TTS, s_tts, "%", True, BRASS_DP),
-        ("1.5 · ODR TikTok Shop", M_ODR, s_odr, "%", True, INK_2),
-    ]:
-        sub_head(label)
-        st.markdown(period_ledger(label, scope(frame_full, bc), REF, unit=unit, higher_is_better=hib),
-                    unsafe_allow_html=True)
-        if not frame_sc.empty:
-            g = daily(frame_sc)
-            fig = px.area(g, x="Ngày", y="Giá Trị")
-            fig.update_traces(line=dict(color=color, width=1.8), fillcolor=f"rgba(0,0,0,0)")
-            fig.update_yaxes(ticksuffix="%")
-            st.plotly_chart(sized(fig, 210), use_container_width=True)
+    def quick_range(base_frame):
+        c1, c2, c3 = st.columns([1.1, 1.6, 1.3])
+        with c1:
+            bc_ = page_scope(f"bc_vh_{sub}")
+        with c2:
+            quick = st.radio("Khung thời gian", ["Ngày", "Tuần", "Tháng", "Tự chọn"],
+                             horizontal=True, key=f"q_vh_{sub}")
+        lo = base_frame["Ngày"].min() if not base_frame.empty else REF - timedelta(days=60)
+        if quick == "Ngày":
+            a_, b_ = REF, REF
+        elif quick == "Tuần":
+            a_, b_ = REF - timedelta(days=REF.weekday()), REF
+        elif quick == "Tháng":
+            a_, b_ = REF.replace(day=1), REF
         else:
-            empty(f"Chưa có dữ liệu cho {label.split('·')[1].strip()} trong khoảng đã chọn.")
+            a_, b_ = lo, REF
+        with c3:
+            a_, b_ = date_pick("Khoảng ngày", a_, b_, f"d_vh_{sub}")
+        return bc_, a_, b_
 
-    sub_head("1.6 · Sản lượng và GTC theo ca làm việc")
-    if not s_ca.empty and "Chiều" in s_ca.columns:
-        g = (s_ca.assign(_p=s_ca["Giá Trị"].fillna(0) * s_ca["Trọng Số"])
-                 .groupby(["Ngày", "Chiều"], as_index=False)
-                 .agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
-        g["r"] = np.where(g["w"] > 0, g["_p"] / g["w"], np.nan)
-        piv = g.pivot_table(index="Ngày", columns="Chiều", values="w", aggfunc="sum", fill_value=0)
-        rows = []
-        for ca in sorted(g["Chiều"].unique()):
-            sub = g[g["Chiều"] == ca]
-            total_sl = sub["w"].sum()
-            avg_r = wavg(sub["r"], sub["w"])
-            rows.append([ca, f"{total_sl:,.0f} đơn", f"{avg_r:,.2f}%"])
-        st.markdown(ledger_table("Tổng theo ca trong kỳ", ["Ca / loại hàng", "Sản lượng", "%GTC bình quân"], rows),
+    def metric_page(no, title, frame_full, unit, hib, color, target=None, value_label=None, note=""):
+        """Khung dùng chung cho 5 chỉ số dạng %: ledger N/W/M, xu hướng, so sánh bưu cục, bảng thô."""
+        bc_, a_, b_ = quick_range(frame_full)
+        note_head(no, title, f"Phạm vi {bc_} · dữ liệu {a_:%d.%m.%Y} – {b_:%d.%m.%Y}")
+        if note:
+            st.markdown(f"<div class='fig-cap'>{note}</div>", unsafe_allow_html=True)
+
+        f_scope = scope(frame_full, bc_)
+        f_range = sl(f_scope, a_, b_)
+
+        sub_head("Nhịp theo kỳ — so với kỳ liền trước")
+        st.markdown(period_ledger(title, f_scope, REF, unit=unit, higher_is_better=hib),
                     unsafe_allow_html=True)
-        fig = go.Figure()
-        for i, ca in enumerate(sorted(g["Chiều"].unique())):
-            sub = g[g["Chiều"] == ca]
-            fig.add_trace(go.Scatter(x=sub["Ngày"], y=sub["r"], name=ca, mode="lines",
-                                     line=dict(width=1.8, color=[INK, BRASS, FOREST][i % 3])))
-        fig.update_yaxes(ticksuffix="%", range=[0, 100])
-        st.plotly_chart(sized(fig, 220), use_container_width=True)
-    else:
-        empty("Chưa đọc được cột ca hoặc loại hàng trong sheet theo ca.")
 
-    def p_vh(role):
-        def f(d):
-            return wavg(d["Giá Trị"], d["Trọng Số"]) if not d.empty else 0.0
-        return f"""Vận hành GHN {a0:%d/%m/%Y} – {b0:%d/%m/%Y}, phạm vi {bc}.
-GTC tổng {f(s_gtc):.2f}%. Trả hàng {f(s_tra):.2f}% (thấp là tốt). GTB thu tiền {f(s_gtb):.2f}%.
-GTC TikTok {f(s_tts):.2f}%. ODR TikTok {f(s_odr):.2f}% (cam kết đúng hạn với sàn, thấp là bị phạt).
-Tổng sản lượng {s_gtc['Trọng Số'].sum() if not s_gtc.empty else 0:,.0f} đơn.
+        cA, cB = st.columns([1.5, 1])
+        with cA:
+            sub_head("Xu hướng trong khoảng đã chọn")
+            if not f_range.empty:
+                g = daily(f_range)
+                fig = px.area(g, x="Ngày", y="Giá Trị")
+                fig.update_traces(line=dict(color=color, width=2), fillcolor=hex_fade(color, .08))
+                if target:
+                    fig.add_hline(y=target, line_dash="dot", line_color=SLATE, line_width=1.3)
+                fig.update_yaxes(ticksuffix="%" if unit == "%" else "")
+                st.plotly_chart(sized(fig, 260), use_container_width=True)
+            else:
+                empty("Chưa có dữ liệu trong khoảng đã chọn.")
+        with cB:
+            sub_head("So sánh giữa bưu cục")
+            bc_compare_chart(f_range, target, unit, hib)
+
+        sub_head("Dữ liệu chi tiết")
+        raw_table(f_range, value_label or title, f"vh_{no}", unit)
+
+        def p(role):
+            v = wavg(f_range["Giá Trị"], f_range["Trọng Số"]) if not f_range.empty else 0.0
+            return f"""{title} — GHN, {a_:%d/%m/%Y} – {b_:%d/%m/%Y}, phạm vi {bc_}.
+Giá trị bình quân có trọng số: {v:.2f}%. {'Mốc KPI: ' + f'{target:.2f}%.' if target else ''}
+{'Chỉ số này càng cao càng tốt.' if hib else 'Chỉ số này càng thấp càng tốt.'}
 
 {ROLE_STYLE[role]}
-Ba phần: hiệu suất, điểm nóng, việc làm ngay.
+Ba phần: hiện trạng, điểm nóng theo bưu cục, việc cần làm ngay.
 {CLOSE}"""
 
-    sub_head("Nhận định")
-    ai_panel("vh", "Viết nhận định vận hành", p_vh, "Vận hành")
+        sub_head("Nhận định")
+        ai_panel(f"vh_{no}", f"Viết nhận định — {title}", p, title)
+        return bc_, a_, b_
 
-# ════════════════════════════════════════════════════════════════════
-# GHI CHÚ 02 · KINH DOANH
-# ════════════════════════════════════════════════════════════════════
-elif page == "Kinh doanh":
-    c1, c2, c3 = st.columns([1.1, 1.6, 1.3])
-    with c1:
-        bc = page_scope("bc_kd")
-    with c2:
-        view = st.radio("Gộp theo", ["Ngày", "Tuần", "Tháng"], horizontal=True, key="v_kd")
-    lo = M_DT["Ngày"].min() if not M_DT.empty else REF - timedelta(days=60)
-    with c3:
-        a0, b0 = date_pick("Khoảng ngày", max(lo, REF - timedelta(days=29)), REF, "d_kd")
+    if sub == "GTC tổng":
+        t_gtc_p = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
+                             exclude=["tts", "tiktok"], bc=st.session_state.get("g_bc", "Tất cả"), ref=REF)
+        metric_page("1.1", "GTC tổng", M_GTC, "%", True, BLUE, target=t_gtc_p, value_label="%GTC")
 
-    note_head("02", "Kinh doanh", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+    elif sub == "Tỷ lệ trả hàng":
+        t_tra_p = kpi_target([["tra hang"], ["tra"]], 5.0,
+                             bc=st.session_state.get("g_bc", "Tất cả"), ref=REF)
+        metric_page("1.2", "Tỷ lệ trả hàng", M_TRA, "%", False, BURGUNDY, target=t_tra_p,
+                   value_label="%Trả hàng",
+                   note="Chỉ số càng thấp càng tốt — thanh xanh nghĩa là dưới ngưỡng.")
 
-    dt = scope(M_DT, bc)
-    (mA, mB), (pmA, pmB) = period_pair(REF, "Tháng")
-    rev_m, rev_pm = val(dt, mA, mB, "sum"), val(dt, pmA, pmB, "sum")
-    st.session_state.kpi_manual.setdefault(f"dt_{bc}", 71_000_000.0)
+    elif sub == "GTB thu tiền":
+        metric_page("1.3", "Tỷ lệ GTB thu tiền", M_GTB, "%", True, FOREST, value_label="%GTB",
+                   note="Giao thất bại nhưng vẫn thu được tiền — chưa có mốc KPI riêng cho chỉ số này.")
 
-    k1, _ = st.columns([1, 2.4])
-    with k1:
-        st.session_state.kpi_manual[f"dt_{bc}"] = st.number_input(
-            "Mục tiêu tháng (đ)", min_value=0.0,
-            value=float(st.session_state.kpi_manual[f"dt_{bc}"]), step=1_000_000.0)
-    target = float(st.session_state.kpi_manual[f"dt_{bc}"])
-    done_days = max((REF - mA).days + 1, 1)
-    total_days = month_end(mA).day
-    forecast = rev_m / done_days * total_days
+    elif sub == "GTC TikTok Shop":
+        t_tts_p = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0,
+                             bc=st.session_state.get("g_bc", "Tất cả"), ref=REF)
+        metric_page("1.4", "GTC TikTok Shop", M_TTS, "%", True, BRASS_DP, target=t_tts_p,
+                   value_label="%GTC TTS")
 
-    sub_head("2.1 · Doanh thu so với mục tiêu tháng")
-    rows_dt = [
-        ["Lũy kế đến nay", f"{rev_m/1_000_000:,.1f} tr đ"],
-        ["Mục tiêu tháng", f"{target/1_000_000:,.0f} tr đ"],
-        ["Dự phóng cuối tháng", f"{forecast/1_000_000:,.1f} tr đ"],
-        ["Tháng trước (cùng phạm vi)", f"{rev_pm/1_000_000:,.1f} tr đ"],
-    ]
-    st.markdown(ledger_table(f"Tháng {mA:%m/%Y} · đã qua {done_days}/{total_days} ngày",
-                             ["Chỉ tiêu", "Giá trị"], rows_dt,
-                             total_row=["Còn thiếu so với mục tiêu", f"{max(target-forecast,0)/1_000_000:,.1f} tr đ"]),
-                unsafe_allow_html=True)
+    elif sub == "ODR TikTok Shop":
+        metric_page("1.5", "ODR TikTok Shop", M_ODR, "%", True, VIOLET, target=98.0,
+                   value_label="%ODR",
+                   note="Cam kết giao đúng hạn với sàn TikTok Shop — thấp là bị phạt.")
 
-    sub_head("2.2 · Nhịp doanh thu theo kỳ")
-    st.markdown(period_ledger("So với kỳ liền trước", dt, REF, how="sum", unit="đ"), unsafe_allow_html=True)
+    elif sub == "Sản lượng theo ca":
+        bc_, a_, b_ = quick_range(M_CA)
+        lh_all = (sorted({x for x in M_CA["Chiều"].dropna().astype(str).str.strip().unique()
+                          if x and x.lower() != "nan"}) if "Chiều" in M_CA.columns else [])
+        lh_pick = st.multiselect("Loại hàng / ca", lh_all, default=lh_all, key="lh_vh")
+        note_head("1.6", "Sản lượng và GTC theo ca làm việc",
+                  f"Phạm vi {bc_} · dữ liệu {a_:%d.%m.%Y} – {b_:%d.%m.%Y}")
 
-    sub_head(f"2.3 · Biểu đồ doanh thu — gộp theo {view.lower()}")
-    d_range = sl(dt, a0, b0)
-    if not d_range.empty:
-        plot = d_range.copy()
-        if view == "Tuần":
-            plot["Ngày"] = plot["Ngày"].dt.to_period("W").apply(lambda r: r.start_time)
-        elif view == "Tháng":
-            plot["Ngày"] = plot["Ngày"].dt.to_period("M").apply(lambda r: r.start_time)
-        plot = plot.groupby("Ngày", as_index=False)["Giá Trị"].sum()
-        fig = px.bar(plot, x="Ngày", y="Giá Trị")
-        fig.update_traces(marker_color=INK, marker_line_width=0, opacity=.85)
-        if view == "Tháng":
-            fig.add_hline(y=target, line_dash="dot", line_color=BRASS, line_width=1.5,
-                          annotation_text="mục tiêu", annotation_position="top left")
-        st.plotly_chart(sized(fig, 240), use_container_width=True)
-    else:
-        empty("Chưa có doanh thu trong khoảng đã chọn.")
+        s_ca = sl(scope(M_CA, bc_), a_, b_)
+        if lh_pick and "Chiều" in s_ca.columns:
+            s_ca = s_ca[s_ca["Chiều"].isin(lh_pick)]
 
-    e1, e2 = st.columns([1.15, 1])
-    with e1:
-        sub_head("2.4 · Khách hàng mới trong kỳ")
+        if not s_ca.empty and "Chiều" in s_ca.columns:
+            g = (s_ca.assign(_p=s_ca["Giá Trị"].fillna(0) * s_ca["Trọng Số"])
+                     .groupby(["Ngày", "Chiều"], as_index=False)
+                     .agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
+            g["r"] = np.where(g["w"] > 0, g["_p"] / g["w"], np.nan)
+
+            sub_head("Tổng theo ca trong kỳ")
+            rows = []
+            for ca in sorted(g["Chiều"].unique()):
+                sub_g = g[g["Chiều"] == ca]
+                rows.append([ca, f"{sub_g['w'].sum():,.0f} đơn",
+                            f"{wavg(sub_g['r'], sub_g['w']):,.2f}%"])
+            st.markdown(ledger_table("Tổng theo ca / loại hàng",
+                                     ["Ca / loại hàng", "Sản lượng", "%GTC bình quân"], rows),
+                        unsafe_allow_html=True)
+
+            cA, cB = st.columns([1.4, 1])
+            with cA:
+                sub_head("Sản lượng theo ca theo ngày")
+                fig = go.Figure()
+                shades = [BLUE, BRASS, FOREST, VIOLET]
+                for i, ca in enumerate(sorted(g["Chiều"].unique())):
+                    sub_g = g[g["Chiều"] == ca]
+                    fig.add_trace(go.Bar(x=sub_g["Ngày"], y=sub_g["w"], name=ca,
+                                         marker_color=shades[i % 4], marker_line_width=0))
+                fig.update_layout(barmode="stack", height=280)
+                st.plotly_chart(fig, use_container_width=True)
+            with cB:
+                sub_head("%GTC theo ca theo ngày")
+                fig2 = go.Figure()
+                for i, ca in enumerate(sorted(g["Chiều"].unique())):
+                    sub_g = g[g["Chiều"] == ca]
+                    fig2.add_trace(go.Scatter(x=sub_g["Ngày"], y=sub_g["r"], name=ca, mode="lines",
+                                              line=dict(width=2, color=shades[i % 4])))
+                fig2.update_yaxes(ticksuffix="%", range=[0, 100])
+                fig2.update_layout(height=280)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            sub_head("Dữ liệu chi tiết")
+            show = s_ca.rename(columns={"Trọng Số": "Sản lượng", "Giá Trị": "%GTC", "Chiều": "Ca/Loại hàng"})
+            show = show[["Ngày", "Bưu Cục", "Ca/Loại hàng", "Sản lượng", "%GTC"]].sort_values(
+                "Ngày", ascending=False)
+            st.dataframe(show, use_container_width=True, hide_index=True, height=280,
+                         column_config={"Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                       "Sản lượng": st.column_config.NumberColumn(format="%,d"),
+                                       "%GTC": st.column_config.NumberColumn(format="%.2f%%")})
+            st.download_button("Tải CSV dữ liệu chi tiết", show.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="vh_1_6_theo_ca.csv", mime="text/csv", key="dl_vh_16")
+        else:
+            empty("Chưa đọc được cột ca hoặc loại hàng trong sheet theo ca.")
+
+    else:  # "Gán & Leadtime"
+        bc_, a_, b_ = quick_range(M_GAN)
+        note_head("1.7", "Tỷ lệ gán và thời gian xử lý (Leadtime)",
+                  f"Phạm vi {bc_} · dữ liệu {a_:%d.%m.%Y} – {b_:%d.%m.%Y}")
+        st.markdown("<div class='fig-cap'>Hai chỉ số này có sẵn trong sheet GTC tổng nhưng chưa nằm "
+                    "trong yêu cầu ban đầu — bổ sung theo góp ý.</div>", unsafe_allow_html=True)
+
+        s_gan = sl(scope(M_GAN, bc_), a_, b_)
+        s_lead = sl(scope(M_LEAD, bc_), a_, b_)
+
+        cA, cB = st.columns(2)
+        with cA:
+            sub_head("Tỷ lệ gán — % đơn được gán so với tổng đơn")
+            st.markdown(period_ledger("Tỷ lệ gán", scope(M_GAN, bc_), REF, unit="%"),
+                        unsafe_allow_html=True)
+            if not s_gan.empty:
+                g = daily(s_gan)
+                fig = px.area(g, x="Ngày", y="Giá Trị")
+                fig.update_traces(line=dict(color=CYAN, width=2), fillcolor=hex_fade(CYAN, .08))
+                fig.update_yaxes(ticksuffix="%")
+                st.plotly_chart(sized(fig, 230), use_container_width=True)
+            else:
+                empty("Chưa có dữ liệu tỷ lệ gán.")
+        with cB:
+            sub_head("Leadtime — giờ trung bình xử lý đơn")
+            if not s_lead.empty:
+                avg_now = float(s_lead["Giá Trị"].mean())
+                st.markdown(f"<div class='num tile-num'>{avg_now:,.1f} giờ</div>"
+                            f"<div class='tile-delta d-flat'>bình quân {a_:%d/%m} – {b_:%d/%m}</div>",
+                            unsafe_allow_html=True)
+                g = daily(s_lead)
+                fig = px.line(g, x="Ngày", y="Giá Trị", markers=True)
+                fig.update_traces(line=dict(color=BRASS, width=2), marker=dict(size=5))
+                fig.update_yaxes(title_text="giờ")
+                st.plotly_chart(sized(fig, 200), use_container_width=True)
+            else:
+                empty("Chưa có dữ liệu Leadtime.")
+
+        sub_head("Dữ liệu chi tiết")
+        merged = s_gan.rename(columns={"Giá Trị": "%Gán"})[["Ngày", "Bưu Cục", "Trọng Số", "%Gán"]]
+        if not s_lead.empty:
+            merged = merged.merge(
+                s_lead.rename(columns={"Giá Trị": "Leadtime (giờ)"})[["Ngày", "Bưu Cục", "Leadtime (giờ)"]],
+                on=["Ngày", "Bưu Cục"], how="outer")
+        merged = merged.rename(columns={"Trọng Số": "Sản lượng"}).sort_values("Ngày", ascending=False)
+        st.dataframe(merged, use_container_width=True, hide_index=True, height=280,
+                     column_config={"Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                   "Sản lượng": st.column_config.NumberColumn(format="%,d"),
+                                   "%Gán": st.column_config.NumberColumn(format="%.2f%%"),
+                                   "Leadtime (giờ)": st.column_config.NumberColumn(format="%.2f")})
+        st.download_button("Tải CSV dữ liệu chi tiết", merged.to_csv(index=False).encode("utf-8-sig"),
+                           file_name="vh_1_7_gan_leadtime.csv", mime="text/csv", key="dl_vh_17")
+elif group == "Kinh doanh":
+
+    if sub == "Doanh thu & KPI":
+        c1, c2, c3 = st.columns([1.1, 1.6, 1.3])
+        with c1:
+            bc = page_scope("bc_kd_dt")
+        with c2:
+            view = st.radio("Gộp theo", ["Ngày", "Tuần", "Tháng"], horizontal=True, key="v_kd")
+        lo = M_DT["Ngày"].min() if not M_DT.empty else REF - timedelta(days=60)
+        with c3:
+            a0, b0 = date_pick("Khoảng ngày", max(lo, REF - timedelta(days=29)), REF, "d_kd")
+
+        note_head("2.1", "Doanh thu và tiến độ KPI", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+
+        dt = scope(M_DT, bc)
+        (mA, mB), (pmA, pmB) = period_pair(REF, "Tháng")
+        rev_m, rev_pm = val(dt, mA, mB, "sum"), val(dt, pmA, pmB, "sum")
+        st.session_state.kpi_manual.setdefault(f"dt_{bc}", 71_000_000.0)
+
+        k1, _ = st.columns([1, 2.4])
+        with k1:
+            st.session_state.kpi_manual[f"dt_{bc}"] = st.number_input(
+                "Mục tiêu tháng (đ)", min_value=0.0,
+                value=float(st.session_state.kpi_manual[f"dt_{bc}"]), step=1_000_000.0)
+        target = float(st.session_state.kpi_manual[f"dt_{bc}"])
+        done_days = max((REF - mA).days + 1, 1)
+        total_days = month_end(mA).day
+        forecast = rev_m / done_days * total_days
+
+        sub_head("Doanh thu so với mục tiêu tháng")
+        rows_dt = [
+            ["Lũy kế đến nay", f"{rev_m/1_000_000:,.1f} tr đ"],
+            ["Mục tiêu tháng", f"{target/1_000_000:,.0f} tr đ"],
+            ["Dự phóng cuối tháng", f"{forecast/1_000_000:,.1f} tr đ"],
+            ["Tháng trước (cùng phạm vi)", f"{rev_pm/1_000_000:,.1f} tr đ"],
+        ]
+        st.markdown(ledger_table(f"Tháng {mA:%m/%Y} · đã qua {done_days}/{total_days} ngày",
+                                 ["Chỉ tiêu", "Giá trị"], rows_dt,
+                                 total_row=["Còn thiếu so với mục tiêu",
+                                           f"{max(target-forecast,0)/1_000_000:,.1f} tr đ"]),
+                    unsafe_allow_html=True)
+
+        sub_head("Nhịp doanh thu theo kỳ — so với kỳ liền trước")
+        st.markdown(period_ledger("Doanh thu", dt, REF, how="sum", unit="đ"), unsafe_allow_html=True)
+
+        sub_head(f"Biểu đồ doanh thu — gộp theo {view.lower()}")
+        d_range = sl(dt, a0, b0)
+        if not d_range.empty:
+            plot = d_range.copy()
+            if view == "Tuần":
+                plot["Ngày"] = plot["Ngày"].dt.to_period("W").apply(lambda r: r.start_time)
+            elif view == "Tháng":
+                plot["Ngày"] = plot["Ngày"].dt.to_period("M").apply(lambda r: r.start_time)
+            plot = plot.groupby("Ngày", as_index=False)["Giá Trị"].sum()
+            fig = px.bar(plot, x="Ngày", y="Giá Trị")
+            fig.update_traces(marker_color=BLUE, marker_line_width=0, opacity=.9)
+            if view == "Tháng":
+                fig.add_hline(y=target, line_dash="dot", line_color=BRASS, line_width=1.5,
+                              annotation_text="mục tiêu", annotation_position="top left")
+            st.plotly_chart(sized(fig, 260), use_container_width=True)
+        else:
+            empty("Chưa có doanh thu trong khoảng đã chọn.")
+
+        sub_head("Dữ liệu chi tiết")
+        if not d_range.empty:
+            show = d_range.rename(columns={"Giá Trị": "Doanh thu"})[["Ngày", "Bưu Cục", "Doanh thu"]] \
+                .sort_values("Ngày", ascending=False)
+            st.dataframe(show, use_container_width=True, hide_index=True, height=260,
+                         column_config={"Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                       "Doanh thu": st.column_config.NumberColumn(format="%,d ₫")})
+            st.download_button("Tải CSV dữ liệu chi tiết", show.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="kd_2_1_doanh_thu.csv", mime="text/csv", key="dl_kd21")
+        else:
+            empty("Không có dữ liệu để xuất.")
+
+        def p_kd(role):
+            return f"""Kinh doanh GHN, phạm vi {bc}, tháng {mA:%m/%Y}.
+Lũy kế {rev_m:,.0f} đ / mục tiêu {target:,.0f} đ. Dự phóng cuối tháng {forecast:,.0f} đ.
+Đã qua {done_days}/{total_days} ngày. Tháng trước {rev_pm:,.0f} đ.
+
+{ROLE_STYLE[role]}
+Ba phần: tiến độ so với mục tiêu, rủi ro không đạt, việc cần làm ngay để về đích.
+{CLOSE}"""
+
+        sub_head("Nhận định")
+        ai_panel("kd_dt", "Viết nhận định doanh thu", p_kd, "Doanh thu")
+
+    elif sub == "Khách hàng mới":
+        c1, c2 = st.columns([1.2, 2])
+        with c1:
+            bc = page_scope("bc_kd_khm")
+        lo = DF_KHM["Ngày"].min() if not DF_KHM.empty and DF_KHM["Ngày"].notna().any() else REF - timedelta(days=29)
+        with c2:
+            a0, b0 = date_pick("Khoảng ngày", max(lo, REF - timedelta(days=29)), REF, "d_khm")
+
+        note_head("2.2", "Khách hàng mới", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+
         khm = sl(scope(DF_KHM, bc), a0, b0)
         if not khm.empty:
             ncol = pick_col(khm, [["ten kh"], ["ten khach"], ["khach hang"]])
@@ -1294,77 +1649,103 @@ elif page == "Kinh doanh":
             rcol = pick_col(khm, [["doanh thu"]])
             vcol = pick_col(khm, VOL_K)
             keys = [c for c in (ccol, ncol) if c]
+
+            if rcol:
+                tong = float(khm[rcol].sum())
+                sl_ = st.columns(3)
+                sl_[0].markdown(f"<div class='eyebrow'>Số khách mới</div>"
+                                f"<div class='num tile-num'>{len(khm):,}</div>", unsafe_allow_html=True)
+                sl_[1].markdown(f"<div class='eyebrow'>Tổng doanh thu</div>"
+                                f"<div class='num tile-num'>{tong/1_000_000:,.1f} tr đ</div>",
+                                unsafe_allow_html=True)
+                sl_[2].markdown(f"<div class='eyebrow'>Doanh thu bình quân/khách</div>"
+                                f"<div class='num tile-num'>{tong/max(len(khm),1)/1_000_000:,.2f} tr đ</div>",
+                                unsafe_allow_html=True)
+                st.write("")
+
             if keys and rcol:
+                sub_head("Xếp hạng theo doanh thu")
                 agg = {rcol: "sum"}
                 if vcol:
                     agg[vcol] = "sum"
                 t = khm.groupby(keys, as_index=False).agg(agg).sort_values(rcol, ascending=False)
-                st.dataframe(t, use_container_width=True, hide_index=True, height=280,
+                st.dataframe(t, use_container_width=True, hide_index=True, height=340,
                              column_config={rcol: st.column_config.NumberColumn("Doanh thu", format="%,d ₫")})
+                st.download_button("Tải CSV", t.to_csv(index=False).encode("utf-8-sig"),
+                                   file_name="kd_2_2_khach_hang_moi.csv", mime="text/csv", key="dl_kd22")
             else:
-                st.dataframe(khm, use_container_width=True, hide_index=True, height=280)
+                sub_head("Dữ liệu chi tiết")
+                st.dataframe(khm, use_container_width=True, hide_index=True, height=340)
         else:
             empty("Chưa có khách hàng mới trong kỳ này.")
-    with e2:
-        sub_head("2.5 · Phễu tiếp xúc khách hàng mới")
+
+    elif sub == "Phễu tiếp xúc":
+        bc = page_scope("bc_kd_pheu")
+        note_head("2.3", "Phễu tiếp xúc khách hàng mới", f"Phạm vi {bc}")
+
         pheu = scope(DF_PHEU, bc)
-        if "Ngày" in pheu.columns and pheu["Ngày"].notna().any():
-            pheu = sl(pheu, a0, b0)
+        scol = pick_col(pheu, [["trang thai"]])
+        cA, cB = st.columns([1, 1.3])
+        with cA:
+            sub_head("Sơ đồ phễu")
+            if not pheu.empty and scol:
+                cnt = pheu.groupby(scol).size().reset_index(name="n").sort_values("n", ascending=False)
+                fig = go.Figure(go.Funnel(y=cnt[scol], x=cnt["n"], textinfo="value+percent initial",
+                                          marker=dict(color=[BLUE, CYAN, VIOLET, SLATE, "#C6CBD2"]),
+                                          connector=dict(line=dict(color=RULE, width=1))))
+                fig.update_layout(hovermode="closest", margin=dict(l=6, r=6, t=6, b=6), height=340)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                empty("Chưa đọc được cột trạng thái trong sheet phễu.")
+        with cB:
+            sub_head("Số lượng theo trạng thái")
+            if not pheu.empty and scol:
+                cnt = pheu.groupby(scol).size().reset_index(name="Số lượng").sort_values(
+                    "Số lượng", ascending=False)
+                st.dataframe(cnt, use_container_width=True, hide_index=True, height=200)
+                sub_head("Toàn bộ danh sách")
+                st.dataframe(pheu, use_container_width=True, hide_index=True, height=260)
+                st.download_button("Tải CSV", pheu.to_csv(index=False).encode("utf-8-sig"),
+                                   file_name="kd_2_3_pheu.csv", mime="text/csv", key="dl_kd23")
+            else:
+                empty("Không có dữ liệu chi tiết.")
+
+    else:  # "Khách hàng tiềm năng"
+        bc = page_scope("bc_kd_tn")
+        note_head("2.4", "Khách hàng tiềm năng chờ chốt", f"Phạm vi {bc}")
+
+        pheu = scope(DF_PHEU, bc)
         scol = pick_col(pheu, [["trang thai"]])
         if not pheu.empty and scol:
-            cnt = pheu.groupby(scol).size().reset_index(name="n").sort_values("n", ascending=False)
-            fig = go.Figure(go.Funnel(y=cnt[scol], x=cnt["n"], textinfo="value+percent initial",
-                                      marker=dict(color=[INK, INK_2, SLATE, "#9AA2AE", "#C6CBD2"]),
-                                      connector=dict(line=dict(color=RULE, width=1))))
-            fig.update_layout(hovermode="closest", margin=dict(l=6, r=6, t=6, b=6))
-            st.plotly_chart(sized(fig, 280), use_container_width=True)
+            tn = pheu[pheu[scol].astype(str).map(lambda x: "tiem nang" in norm(x))]
+            if not tn.empty:
+                drop = [c for c in tn.columns if tn[c].isna().all()]
+                tn = tn.drop(columns=drop)
+                st.markdown(f"<div class='eyebrow'>Đang có {len(tn)} khách hàng tiềm năng</div>",
+                            unsafe_allow_html=True)
+                st.dataframe(tn, use_container_width=True, hide_index=True, height=420)
+                st.download_button("Tải CSV danh sách", tn.to_csv(index=False).encode("utf-8-sig"),
+                                   file_name="kd_2_4_khach_tiem_nang.csv", mime="text/csv", key="dl_kd24")
+            else:
+                empty("Không có khách nào ở trạng thái tiềm năng.")
         else:
-            empty("Chưa đọc được cột trạng thái trong sheet phễu.")
-
-    sub_head("2.6 · Khách hàng tiềm năng chờ chốt")
-    if not pheu.empty and scol:
-        tn = pheu[pheu[scol].astype(str).map(lambda x: "tiem nang" in norm(x))]
-        if not tn.empty:
-            drop = [c for c in tn.columns if tn[c].isna().all()]
-            st.dataframe(tn.drop(columns=drop), use_container_width=True, hide_index=True)
-        else:
-            empty("Không có khách nào ở trạng thái tiềm năng.")
-    else:
-        empty("Cần cột trạng thái để lọc khách tiềm năng.")
-
-    def p_kd(role):
-        return f"""Kinh doanh GHN, phạm vi {bc}, tháng {mA:%m/%Y}.
-Lũy kế {rev_m:,.0f} đ / mục tiêu {target:,.0f} đ. Dự phóng cuối tháng {forecast:,.0f} đ.
-Đã qua {done_days}/{total_days} ngày. Tháng trước {rev_pm:,.0f} đ.
-
-{ROLE_STYLE[role]}
-Ba phần: tiến độ so với mục tiêu, phễu đang nghẽn ở đâu, việc chốt deal cần làm ngay.
-{CLOSE}"""
-
-    sub_head("Nhận định")
-    ai_panel("kd", "Viết nhận định kinh doanh", p_kd, "Kinh doanh")
-
-# ════════════════════════════════════════════════════════════════════
-# GHI CHÚ 03 · NĂNG SUẤT & LƯƠNG
-# ════════════════════════════════════════════════════════════════════
-elif page == "Năng suất & Lương":
+            empty("Cần cột trạng thái để lọc khách tiềm năng.")
+elif group == "Năng suất & Lương":
     c1, c2, c3 = st.columns([1.1, 1.3, 1.4])
     with c1:
-        bc = page_scope("bc_ns")
+        bc = page_scope(f"bc_ns_{sub}")
     nv_l, nv_g = pick_col(DF_LUONG, [["nhan vien"]]), pick_col(DF_NSGTC, [["nhan vien"]])
     staff = set()
     for df, col in ((DF_LUONG, nv_l), (DF_NSGTC, nv_g)):
         if col and not df.empty:
             staff |= set(scope(df, bc)[col].dropna().astype(str).str.strip())
     with c2:
-        nv = st.selectbox("Nhân viên", ["Tất cả"] + sorted(x for x in staff if x and x != "nan"), key="nv_ns")
+        nv = st.selectbox("Nhân viên", ["Tất cả"] + sorted(x for x in staff if x and x != "nan"),
+                          key=f"nv_ns_{sub}")
     base = DF_NSGTC if not DF_NSGTC.empty else DF_LUONG
     lo = base["Ngày"].min() if not base.empty and base["Ngày"].notna().any() else REF - timedelta(days=60)
     with c3:
-        a0, b0 = date_pick("Khoảng ngày", max(lo, REF - timedelta(days=29)), REF, "d_ns")
-
-    note_head("03", "Năng suất & Lương",
-              f"Phạm vi {bc}{'' if nv == 'Tất cả' else ' · ' + nv} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+        a0, b0 = date_pick("Khoảng ngày", max(lo, REF - timedelta(days=29)), REF, f"d_ns_{sub}")
 
     def only(df, col):
         out = scope(df, bc)
@@ -1375,15 +1756,15 @@ elif page == "Năng suất & Lương":
     L, G = only(DF_LUONG, nv_l), only(DF_NSGTC, nv_g)
 
     if REF.day <= 15:
-        cA, cB = REF.replace(day=1), REF.replace(day=15)
-        pB_ = cA - timedelta(days=1)
+        cA_, cB_ = REF.replace(day=1), REF.replace(day=15)
+        pB_ = cA_ - timedelta(days=1)
         pA_ = pB_.replace(day=16)
-        c_name, p_name = f"Kỳ 20 · {cA:%m/%Y}", f"Kỳ 05 · {pA_:%m/%Y}"
+        c_name, p_name = f"Kỳ 20 · {cA_:%m/%Y}", f"Kỳ 05 · {pA_:%m/%Y}"
     else:
-        cA = REF.replace(day=16)
-        cB = month_end(cA)
+        cA_ = REF.replace(day=16)
+        cB_ = month_end(cA_)
         pA_, pB_ = REF.replace(day=1), REF.replace(day=15)
-        c_name, p_name = f"Kỳ 05 · {cA:%m/%Y}", f"Kỳ 20 · {pA_:%m/%Y}"
+        c_name, p_name = f"Kỳ 05 · {cA_:%m/%Y}", f"Kỳ 20 · {pA_:%m/%Y}"
 
     price = pick_col(L, [["don gia"]])
     gan = pick_col(G, [["gan giao"], ["so don gan"], ["gan"]])
@@ -1394,7 +1775,8 @@ elif page == "Năng suất & Lương":
     def cut(df, a, b):
         return df[(df["Ngày"] >= a) & (df["Ngày"] <= b)] if df is not None and not df.empty else pd.DataFrame()
 
-    Lc, Lp, Gc, Gp = cut(L, cA, cB), cut(L, pA_, pB_), cut(G, cA, cB), cut(G, pA_, pB_)
+    Lc, Lp, Gc, Gp = cut(L, cA_, cB_), cut(L, pA_, pB_), cut(G, cA_, cB_), cut(G, pA_, pB_)
+    Gr, Lr = cut(G, a0, b0), cut(L, a0, b0)
 
     def avg_price(d):
         return float(d[price].mean()) if price and not d.empty and d[price].notna().any() else 0.0
@@ -1411,111 +1793,181 @@ elif page == "Năng suất & Lương":
     def total_pay(d):
         return float(d[list(pay.values())].sum().sum()) if pay and not d.empty else 0.0
 
-    sub_head(f"3.1 · Kỳ lương — {c_name} so với {p_name}")
-    st.markdown("<div style='font-size:11px;color:var(--slate);margin-bottom:8px;'>"
-                "Kỳ 20 tính từ ngày 01 đến 15, chi lương ngày 20 · Kỳ 05 tính từ ngày 16 đến hết tháng, "
-                "chi lương ngày 05 tháng sau · Lương tổng = LHH LTC + LHH GTC + LHH GTBTT</div>",
-                unsafe_allow_html=True)
     def delta_span(delta: float, suffix: str, decimals: int = 0, hib: bool = True) -> str:
         good = (delta > 0) == hib
         cls = "" if abs(delta) < 1e-9 else ("up" if good else "down")
         arrow = "" if abs(delta) < 1e-9 else ("▲" if delta > 0 else "▼")
         return f"<span class='{cls}'>{arrow} {abs(delta):,.{decimals}f}{suffix}</span>"
 
-    rows_ns = [
-        ["Đơn giá trung bình", f"{avg_price(Lc):,.0f} đ", f"{avg_price(Lp):,.0f} đ",
-         delta_span(avg_price(Lc) - avg_price(Lp), " đ")],
-        ["Sản lượng GTC", f"{sum_gtc(Gc):,.0f} đơn", f"{sum_gtc(Gp):,.0f} đơn",
-         delta_span(sum_gtc(Gc) - sum_gtc(Gp), " đơn")],
-        ["%GTC", f"{pct(Gc):,.2f}%", f"{pct(Gp):,.2f}%", delta_span(pct(Gc) - pct(Gp), " pp", 2)],
-    ]
-    st.markdown(ledger_table(f"{c_name} so với {p_name}", ["Chỉ tiêu", "Kỳ này", "Kỳ trước", "Chênh lệch"], rows_ns,
-                             total_row=["Lương tổng", f"{total_pay(Lc):,.0f} đ"]),
-                unsafe_allow_html=True)
+    who = f"{bc}{'' if nv == 'Tất cả' else ' · ' + nv}"
 
-    sub_head("3.2 · Nhịp %GTC theo kỳ")
-    if gan and gtc and not G.empty:
-        gm = pd.DataFrame({"Ngày": G["Ngày"],
-                           "Giá Trị": np.where(G[gan] > 0, G[gtc] / G[gan] * 100, np.nan),
-                           "Trọng Số": G[gan]})
-        st.markdown(period_ledger("So với kỳ liền trước", gm, REF, unit="%"), unsafe_allow_html=True)
-    else:
-        gm = pd.DataFrame(columns=["Ngày", "Giá Trị", "Trọng Số"])
-        empty("Chưa đọc được cột số đơn gán hoặc đơn giao tính lương.")
+    if sub == "Kỳ lương":
+        note_head("3.1", "Kỳ lương", f"Phạm vi {who} · {c_name} so với {p_name}")
+        st.markdown("<div class='fig-cap'>Kỳ 20 tính từ ngày 01 đến 15, chi lương ngày 20 · Kỳ 05 tính "
+                    "từ ngày 16 đến hết tháng, chi lương ngày 05 tháng sau · "
+                    "Lương tổng = LHH LTC + LHH GTC + LHH GTBTT</div>", unsafe_allow_html=True)
 
-    Gr, Lr = cut(G, a0, b0), cut(L, a0, b0)
+        rows_ns = [
+            ["Đơn giá trung bình", f"{avg_price(Lc):,.0f} đ", f"{avg_price(Lp):,.0f} đ",
+             delta_span(avg_price(Lc) - avg_price(Lp), " đ")],
+            ["Sản lượng GTC", f"{sum_gtc(Gc):,.0f} đơn", f"{sum_gtc(Gp):,.0f} đơn",
+             delta_span(sum_gtc(Gc) - sum_gtc(Gp), " đơn")],
+            ["%GTC", f"{pct(Gc):,.2f}%", f"{pct(Gp):,.2f}%", delta_span(pct(Gc) - pct(Gp), " pp", 2)],
+        ]
+        st.markdown(ledger_table(f"{c_name} so với {p_name}",
+                                 ["Chỉ tiêu", "Kỳ này", "Kỳ trước", "Chênh lệch"], rows_ns,
+                                 total_row=["Lương tổng", f"{total_pay(Lc):,.0f} đ"]),
+                    unsafe_allow_html=True)
 
-    sub_head("3.3 · Sản lượng gán, GTC và tỷ lệ")
-    if gan and gtc and not Gr.empty:
-        g = Gr.groupby("Ngày", as_index=False).agg({gan: "sum", gtc: "sum"})
-        g["r"] = np.where(g[gan] > 0, g[gtc] / g[gan] * 100, 0.0)
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig.add_trace(go.Bar(x=g["Ngày"], y=g[gan], name="Gán", marker_color="#E5E6E0", marker_line_width=0),
-                      secondary_y=False)
-        fig.add_trace(go.Bar(x=g["Ngày"], y=g[gtc], name="Giao thành công", marker_color=INK_2,
-                             marker_line_width=0, opacity=.85), secondary_y=False)
-        fig.add_trace(go.Scatter(x=g["Ngày"], y=g["r"], name="%GTC", mode="lines+markers",
-                                 line=dict(color=BRASS, width=1.8), marker=dict(size=4)), secondary_y=True)
-        fig.update_layout(barmode="overlay")
-        fig.update_yaxes(ticksuffix="%", secondary_y=True, showgrid=False, range=[0, 100])
-        st.plotly_chart(sized(fig, 240), use_container_width=True)
-    else:
-        empty("Chưa đủ dữ liệu gán và giao để vẽ.")
+        sub_head("Dữ liệu chi tiết kỳ hiện tại")
+        if not Lc.empty:
+            cols = [c for c in [nv_l, price, *pay.values()] if c]
+            show = Lc[["Ngày", "Bưu Cục"] + cols].sort_values("Ngày", ascending=False) if cols else Lc
+            st.dataframe(show, use_container_width=True, hide_index=True, height=280)
+            st.download_button("Tải CSV", show.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="ns_3_1_ky_luong.csv", mime="text/csv", key="dl_ns31")
+        else:
+            empty("Không có dữ liệu lương trong kỳ hiện tại.")
 
-    f1, f2 = st.columns(2)
-    with f1:
-        sub_head("3.4 · Đơn giá theo ngày")
+        def p_ns(role):
+            return f"""Kỳ lương GHN, phạm vi {who}. {c_name} so với {p_name}.
+Đơn giá TB {avg_price(Lc):,.0f} đ (kỳ trước {avg_price(Lp):,.0f} đ).
+Sản lượng GTC {sum_gtc(Gc):,.0f} đơn (kỳ trước {sum_gtc(Gp):,.0f} đơn).
+%GTC {pct(Gc):.2f}% (kỳ trước {pct(Gp):.2f}%). Lương tổng {total_pay(Lc):,.0f} đ.
+
+{ROLE_STYLE[role]}
+Ba phần: thu nhập đang lên hay xuống, nguyên nhân nghi ngờ, việc cần làm.
+{CLOSE}"""
+        sub_head("Nhận định")
+        ai_panel("ns_31", "Viết nhận định kỳ lương", p_ns, "Kỳ lương")
+
+    elif sub == "Đơn giá":
+        note_head("3.2", "Đơn giá", f"Phạm vi {who} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
         if price and not Lr.empty:
+            avg_now = float(Lr[price].mean())
+            st.markdown(f"<div class='eyebrow'>Đơn giá bình quân trong khoảng đã chọn</div>"
+                        f"<div class='num tile-num'>{avg_now:,.0f} đ</div>", unsafe_allow_html=True)
+            sub_head("Biến động theo ngày")
             g = Lr.groupby("Ngày", as_index=False)[price].mean()
             fig = px.line(g, x="Ngày", y=price, markers=True)
-            fig.update_traces(line=dict(color=INK, width=1.8), marker=dict(size=4, color=INK))
-            st.plotly_chart(sized(fig, 210), use_container_width=True)
+            fig.update_traces(line=dict(color=BLUE, width=2), marker=dict(size=5, color=BLUE))
+            st.plotly_chart(sized(fig, 280), use_container_width=True)
+
+            if nv_l and nv == "Tất cả":
+                sub_head("So sánh đơn giá theo nhân viên")
+                r = Lr.groupby(nv_l, as_index=False)[price].mean().sort_values(price)
+                fig2 = go.Figure(go.Bar(x=r[price], y=r[nv_l], orientation="h", marker_color=BLUE,
+                                        text=[f"{v:,.0f}" for v in r[price]], textposition="outside"))
+                fig2.update_layout(height=max(160, 26 * len(r)), margin=dict(l=6, r=44, t=6, b=28))
+                st.plotly_chart(fig2, use_container_width=True)
+
+            sub_head("Dữ liệu chi tiết")
+            cols = [c for c in [nv_l, price] if c]
+            show = Lr[["Ngày", "Bưu Cục"] + cols].sort_values("Ngày", ascending=False)
+            st.dataframe(show, use_container_width=True, hide_index=True, height=260)
+            st.download_button("Tải CSV", show.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="ns_3_2_don_gia.csv", mime="text/csv", key="dl_ns32")
         else:
             empty("Chưa đọc được cột đơn giá.")
-    with f2:
-        sub_head("3.5 · Lương tổng theo ngày")
+
+    elif sub == "Sản lượng gán & GTC":
+        note_head("3.3", "Sản lượng gán và GTC", f"Phạm vi {who} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+
+        sub_head("Nhịp %GTC theo kỳ — so với kỳ liền trước")
+        if gan and gtc and not G.empty:
+            gm = pd.DataFrame({"Ngày": G["Ngày"],
+                               "Giá Trị": np.where(G[gan] > 0, G[gtc] / G[gan] * 100, np.nan),
+                               "Trọng Số": G[gan]})
+            st.markdown(period_ledger("%GTC", gm, REF, unit="%"), unsafe_allow_html=True)
+        else:
+            empty("Chưa đọc được cột số đơn gán hoặc đơn giao tính lương.")
+
+        sub_head("Sản lượng gán, GTC và tỷ lệ theo ngày")
+        if gan and gtc and not Gr.empty:
+            g = Gr.groupby("Ngày", as_index=False).agg({gan: "sum", gtc: "sum"})
+            g["r"] = np.where(g[gan] > 0, g[gtc] / g[gan] * 100, 0.0)
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            fig.add_trace(go.Bar(x=g["Ngày"], y=g[gan], name="Gán", marker_color="#E5E6E0",
+                                 marker_line_width=0), secondary_y=False)
+            fig.add_trace(go.Bar(x=g["Ngày"], y=g[gtc], name="Giao thành công", marker_color=INK_2,
+                                 marker_line_width=0, opacity=.85), secondary_y=False)
+            fig.add_trace(go.Scatter(x=g["Ngày"], y=g["r"], name="%GTC", mode="lines+markers",
+                                     line=dict(color=BRASS, width=2), marker=dict(size=5)), secondary_y=True)
+            fig.update_layout(barmode="overlay")
+            fig.update_yaxes(ticksuffix="%", secondary_y=True, showgrid=False, range=[0, 100])
+            st.plotly_chart(sized(fig, 280), use_container_width=True)
+
+            sub_head("Dữ liệu chi tiết")
+            cols = [c for c in [nv_g, gan, gtc] if c]
+            show = Gr[["Ngày", "Bưu Cục"] + cols].sort_values("Ngày", ascending=False)
+            st.dataframe(show, use_container_width=True, hide_index=True, height=260)
+            st.download_button("Tải CSV", show.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="ns_3_3_gan_gtc.csv", mime="text/csv", key="dl_ns33")
+        else:
+            empty("Chưa đủ dữ liệu gán và giao để vẽ.")
+
+    elif sub == "Lương tổng":
+        note_head("3.4", "Lương tổng", f"Phạm vi {who} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y}")
+        st.markdown("<div class='fig-cap'>Lương tổng = LHH LTC + LHH GTC + LHH GTBTT</div>",
+                    unsafe_allow_html=True)
         if pay and not Lr.empty:
             tmp = Lr.copy()
-            tmp["T"] = tmp[list(pay.values())].sum(axis=1)
-            g = tmp.groupby("Ngày", as_index=False)["T"].sum()
-            fig = px.area(g, x="Ngày", y="T")
-            fig.update_traces(line=dict(color=FOREST, width=1.8), fillcolor="rgba(31,110,74,.06)")
-            st.plotly_chart(sized(fig, 210), use_container_width=True)
+            tmp["Lương tổng"] = tmp[list(pay.values())].sum(axis=1)
+            tong = float(tmp["Lương tổng"].sum())
+            st.markdown(f"<div class='eyebrow'>Tổng lương trong khoảng đã chọn</div>"
+                        f"<div class='num tile-num'>{tong/1_000_000:,.1f} tr đ</div>", unsafe_allow_html=True)
+
+            sub_head("Biến động theo ngày")
+            g = tmp.groupby("Ngày", as_index=False)["Lương tổng"].sum()
+            fig = px.area(g, x="Ngày", y="Lương tổng")
+            fig.update_traces(line=dict(color=FOREST, width=2), fillcolor=hex_fade(FOREST, .08))
+            st.plotly_chart(sized(fig, 260), use_container_width=True)
+
+            sub_head("Cơ cấu 3 thành phần lương")
+            parts = {k: float(tmp[v].sum()) for k, v in pay.items()}
+            fig2 = go.Figure(go.Bar(x=list(parts.values()), y=list(parts.keys()), orientation="h",
+                                    marker_color=[BLUE, BRASS, VIOLET][:len(parts)],
+                                    text=[f"{v/1_000_000:,.1f} tr" for v in parts.values()],
+                                    textposition="outside"))
+            fig2.update_layout(height=160, margin=dict(l=6, r=60, t=6, b=28))
+            st.plotly_chart(fig2, use_container_width=True)
+            st.caption(" · ".join(f"**{k}**: {v}" for k, v in SALARY_PARTS.items()))
+
+            sub_head("Dữ liệu chi tiết")
+            cols = [c for c in [pick_col(L, [["nhan vien"]]), *pay.values()] if c]
+            show = tmp[["Ngày", "Bưu Cục"] + cols + ["Lương tổng"]].sort_values("Ngày", ascending=False)
+            st.dataframe(show, use_container_width=True, hide_index=True, height=260)
+            st.download_button("Tải CSV", show.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="ns_3_4_luong_tong.csv", mime="text/csv", key="dl_ns34")
         else:
             empty("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
 
-    if gan and gtc and nv_g and not Gr.empty:
-        sub_head("3.6 · Xếp hạng nhân viên — mốc thưởng 80%")
-        r = Gr.groupby(nv_g, as_index=False).agg({gan: "sum", gtc: "sum"})
-        r["%GTC"] = np.where(r[gan] > 0, r[gtc] / r[gan] * 100, 0.0)
-        r = r.sort_values("%GTC", ascending=False).reset_index(drop=True)
-        r.insert(0, "Hạng", range(1, len(r) + 1))
-        r["Thưởng"] = np.where(r["%GTC"] >= 80, "Đạt", "Chưa")
-        st.dataframe(r, use_container_width=True, hide_index=True,
-                     column_config={gan: st.column_config.NumberColumn("Đơn gán", format="%,d"),
-                                    gtc: st.column_config.NumberColumn("Đơn GTC", format="%,d"),
-                                    "%GTC": st.column_config.ProgressColumn("%GTC", format="%.2f%%",
-                                                                            min_value=0, max_value=100)})
+    else:  # "Xếp hạng nhân viên"
+        note_head("3.5", "Xếp hạng nhân viên", f"Phạm vi {bc} · dữ liệu {a0:%d.%m.%Y} – {b0:%d.%m.%Y} · mốc thưởng 80%")
+        if gan and gtc and nv_g and not Gr.empty:
+            r = Gr.groupby(nv_g, as_index=False).agg({gan: "sum", gtc: "sum"})
+            r["%GTC"] = np.where(r[gan] > 0, r[gtc] / r[gan] * 100, 0.0)
+            r = r.sort_values("%GTC", ascending=False).reset_index(drop=True)
+            medals = ["🥇", "🥈", "🥉"]
+            r.insert(0, "Hạng", [f"{medals[i]} {i+1}" if i < 3 else str(i + 1) for i in range(len(r))])
+            r["Thưởng"] = np.where(r["%GTC"] >= 80, "Đạt", "Chưa")
+            st.dataframe(r, use_container_width=True, hide_index=True,
+                         column_config={gan: st.column_config.NumberColumn("Đơn gán", format="%,d"),
+                                        gtc: st.column_config.NumberColumn("Đơn GTC", format="%,d"),
+                                        "%GTC": st.column_config.ProgressColumn("%GTC", format="%.2f%%",
+                                                                                min_value=0, max_value=100)})
+            st.download_button("Tải CSV bảng xếp hạng", r.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="ns_3_5_xep_hang.csv", mime="text/csv", key="dl_ns35")
 
-    def p_ns(role):
-        return f"""Năng suất và lương GHN, phạm vi {bc}, nhân viên {nv}.
-{c_name} ({cA:%d/%m}–{cB:%d/%m}) so với {p_name}.
-Đơn giá TB {avg_price(Lc):,.0f} đ (kỳ trước {avg_price(Lp):,.0f} đ).
-Sản lượng GTC {sum_gtc(Gc):,.0f} đơn (kỳ trước {sum_gtc(Gp):,.0f} đơn).
-%GTC {pct(Gc):.2f}% (kỳ trước {pct(Gp):.2f}%), mốc thưởng 80%.
-Lương tổng {total_pay(Lc):,.0f} đ (kỳ trước {total_pay(Lp):,.0f} đ).
-
-{ROLE_STYLE[role]}
-Ba phần: năng suất và thu nhập đang lên hay xuống, nguyên nhân nghi ngờ, việc cần làm để kéo %GTC.
-{CLOSE}"""
-
-    sub_head("Nhận định")
-    ai_panel("ns", "Viết nhận định năng suất", p_ns, "Năng suất")
-
-# ════════════════════════════════════════════════════════════════════
-# GHI CHÚ 04 · KPI
-# ════════════════════════════════════════════════════════════════════
-elif page == "Tiến độ KPI":
+            sub_head("Phân bố %GTC toàn đội")
+            fig = px.histogram(r, x="%GTC", nbins=12)
+            fig.add_vline(x=80, line_dash="dot", line_color=BRASS, line_width=1.5,
+                         annotation_text="mốc thưởng")
+            fig.update_traces(marker_color=BLUE)
+            st.plotly_chart(sized(fig, 220), use_container_width=True)
+        else:
+            empty("Chưa đủ dữ liệu để xếp hạng nhân viên.")
+elif group == "Tiến độ KPI":
     c1, c2 = st.columns([1.1, 2])
     with c1:
         bc = page_scope("bc_kpi")
@@ -1586,6 +2038,8 @@ elif page == "Tiến độ KPI":
                                     "%GTC": st.column_config.ProgressColumn(format="%.2f%%", min_value=0, max_value=100),
                                     "%GTC TTS": st.column_config.NumberColumn(format="%.2f%%"),
                                     "%Trả hàng": st.column_config.NumberColumn(format="%.2f%%")})
+        st.download_button("Tải CSV dữ liệu chi tiết", tbl.to_csv(index=False).encode("utf-8-sig"),
+                           file_name="kpi_theo_ngay.csv", mime="text/csv", key="dl_kpi")
     else:
         empty("Chưa có dữ liệu KPI trong khoảng đã chọn.")
 
