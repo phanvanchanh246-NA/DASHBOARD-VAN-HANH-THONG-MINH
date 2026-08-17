@@ -132,7 +132,18 @@ html, body, [class*="css"], .stApp {{
     background-color: {BG};
     color: {TEXT};
 }}
-.block-container {{ padding-top: 1.2rem; padding-bottom: 3rem; max-width: 1500px; }}
+/* Trải rộng hết chiều ngang màn hình. Streamlit mặc định bó nội dung vào giữa;
+   ghi đè max-width và thu hẹp lề hai bên. Không đụng tới cỡ chữ. */
+.block-container {{
+    padding-top: 1.2rem;
+    padding-bottom: 3rem;
+    padding-left: 1.6rem;
+    padding-right: 1.6rem;
+    max-width: 100% !important;
+    width: 100% !important;
+}}
+[data-testid="stAppViewContainer"] > .main {{ max-width: 100% !important; }}
+[data-testid="stMainBlockContainer"] {{ max-width: 100% !important; }}
 #MainMenu {{ visibility: hidden; }}
 footer {{ visibility: hidden; }}
 
@@ -349,14 +360,25 @@ def parse_num(val):
 
 
 def pick_col(df: pd.DataFrame, groups, exclude=()):
-    """Dò tên cột theo từ khóa đã bỏ dấu, không cần đặt tên cột cố định trong sheet."""
+    """Dò tên cột theo từ khóa đã bỏ dấu, không cần đặt tên cột cố định trong sheet.
+
+    Sheet của GHN đặt tên cột không nhất quán: có chỗ ghi 'Bưu cục' (có dấu cách),
+    có chỗ ghi 'BưuCục' và 'NhânViên' (viết liền). Vì vậy phải so khớp cả bản
+    KHÔNG có dấu cách, nếu không cột tên nhân viên sẽ bị bỏ sót rồi bị ép thành số.
+    """
     if df is None or df.empty:
         return None
     cols = {c: norm(c) for c in df.columns}
     for group in groups:
         keys = [norm(k) for k in ([group] if isinstance(group, str) else group)]
         for col, nc in cols.items():
-            if all(k in nc for k in keys) and not any(norm(e) in nc for e in exclude):
+            nc_tight = nc.replace(" ", "")
+            hit = all((k in nc) or (k.replace(" ", "") in nc_tight) for k in keys)
+            if not hit:
+                continue
+            skipped = any((norm(e) in nc) or (norm(e).replace(" ", "") in nc_tight)
+                          for e in exclude)
+            if not skipped:
                 return col
     return None
 
