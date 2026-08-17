@@ -109,8 +109,8 @@ pio.templates["ghn"] = go.layout.Template(layout=dict(
     colorway=[PRIMARY, ACCENT, SUCCESS, DANGER, "#00B4D8", "#6C757D"],
     margin=dict(l=48, r=20, t=40, b=40),
     xaxis=dict(showgrid=False, linecolor=LINE, linewidth=1,
-               ticks="outside", tickcolor=LINE, tickfont=dict(size=11)),
-    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=11)),
+               ticks="outside", tickcolor=LINE, tickfont=dict(size=24)),
+    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=24)),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     hoverlabel=dict(bgcolor=PRIMARY, bordercolor=PRIMARY,
                     font=dict(family="Montserrat", size=12, color="#FFFFFF")),
@@ -120,6 +120,12 @@ pio.templates.default = "ghn"
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap');
+
+/* ── PHÓNG CỠ CHỮ 1.5 LẦN ────────────────────────────────────────────
+   Streamlit dùng rem cho phần lớn thành phần của nó (ô chọn, nút, bảng,
+   chat...). Đổi cỡ chữ gốc từ 16px lên 24px là mọi thứ đó tự phóng theo.
+   Các cỡ px trong CSS bên dưới đã được nhân sẵn 1.5. */
+html {{ font-size: 24px; }}
 
 html, body, [class*="css"], .stApp {{
     font-family: 'Montserrat', sans-serif !important;
@@ -144,10 +150,10 @@ h1, h2, h3, h4 {{
     box-shadow: 0 4px 14px rgba(0,119,182,0.25);
 }}
 .ghn-banner h1 {{
-    color: #FFFFFF !important; font-size: 30px; font-weight: 900 !important;
+    color: #FFFFFF !important; font-size: 45px; font-weight: 900 !important;
     margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;
 }}
-.ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: 14px; font-weight: 600; margin: 0; }}
+.ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: 21px; font-weight: 600; margin: 0; }}
 
 /* ── Metric Card: nền trắng, đổ bóng, bo góc, viền trái xanh ────────── */
 .metric-card {{
@@ -160,15 +166,15 @@ h1, h2, h3, h4 {{
     height: 100%;
 }}
 .metric-card .m-title {{
-    font-size: 12.5px; font-weight: 700; color: {MUTED};
+    font-size: 18.75px; font-weight: 700; color: {MUTED};
     text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;
 }}
 .metric-card .m-value {{
-    font-size: 28px; font-weight: 900; color: {PRIMARY};
+    font-size: 42px; font-weight: 900; color: {PRIMARY};
     line-height: 1.1; font-variant-numeric: tabular-nums;
 }}
 .metric-card .m-value.accent {{ color: {ACCENT}; }}
-.metric-card .m-delta {{ font-size: 12.5px; font-weight: 700; margin-top: 6px; }}
+.metric-card .m-delta {{ font-size: 18.75px; font-weight: 700; margin-top: 6px; }}
 .metric-card .m-delta.up {{ color: {SUCCESS}; }}
 .metric-card .m-delta.down {{ color: {DANGER}; }}
 .metric-card .m-delta.flat {{ color: {MUTED}; }}
@@ -186,7 +192,7 @@ h1, h2, h3, h4 {{
 }}
 .stTabs [data-baseweb="tab"] p {{
     font-family: 'Montserrat', sans-serif !important;
-    font-size: 15px !important; font-weight: 700 !important; color: {MUTED} !important;
+    font-size: 22.5px !important; font-weight: 700 !important; color: {MUTED} !important;
 }}
 .stTabs [aria-selected="true"] {{
     background: #FFF6EC !important;
@@ -206,17 +212,17 @@ div[data-testid="stDataFrame"] thead tr th {{
     color: #FFFFFF !important;
     font-weight: 800 !important;
     font-family: 'Montserrat', sans-serif !important;
-    text-transform: uppercase; font-size: 12px !important;
+    text-transform: uppercase; font-size: 18px !important;
 }}
 div[data-testid="stDataFrame"] [role="columnheader"] {{
     background-color: {PRIMARY} !important; color: #FFFFFF !important; font-weight: 800 !important;
 }}
 
 /* ── Bảng HTML tự dựng ──────────────────────────────────────────────── */
-table.ghn-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 13.5px; }}
+table.ghn-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 20.25px; }}
 table.ghn-table thead th {{
     background: {PRIMARY}; color: #FFFFFF; font-weight: 800; text-transform: uppercase;
-    font-size: 12px; padding: 10px 12px; text-align: right; letter-spacing: 0.3px;
+    font-size: 18px; padding: 10px 12px; text-align: right; letter-spacing: 0.3px;
 }}
 table.ghn-table thead th:first-child, table.ghn-table td:first-child {{ text-align: left; }}
 table.ghn-table td {{
@@ -232,21 +238,21 @@ table.ghn-table td span.down {{ color: {DANGER}; font-weight: 800; }}
 /* ── Nút bấm màu cam ────────────────────────────────────────────────── */
 .stButton > button {{
     background: {ACCENT}; color: #FFFFFF; border: none; border-radius: 6px;
-    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 13px;
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 19.5px;
     text-transform: uppercase; letter-spacing: 0.4px; padding: 0.55rem 1.4rem;
     box-shadow: 0 2px 6px rgba(255,140,0,0.35);
 }}
 .stButton > button:hover {{ background: #E67E00; color: #FFFFFF; }}
 .stDownloadButton > button {{
     background: {BG}; color: {PRIMARY}; border: 2px solid {PRIMARY}; border-radius: 6px;
-    font-weight: 800; font-size: 12px; text-transform: uppercase;
+    font-weight: 800; font-size: 18px; text-transform: uppercase;
 }}
 .stDownloadButton > button:hover {{ background: {PRIMARY}; color: #FFFFFF; }}
 
 /* ── Nhãn ô nhập ────────────────────────────────────────────────────── */
 label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea label {{
     font-family: 'Montserrat', sans-serif !important;
-    font-weight: 700 !important; font-size: 12px !important;
+    font-weight: 700 !important; font-size: 18px !important;
     color: {PRIMARY} !important; text-transform: uppercase; letter-spacing: 0.3px;
 }}
 
@@ -254,12 +260,12 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .ghn-alert {{
     background: #FFF; border-left: 5px solid {ACCENT}; border-radius: 8px;
     padding: 16px 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    font-size: 14px; line-height: 1.7;
+    font-size: 21px; line-height: 1.7;
 }}
 .ghn-alert.danger {{ border-left-color: {DANGER}; }}
 .ghn-alert.ok {{ border-left-color: {SUCCESS}; }}
 .ghn-alert .a-tag {{
-    display: inline-block; font-size: 11px; font-weight: 800; text-transform: uppercase;
+    display: inline-block; font-size: 16.5px; font-weight: 800; text-transform: uppercase;
     padding: 2px 10px; border-radius: 12px; margin-right: 8px;
 }}
 .tag-danger {{ background: #FDECEE; color: {DANGER}; }}
@@ -267,13 +273,13 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .tag-ok {{ background: #E8F6EC; color: {SUCCESS}; }}
 
 .section-title {{
-    font-size: 17px; font-weight: 900; color: {PRIMARY};
+    font-size: 25.5px; font-weight: 900; color: {PRIMARY};
     text-transform: uppercase; letter-spacing: 0.3px;
     border-left: 5px solid {ACCENT}; padding-left: 12px; margin: 26px 0 12px;
 }}
 .note-box {{
     background: #F8FBFD; border: 1px dashed {PRIMARY_SOFT}; border-radius: 8px;
-    padding: 18px; text-align: center; color: {MUTED}; font-size: 13px; font-weight: 600;
+    padding: 18px; text-align: center; color: {MUTED}; font-size: 19.5px; font-weight: 600;
     margin: 10px 0;
 }}
 </style>
@@ -395,7 +401,10 @@ def fmt_money(v: float) -> str:
 # 3. TẢI DỮ LIỆU TỪ 12 GOOGLE SHEETS
 # ═══════════════════════════════════════════════════════════════════════
 DATE_KEYS = [["ngay"], ["thoi gian"], ["date"]]
-BC_KEYS = [["buu cuc"], ["buu"], ["khu vuc"], ["tram"], ["station"]]
+# Sheet doanh thu dùng cột "Vùng" (giá trị TTB) thay vì "Bưu cục" — đã kiểm chứng
+# trực tiếp trong sheet. Thiếu từ khóa này thì mọi dòng bị gán "Chưa phân loại"
+# và lọc theo bưu cục sẽ luôn trả về 0.
+BC_KEYS = [["buu cuc"], ["buu"], ["khu vuc"], ["vung"], ["tram"], ["station"], ["cum"]]
 VOL_KEYS = [["san luong"], ["volume"], ["tong don"], ["so don"], ["don"]]
 TEXT_HINTS = ("loai hang", "ca", "nhan vien", "trang thai", "ten", "ma", "tuyen", "cap quan ly")
 
@@ -735,12 +744,12 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
         mode="gauge+number+delta",
         value=float(value),
         number={"suffix": "%", "valueformat": ".2f",
-                "font": {"size": 34, "color": needle, "family": "Montserrat"}},
+                "font": {"size": 51, "color": needle, "family": "Montserrat"}},
         delta={"reference": target, "suffix": " pp",
                "increasing": {"color": SUCCESS if higher_is_better else DANGER},
                "decreasing": {"color": DANGER if higher_is_better else SUCCESS}},
         title={"text": f"<b>{esc(title)}</b>",
-               "font": {"size": 15, "color": PRIMARY, "family": "Montserrat"}},
+               "font": {"size": 22, "color": PRIMARY, "family": "Montserrat"}},
         gauge={"axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": MUTED},
                "bar": {"color": needle, "thickness": 0.3},
                "bgcolor": BG, "borderwidth": 1, "bordercolor": LINE,
@@ -886,6 +895,57 @@ REF_DATE = max(_dates) if _dates else pd.Timestamp.today().normalize()
 _mins = [f["Ngày"].min() for f in (M_GTC, M_DT, DF_NSGTC)
          if f is not None and not f.empty and "Ngày" in f.columns and f["Ngày"].notna().any()]
 DATA_MIN = min(_mins) if _mins else REF_DATE - timedelta(days=90)
+
+
+SHEET_LABELS = {
+    "gtc_tong": "GTC tổng", "sl_theo_ca": "Sản lượng theo ca", "tra_hang": "Tỷ lệ trả hàng",
+    "gtb_thu_tien": "GTB thu tiền", "gtc_tts": "GTC TikTok", "odr_tts": "ODR TikTok",
+    "kpi": "Mốc KPI", "doanh_thu": "Doanh thu", "kh_moi": "Khách hàng mới",
+    "pheu_kh": "Phễu khách hàng", "ns_luong": "Lương nhân viên", "ns_gtc": "Năng suất GTC",
+}
+
+
+def sheet_diagnostics() -> pd.DataFrame:
+    """Soi từng sheet: đọc được bao nhiêu dòng, khoảng ngày nào, nhận ra cột nào.
+    Đây là cách nhanh nhất để phát hiện vì sao một con số hiện ra sai hoặc bằng 0."""
+    rows = []
+    for key, label in SHEET_LABELS.items():
+        raw = safe_load(key)
+        if raw.empty:
+            rows.append({
+                "Sheet": label, "Số dòng": 0, "Từ ngày": "—", "Đến ngày": "—",
+                "Cột đơn vị": "—", "Giá trị đơn vị": "—",
+                "Tình trạng": "Không đọc được / rỗng",
+                "Các cột trong sheet": "—"})
+            continue
+
+        has_date = "Ngày" in raw.columns and raw["Ngày"].notna().any()
+        d_min = raw["Ngày"].min() if has_date else None
+        d_max = raw["Ngày"].max() if has_date else None
+        units = ([u for u in raw["Bưu Cục"].dropna().astype(str).unique()][:4]
+                 if "Bưu Cục" in raw.columns else [])
+        original_cols = [c for c in raw.columns if c not in ("Ngày", "Bưu Cục")]
+
+        if not has_date:
+            status = "Thiếu cột Ngày"
+        elif units and all(u == "Chưa phân loại" for u in units):
+            status = "Không nhận ra cột đơn vị"
+        elif d_max is not None and (REF_DATE - d_max).days > 3:
+            status = f"Cũ hơn {(REF_DATE - d_max).days} ngày so với ngày mới nhất"
+        else:
+            status = "Bình thường"
+
+        rows.append({
+            "Sheet": label,
+            "Số dòng": len(raw),
+            "Từ ngày": f"{d_min:%d/%m/%Y}" if d_min is not None and pd.notna(d_min) else "—",
+            "Đến ngày": f"{d_max:%d/%m/%Y}" if d_max is not None and pd.notna(d_max) else "—",
+            "Cột đơn vị": "Bưu Cục" if units and units[0] != "Chưa phân loại" else "không nhận ra",
+            "Giá trị đơn vị": ", ".join(units) if units else "—",
+            "Tình trạng": status,
+            "Các cột trong sheet": " | ".join(str(c) for c in original_cols),
+        })
+    return pd.DataFrame(rows)
 
 
 def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả") -> float:
@@ -1052,6 +1112,29 @@ with tab1:
             st.caption("Mới có 1 ngày dữ liệu — biểu đồ sẽ đầy đủ khi sheet tích lũy thêm ngày.")
     else:
         note("Chưa có dữ liệu vận hành trong 30 ngày gần nhất.")
+
+    section("Chẩn đoán nguồn dữ liệu")
+    st.caption("Mở bảng này khi thấy một con số bị sai hoặc bằng 0. Nó cho biết từng sheet "
+               "đọc được bao nhiêu dòng, dữ liệu đến ngày nào, và có nhận ra cột đơn vị không.")
+    with st.expander("Xem tình trạng 12 nguồn dữ liệu", expanded=False):
+        diag = sheet_diagnostics()
+        bad = diag[diag["Tình trạng"] != "Bình thường"]
+        if not bad.empty:
+            st.warning(
+                f"{len(bad)}/{len(diag)} nguồn đang có vấn đề: "
+                + ", ".join(f"**{r['Sheet']}** ({r['Tình trạng']})" for _, r in bad.iterrows()),
+                icon="⚠️")
+        st.dataframe(diag, use_container_width=True, hide_index=True, height=460)
+        st.download_button("TẢI CSV CHẨN ĐOÁN",
+                           diag.to_csv(index=False).encode("utf-8-sig"),
+                           "chan_doan_du_lieu.csv", "text/csv", key="dl_diag")
+        st.markdown(
+            "**Cách đọc bảng này**\n\n"
+            "- *Không nhận ra cột đơn vị*: sheet đặt tên cột khác thường. Khi đó mọi dòng bị gán "
+            "\"Chưa phân loại\" và bộ lọc bưu cục sẽ trả về 0.\n"
+            "- *Cũ hơn N ngày*: sheet chưa được cập nhật cùng nhịp với các sheet khác. Chỉ số "
+            "theo tháng của sheet đó sẽ bằng 0 nếu tháng hiện tại chưa có dòng nào.\n"
+            "- *Thiếu cột Ngày*: không so sánh được theo thời gian.")
 
     section("Phân tích Group Chat — điểm nóng về lương và tác phong")
     chat_input = st.text_area(
@@ -1270,6 +1353,26 @@ with tab3:
         a_kd, b_kd = date_range_picker("Khoảng ngày", DATA_MIN, REF_DATE, "date_kd")
 
     dt_scope = scope(M_DT, bc_kd)
+
+    # Sheet doanh thu dùng cột "Vùng" (ví dụ TTB) chứ không phải bưu cục, nên khi
+    # lọc theo một bưu cục cụ thể sẽ không khớp dòng nào. Nói rõ thay vì hiện số 0.
+    if not M_DT.empty and dt_scope.empty:
+        don_vi = ", ".join(M_DT["Bưu Cục"].dropna().astype(str).unique()[:5])
+        st.warning(
+            f"Sheet doanh thu không có dòng nào thuộc **{bc_kd}**. Sheet này ghi theo đơn vị: "
+            f"**{don_vi}** — đây là cấp vùng, không phải cấp bưu cục. "
+            "Chọn phạm vi *Tất cả* để xem đúng số, hoặc bổ sung cột Bưu cục vào sheet.",
+            icon="⚠️")
+    elif M_DT.empty:
+        st.warning("Chưa đọc được sheet doanh thu. Mở mục Chẩn đoán nguồn dữ liệu ở tab "
+                   "Tổng quan để xem lý do.", icon="⚠️")
+    else:
+        dt_max = dt_scope["Ngày"].max()
+        if pd.notna(dt_max) and dt_max.to_period("M") != REF_DATE.to_period("M"):
+            st.warning(
+                f"Sheet doanh thu mới có dữ liệu đến **{dt_max:%d/%m/%Y}**, trong khi ngày phân "
+                f"tích là **{REF_DATE:%d/%m/%Y}**. Vì vậy con số 'lũy kế tháng này' đang bằng 0. "
+                "Cập nhật sheet doanh thu là hết.", icon="⚠️")
 
     section("1. Doanh thu — so sánh N-1, W-1, M-1")
     p_kd = period_cards(dt_scope, REF_DATE, "đ", True, "sum", "Doanh thu")
@@ -1779,6 +1882,6 @@ Trình bày bằng markdown, in đậm các con số quan trọng.""")
 
 st.markdown(
     f"<div style='margin-top:36px;padding-top:16px;border-top:2px solid {LINE};"
-    f"text-align:center;color:{MUTED};font-size:12px;font-weight:600;'>"
+    f"text-align:center;color:{MUTED};font-size: 18px;font-weight:600;'>"
     f"TRUNG TÂM VẬN HÀNH CHIẾN LƯỢC — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
     unsafe_allow_html=True)
