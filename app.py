@@ -361,14 +361,22 @@ def is_total_row(name) -> bool:
     return norm(name) in ("grand total", "tong so", "tong cong", "total", "tong")
 
 
+def _as_series(x) -> pd.Series:
+    """Nếu lỡ nhận vào DataFrame (do cột trùng tên) thì lấy cột đầu tiên."""
+    if isinstance(x, pd.DataFrame):
+        return x.iloc[:, 0]
+    return x
+
+
 def wavg(values, weights) -> float:
     """Trung bình CÓ TRỌNG SỐ. Bắt buộc dùng cho mọi tỷ lệ phần trăm.
     Cộng dồn hoặc lấy trung bình cộng các cột % đều cho kết quả sai."""
-    v = pd.to_numeric(values, errors="coerce")
-    w = pd.to_numeric(weights, errors="coerce").fillna(0)
+    v = pd.to_numeric(_as_series(values), errors="coerce")
+    w = pd.to_numeric(_as_series(weights), errors="coerce").fillna(0)
     m = v.notna() & (w > 0)
-    if w[m].sum() > 0:
-        return float((v[m] * w[m]).sum() / w[m].sum())
+    total_w = float(w[m].sum())
+    if total_w > 0:
+        return float((v[m] * w[m]).sum() / total_w)
     return float(v.mean()) if v.notna().any() else 0.0
 
 
@@ -398,6 +406,9 @@ def load_sheet(key: str) -> pd.DataFrame:
     df = pd.read_csv(make_csv_url(SHEET_LINKS[key]))
     df.columns = df.columns.astype(str).str.strip().str.replace("\xa0", " ", regex=False)
     df = df.loc[:, ~df.columns.str.match(r"^Unnamed")]
+    # Google Sheet có thể có hai cột cùng tên. Khi đó df["X"] trả về DataFrame chứ
+    # không phải Series, làm mọi phép float()/sum() phía sau đổ vỡ. Giữ cột đầu tiên.
+    df = df.loc[:, ~df.columns.duplicated(keep="first")]
     if df.empty:
         return df
 
@@ -425,9 +436,9 @@ def safe_load(key: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def rescale_pct(s: pd.Series) -> pd.Series:
+def rescale_pct(s) -> pd.Series:
     """Nếu sheet lưu 0.85 thay vì 85 thì nhân 100."""
-    s = pd.to_numeric(s, errors="coerce")
+    s = pd.to_numeric(_as_series(s), errors="coerce")
     v = s[s > 0].dropna()
     return s * 100 if (not v.empty and v.max() <= 1.2) else s
 
@@ -489,7 +500,9 @@ def agg(df: pd.DataFrame, a, b, how: str = "wavg") -> float:
     s = sl(df, a, b)
     if s.empty:
         return 0.0
-    return wavg(s["Giá Trị"], s["Trọng Số"]) if how == "wavg" else float(s["Giá Trị"].sum())
+    if how == "wavg":
+        return wavg(s["Giá Trị"], s["Trọng Số"])
+    return float(pd.to_numeric(_as_series(s["Giá Trị"]), errors="coerce").sum())
 
 
 def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
@@ -895,7 +908,7 @@ def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả") -> float:
     col = pick_col(df, keys, exclude=exclude)
     if col is None:
         return float(fallback)
-    vals = rescale_pct(df[col]).dropna()
+    vals = rescale_pct(_as_series(df[col])).dropna()
     return float(vals.iloc[-1]) if not vals.empty else float(fallback)
 
 
@@ -954,8 +967,16 @@ with tab1:
     p_tts = get_period_data(g_tts, REF_DATE)
     p_odr = get_period_data(g_odr, REF_DATE)
     p_dt = get_period_data(g_dt, REF_DATE, "sum")
-    p_vol = get_period_data(g_gtc.assign(Giá_Trị=g_gtc["Trọng Số"]).rename(
-        columns={"Giá_Trị": "Giá Trị"}) if not g_gtc.empty else g_gtc, REF_DATE, "sum")
+    # Khung sản lượng: lấy chính cột Trọng Số làm giá trị để cộng dồn.
+    # LƯU Ý: phải GHI ĐÈ đúng cột "Giá Trị" sẵn có. Nếu tạo cột tạm rồi rename,
+    # khung sẽ có HAI cột cùng tên "Giá Trị", khiến df["Giá Trị"] trả về DataFrame
+    # và float() báo lỗi "must be a real number, not 'Series'".
+    if g_gtc.empty:
+        vol_frame = g_gtc
+    else:
+        vol_frame = g_gtc.copy()
+        vol_frame["Giá Trị"] = vol_frame["Trọng Số"]
+    p_vol = get_period_data(vol_frame, REF_DATE, "sum")
 
     section("Chỉ số nổi bật hôm nay")
     c1, c2, c3, c4 = st.columns(4)
@@ -1434,19 +1455,30 @@ with tab4:
     L_range, G_range = cut(L, a_ns, b_ns), cut(G, a_ns, b_ns)
 
     def avg_price(d):
-        return float(d[col_price].mean()) if col_price and not d.empty and d[col_price].notna().any() else 0.0
+        if not col_price or d is None or d.empty:
+            return 0.0
+        s = pd.to_numeric(_as_series(d[col_price]), errors="coerce")
+        return float(s.mean()) if s.notna().any() else 0.0
 
     def sum_gtc(d):
-        return float(d[col_gtc].sum()) if col_gtc and not d.empty else 0.0
+        if not col_gtc or d is None or d.empty:
+            return 0.0
+        return float(pd.to_numeric(_as_series(d[col_gtc]), errors="coerce").sum())
 
     def pct_gtc(d):
         if d is None or d.empty or not col_gan or not col_gtc:
             return 0.0
-        total_gan = d[col_gan].sum()
-        return float(d[col_gtc].sum() / total_gan * 100) if total_gan > 0 else 0.0
+        total_gan = float(pd.to_numeric(_as_series(d[col_gan]), errors="coerce").sum())
+        total_gtc = float(pd.to_numeric(_as_series(d[col_gtc]), errors="coerce").sum())
+        return (total_gtc / total_gan * 100) if total_gan > 0 else 0.0
 
     def total_salary(d):
-        return float(d[list(pay_cols.values())].sum().sum()) if pay_cols and not d.empty else 0.0
+        if not pay_cols or d is None or d.empty:
+            return 0.0
+        cols = [c for c in pay_cols.values() if c in d.columns]
+        if not cols:
+            return 0.0
+        return float(d[cols].apply(pd.to_numeric, errors="coerce").sum().sum())
 
     section("1. So sánh kỳ lương hiện tại với kỳ trước")
     rows_ky = [
