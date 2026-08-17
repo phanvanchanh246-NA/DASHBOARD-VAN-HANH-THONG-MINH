@@ -104,16 +104,24 @@ SALARY_PARTS = {
 # 1. GIAO DIỆN — CSS TÙY CHỈNH
 # ═══════════════════════════════════════════════════════════════════════
 pio.templates["ghn"] = go.layout.Template(layout=dict(
-    font=dict(family="Montserrat, sans-serif", size=12, color=TEXT),
+    font=dict(family="Montserrat, sans-serif", size=18, color=TEXT),
     plot_bgcolor=BG, paper_bgcolor=BG, hovermode="x unified",
     colorway=[PRIMARY, ACCENT, SUCCESS, DANGER, "#00B4D8", "#6C757D"],
-    margin=dict(l=48, r=20, t=40, b=40),
+    # t=90 chừa chỗ cho tiêu đề; b=120 chừa chỗ cho legend nằm dưới.
+    margin=dict(l=70, r=30, t=90, b=120),
+    title=dict(x=0, xanchor="left", y=0.97, yanchor="top",
+               font=dict(family="Montserrat", size=21, color=PRIMARY)),
     xaxis=dict(showgrid=False, linecolor=LINE, linewidth=1,
-               ticks="outside", tickcolor=LINE, tickfont=dict(size=24)),
-    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=24)),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+               ticks="outside", tickcolor=LINE, tickfont=dict(size=24),
+               automargin=True),
+    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=24),
+               automargin=True),
+    # Legend nằm DƯỚI biểu đồ. Trước đây đặt y=1.02 (phía trên) nên đè lên tiêu đề.
+    # orientation="h" giúp legend tự xuống dòng khi màn hình hẹp, không tràn chữ.
+    legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0,
+                font=dict(size=18), itemwidth=30),
     hoverlabel=dict(bgcolor=PRIMARY, bordercolor=PRIMARY,
-                    font=dict(family="Montserrat", size=12, color="#FFFFFF")),
+                    font=dict(family="Montserrat", size=18, color="#FFFFFF")),
 ))
 pio.templates.default = "ghn"
 
@@ -431,9 +439,33 @@ VOL_KEYS = [["san luong"], ["volume"], ["tong don"], ["so don"], ["don"]]
 TEXT_HINTS = ("loai hang", "ca", "nhan vien", "trang thai", "ten", "ma", "tuyen", "cap quan ly")
 
 
+def parse_dates(raw: pd.Series) -> pd.Series:
+    """Đọc cột ngày mà KHÔNG cố định dayfirst.
+
+    NGUYÊN NHÂN GỐC của lỗi 'dữ liệu dừng ở ngày 12': Google Sheets xuất CSV theo
+    locale của bảng tính. Nếu bảng đang để locale Mỹ thì ngày ra dạng M/D/YYYY.
+    Khi ép dayfirst=True, chuỗi '8/13/2026' trở thành 'ngày 8 tháng 13' — không hợp lệ
+    nên pandas trả NaT, rồi dropna() xoá luôn dòng đó. Kết quả: mọi ngày có số > 12
+    biến mất, dashboard trông như bị dừng ở ngày 12.
+
+    Cách sửa: thử cả hai kiểu, chọn kiểu đọc được NHIỀU dòng hơn. Hoà thì ưu tiên
+    dayfirst=False (khớp ISO yyyy-mm-dd và locale Mỹ).
+    """
+    s = raw.astype(str).str.strip().replace({"": None, "nan": None, "None": None})
+    no_first = pd.to_datetime(s, errors="coerce", dayfirst=False)
+    day_first = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    if day_first.notna().sum() > no_first.notna().sum():
+        return day_first
+    return no_first
+
+
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def load_sheet(key: str) -> pd.DataFrame:
-    """Đọc 1 sheet, chuẩn hóa cột Ngày / Bưu Cục, ép kiểu số cho các cột còn lại."""
+    """Đọc 1 sheet, chuẩn hóa cột Ngày / Bưu Cục, ép kiểu số cho các cột còn lại.
+
+    Đọc toàn bộ sheet qua export CSV — không giới hạn range hay số dòng, nên khi
+    Google Sheet có thêm ngày mới là dashboard tự lấy được, không phải sửa code.
+    """
     df = pd.read_csv(make_csv_url(SHEET_LINKS[key]))
     df.columns = df.columns.astype(str).str.strip().str.replace("\xa0", " ", regex=False)
     df = df.loc[:, ~df.columns.str.match(r"^Unnamed")]
@@ -445,7 +477,7 @@ def load_sheet(key: str) -> pd.DataFrame:
 
     dcol = pick_col(df, DATE_KEYS)
     bcol = pick_col(df, BC_KEYS)
-    df["Ngày"] = pd.to_datetime(df[dcol], errors="coerce", dayfirst=True) if dcol else pd.NaT
+    df["Ngày"] = parse_dates(df[dcol]) if dcol else pd.NaT
     df["Bưu Cục"] = df[bcol].astype(str).str.strip() if bcol else "Chưa phân loại"
 
     keep_text = {pick_col(df, [[h]]) for h in TEXT_HINTS}
@@ -665,14 +697,37 @@ def arrow_span(delta: float, suffix: str, decimals: int = 2, higher_is_better=Tr
     return f"<span class='{cls}'>{arrow} {abs(delta):,.{decimals}f}{suffix}</span>"
 
 
-def date_range_picker(label: str, lo, hi, key: str, default_days: int = 29):
-    a_default = max(pd.to_datetime(lo), pd.to_datetime(hi) - timedelta(days=default_days))
-    picked = st.date_input(label, [a_default, pd.to_datetime(hi)], key=key)
+def date_range_picker(label: str, default_a, default_b, key: str):
+    """Ô chọn khoảng ngày. default_a / default_b là giá trị điền sẵn khi mở trang.
+    Giá trị luôn được kẹp trong khoảng ngày thực có của dữ liệu."""
+    da, db = clamp(default_a), clamp(default_b)
+    if da > db:
+        da = db
+    picked = st.date_input(label, [da.date(), db.date()],
+                           min_value=DATA_MIN.date(), max_value=REF_DATE.date(), key=key)
     if isinstance(picked, (list, tuple)) and len(picked) >= 2:
         return pd.to_datetime(picked[0]), pd.to_datetime(picked[1])
     if isinstance(picked, (list, tuple)) and len(picked) == 1:
         return pd.to_datetime(picked[0]), pd.to_datetime(picked[0])
-    return pd.to_datetime(a_default), pd.to_datetime(hi)
+    return da, db
+
+
+def pay_period(ref: pd.Timestamp):
+    """Kỳ lương GHN. Ngày 01–15 là Kỳ 20, ngày 16–cuối tháng là Kỳ 05."""
+    if ref.day <= 15:
+        a = ref.replace(day=1)
+        b = ref.replace(day=15)
+        name = f"Kỳ 20 · tháng {a:%m/%Y}"
+        prev_b = a - timedelta(days=1)
+        prev_a = prev_b.replace(day=16)
+        prev_name = f"Kỳ 05 · tháng {prev_a:%m/%Y}"
+    else:
+        a = ref.replace(day=16)
+        b = month_end(a)
+        name = f"Kỳ 05 · tháng {a:%m/%Y}"
+        prev_a, prev_b = ref.replace(day=1), ref.replace(day=15)
+        prev_name = f"Kỳ 20 · tháng {prev_a:%m/%Y}"
+    return a, b, name, prev_a, prev_b, prev_name
 
 
 def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float | None = None):
@@ -688,7 +743,7 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
                       annotation_text="Mốc KPI", annotation_position="top left")
     fig.update_yaxes(ticksuffix="%" if unit == "%" else "")
     fig.update_xaxes(tickformat="%d/%m")
-    fig.update_layout(height=320)
+    fig.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
     st.plotly_chart(fig, use_container_width=True)
     if len(g) < 2:
         st.caption("Mới có 1 ngày dữ liệu nên chưa vẽ được đường xu hướng.")
@@ -709,7 +764,7 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
                   secondary_y=True)
     if target:
         fig.add_hline(y=target, line_dash="dot", line_color=DANGER, line_width=2, secondary_y=True)
-    fig.update_layout(title=title, height=340)
+    fig.update_layout(title=title, height=450)
     fig.update_yaxes(title_text=bar_name, secondary_y=False)
     fig.update_yaxes(title_text=line_name, secondary_y=True, ticksuffix="%", showgrid=False)
     fig.update_xaxes(tickformat="%d/%m")
@@ -911,12 +966,33 @@ st.session_state["dataframes"] = {
 
 ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC)
 
-_dates = [f["Ngày"].max() for f in (M_GTC, M_DT, DF_NSGTC)
+def today_vn() -> pd.Timestamp:
+    """Ngày hiện tại theo giờ Việt Nam (UTC+7), không phụ thuộc múi giờ máy chủ.
+    Render chạy theo UTC nên nếu dùng datetime.now() thì từ 17h VN trở đi sẽ lệch 1 ngày."""
+    return (pd.Timestamp.utcnow() + timedelta(hours=7)).normalize().tz_localize(None)
+
+
+TODAY_VN = today_vn()
+YESTERDAY_VN = TODAY_VN - timedelta(days=1)
+
+# Ngày mới nhất có trong dữ liệu — quét TOÀN BỘ 12 sheet, không chỉ vài sheet.
+# Trước đây chỉ quét 3 khung nên nếu một sheet đọc sai ngày là cả dashboard lệch theo.
+_ALL_FRAMES = [M_GTC, M_CA, M_TRA, M_GTB, M_TTS, M_ODR, M_DT,
+               DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC]
+_dates = [f["Ngày"].max() for f in _ALL_FRAMES
           if f is not None and not f.empty and "Ngày" in f.columns and f["Ngày"].notna().any()]
-REF_DATE = max(_dates) if _dates else pd.Timestamp.today().normalize()
-_mins = [f["Ngày"].min() for f in (M_GTC, M_DT, DF_NSGTC)
+REF_DATE = max(_dates) if _dates else TODAY_VN
+_mins = [f["Ngày"].min() for f in _ALL_FRAMES
          if f is not None and not f.empty and "Ngày" in f.columns and f["Ngày"].notna().any()]
 DATA_MIN = min(_mins) if _mins else REF_DATE - timedelta(days=90)
+
+# Mốc mặc định cho bộ lọc: N-1 theo giờ Việt Nam, nhưng không vượt quá khoảng
+# ngày thực có trong dữ liệu (nếu vượt thì st.date_input sẽ báo lỗi).
+def clamp(d: pd.Timestamp) -> pd.Timestamp:
+    return min(max(pd.to_datetime(d), DATA_MIN), REF_DATE)
+
+
+DEFAULT_N1 = clamp(YESTERDAY_VN)
 
 
 SHEET_LABELS = {
@@ -1128,7 +1204,7 @@ with tab1:
                          annotation_text="Mốc GTC", annotation_position="top left")
         fig_ov.update_yaxes(ticksuffix="%")
         fig_ov.update_xaxes(tickformat="%d/%m")
-        fig_ov.update_layout(height=380)
+        fig_ov.update_layout(height=480)
         st.plotly_chart(fig_ov, use_container_width=True)
         if max(len(d) for _, d, _ in series) < 2:
             st.caption("Mới có 1 ngày dữ liệu — biểu đồ sẽ đầy đủ khi sheet tích lũy thêm ngày.")
@@ -1205,7 +1281,8 @@ with tab2:
         quick_vh = st.radio("Chọn nhanh", ["Ngày", "Tuần", "Tháng", "Tùy chọn"],
                             horizontal=True, key="quick_vh")
     if quick_vh == "Ngày":
-        a_vh, b_vh = REF_DATE, REF_DATE
+        # Mặc định khi mở trang: N-1 theo giờ Việt Nam, tính động theo ngày hệ thống.
+        a_vh, b_vh = DEFAULT_N1, DEFAULT_N1
     elif quick_vh == "Tuần":
         a_vh, b_vh = REF_DATE - timedelta(days=REF_DATE.weekday()), REF_DATE
     elif quick_vh == "Tháng":
@@ -1213,9 +1290,7 @@ with tab2:
     else:
         a_vh, b_vh = DATA_MIN, REF_DATE
     with f3:
-        picked_vh = st.date_input("Khoảng ngày", [a_vh, b_vh], key="date_vh")
-        if isinstance(picked_vh, (list, tuple)) and len(picked_vh) >= 2:
-            a_vh, b_vh = pd.to_datetime(picked_vh[0]), pd.to_datetime(picked_vh[1])
+        a_vh, b_vh = date_range_picker("Khoảng ngày", a_vh, b_vh, "date_vh")
 
     lh_options = (sorted({x for x in M_CA["Chiều"].dropna().astype(str).str.strip().unique()
                           if x and x.lower() != "nan"})
@@ -1275,7 +1350,7 @@ with tab2:
                 fig_ca1.add_trace(go.Bar(x=sub_ca["Ngày"], y=sub_ca["w"], name=ca,
                                          marker_color=palette[i % len(palette)],
                                          marker_line_width=0))
-            fig_ca1.update_layout(barmode="stack", title="Sản lượng theo ca", height=320)
+            fig_ca1.update_layout(barmode="stack", title="Sản lượng theo ca", height=430)
             fig_ca1.update_xaxes(tickformat="%d/%m")
             st.plotly_chart(fig_ca1, use_container_width=True)
         with cD:
@@ -1286,7 +1361,7 @@ with tab2:
                                              mode="lines+markers",
                                              line=dict(color=palette[i % len(palette)], width=3),
                                              marker=dict(size=6)))
-            fig_ca2.update_layout(title="%GTC theo ca", height=320)
+            fig_ca2.update_layout(title="%GTC theo ca", height=430)
             fig_ca2.update_yaxes(ticksuffix="%", range=[0, 100])
             fig_ca2.update_xaxes(tickformat="%d/%m")
             st.plotly_chart(fig_ca2, use_container_width=True)
@@ -1342,7 +1417,7 @@ with tab2:
                                title="Leadtime theo ngày (giờ)")
             fig_lead.update_traces(line=dict(color=PRIMARY, width=3), marker=dict(size=7))
             fig_lead.update_xaxes(tickformat="%d/%m")
-            fig_lead.update_layout(height=320)
+            fig_lead.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
             st.plotly_chart(fig_lead, use_container_width=True)
         else:
             note("Chưa đọc được cột Leadtime.")
@@ -1372,7 +1447,7 @@ with tab3:
     with k2:
         view_kd = st.radio("Gộp theo", ["Ngày", "Tuần", "Tháng"], horizontal=True, key="view_kd")
     with k3:
-        a_kd, b_kd = date_range_picker("Khoảng ngày", DATA_MIN, REF_DATE, "date_kd")
+        a_kd, b_kd = date_range_picker("Khoảng ngày", DEFAULT_N1, DEFAULT_N1, "date_kd")
 
     dt_scope = scope(M_DT, bc_kd)
 
@@ -1452,7 +1527,7 @@ with tab3:
             fig_kd.add_hline(y=target_dt, line_dash="dot", line_color=ACCENT, line_width=2,
                              annotation_text="Mục tiêu", annotation_position="top left")
         fig_kd.update_xaxes(tickformat="%d/%m" if view_kd == "Ngày" else "%m/%Y")
-        fig_kd.update_layout(height=340)
+        fig_kd.update_layout(height=340, showlegend=False, margin=dict(t=90, b=70))
         st.plotly_chart(fig_kd, use_container_width=True)
     else:
         note("Chưa có doanh thu trong khoảng đã chọn.")
@@ -1472,7 +1547,8 @@ with tab3:
                 y=cnt[status_col], x=cnt["Số lượng"], textinfo="value+percent initial",
                 marker=dict(color=[PRIMARY, "#00B4D8", ACCENT, SUCCESS, MUTED]),
                 connector=dict(line=dict(color=LINE, width=1))))
-            fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=360,
+            fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=380,
+                                     showlegend=False,
                                      hovermode="closest")
             st.plotly_chart(fig_funnel, use_container_width=True)
         else:
@@ -1529,7 +1605,8 @@ with tab4:
                              ["Tất cả"] + sorted(x for x in staff_set if x and x != "nan"),
                              key="nv_ns")
     with n3:
-        a_ns, b_ns = date_range_picker("Khoảng ngày", DATA_MIN, REF_DATE, "date_ns")
+        ns_pa, ns_pb, _, _, _, _ = pay_period(REF_DATE)
+        a_ns, b_ns = date_range_picker("Khoảng ngày (theo kỳ lương)", ns_pa, ns_pb, "date_ns")
 
     def filter_staff(df, col):
         if df is None or df.empty:
@@ -1645,7 +1722,7 @@ with tab4:
         fig_ns.add_trace(go.Scatter(x=g_ns["Ngày"], y=g_ns["r"], name="% GTC",
                                     mode="lines+markers", line=dict(color=ACCENT, width=3),
                                     marker=dict(size=7)), secondary_y=True)
-        fig_ns.update_layout(barmode="overlay", height=360,
+        fig_ns.update_layout(barmode="overlay", height=470,
                              title="Sản lượng gán · GTC · tỷ lệ")
         fig_ns.update_yaxes(title_text="Số đơn", secondary_y=False)
         fig_ns.update_yaxes(title_text="% GTC", secondary_y=True, ticksuffix="%",
@@ -1666,7 +1743,7 @@ with tab4:
                                     marker=dict(size=7, color=PRIMARY))
             fig_price.update_yaxes(title_text="VNĐ")
             fig_price.update_xaxes(tickformat="%d/%m")
-            fig_price.update_layout(height=330)
+            fig_price.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
             st.plotly_chart(fig_price, use_container_width=True)
         else:
             note("Chưa đọc được cột Đơn giá.")
@@ -1681,7 +1758,7 @@ with tab4:
                                   marker=dict(size=7, color=SUCCESS))
             fig_pay.update_yaxes(title_text="VNĐ")
             fig_pay.update_xaxes(tickformat="%d/%m")
-            fig_pay.update_layout(height=330)
+            fig_pay.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
             st.plotly_chart(fig_pay, use_container_width=True)
         else:
             note("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
@@ -1713,12 +1790,9 @@ with tab5:
     with q1:
         bc_kpi = st.selectbox("Bưu cục", ALL_BC, key="bc_kpi")
     with q2:
-        picked_kpi = st.date_input("Khoảng ngày",
-                                   [REF_DATE.replace(day=1), REF_DATE], key="date_kpi")
-        if isinstance(picked_kpi, (list, tuple)) and len(picked_kpi) >= 2:
-            a_kpi, b_kpi = pd.to_datetime(picked_kpi[0]), pd.to_datetime(picked_kpi[1])
-        else:
-            a_kpi, b_kpi = REF_DATE.replace(day=1), REF_DATE
+        # Mặc định: từ ngày đầu tháng hiện tại đến ngày hiện tại (giờ Việt Nam)
+        a_kpi, b_kpi = date_range_picker(
+            "Khoảng ngày (tháng này)", TODAY_VN.replace(day=1), TODAY_VN, "date_kpi")
 
     t_gtc = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
                        exclude=["tts", "tiktok"], bc=bc_kpi)
@@ -1782,7 +1856,7 @@ with tab5:
             fig_kpi.add_hline(y=tgt, line_dash="dot", line_color=color, line_width=1.5, opacity=0.5)
         fig_kpi.update_yaxes(ticksuffix="%")
         fig_kpi.update_xaxes(tickformat="%d/%m")
-        fig_kpi.update_layout(height=360)
+        fig_kpi.update_layout(height=470)
         st.plotly_chart(fig_kpi, use_container_width=True)
 
         tbl_kpi = daily(sl(scope(M_GTC, bc_kpi), a_kpi, b_kpi)).rename(
@@ -1816,12 +1890,9 @@ with tab6:
 
     z1, z2 = st.columns([2, 1])
     with z1:
-        picked_ai = st.date_input("Khoảng ngày AI được đọc",
-                                  [REF_DATE - timedelta(days=7), REF_DATE], key="date_ai")
-        if isinstance(picked_ai, (list, tuple)) and len(picked_ai) >= 2:
-            a_ai, b_ai = pd.to_datetime(picked_ai[0]), pd.to_datetime(picked_ai[1])
-        else:
-            a_ai, b_ai = REF_DATE - timedelta(days=7), REF_DATE
+        # Mặc định: N-1 theo giờ Việt Nam
+        a_ai, b_ai = date_range_picker("Khoảng ngày AI được đọc",
+                                       DEFAULT_N1, DEFAULT_N1, "date_ai")
     with z2:
         bc_ai = st.selectbox("Bưu cục", ALL_BC, key="bc_ai")
 
