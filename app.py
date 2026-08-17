@@ -158,7 +158,23 @@ st.markdown(f"""
 }}
 html, body, [class*="css"] {{ font-family:'Inter',sans-serif; color:{INK}; }}
 .block-container {{ padding-top:1.1rem; padding-bottom:3rem; max-width:1560px; }}
-#MainMenu, footer, header {{ visibility:hidden; }}
+/* Chỉ ẩn menu ba chấm và footer. KHÔNG ẩn cả header — nút mở/đóng thanh bên
+   nằm trong header, ẩn đi là không còn cách nào mở lại thanh bên. */
+#MainMenu {{ visibility:hidden; }}
+footer {{ visibility:hidden; }}
+header[data-testid="stHeader"] {{ background:transparent; height:0; }}
+/* Giữ nút mở thanh bên luôn nhìn thấy và nổi lên trên */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {{
+  visibility:visible !important; display:flex !important; opacity:1 !important;
+  top:12px !important; left:12px !important; z-index:999999 !important;
+  background:{CARD}; border:1px solid {RULE_STR}; border-radius:8px;
+  box-shadow:0 2px 6px rgba(27,37,52,.12);
+}}
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="collapsedControl"] svg {{ color:{BLUE}; fill:{BLUE}; }}
+/* Thanh bên luôn hiện, không bị thu bởi CSS khác */
+section[data-testid="stSidebar"] {{ visibility:visible !important; }}
 h1,h2,h3,h4 {{ font-family:'Inter',sans-serif; color:{INK}; }}
 
 /* ── thanh trên cùng ─────────────────────────────────────────────── */
@@ -409,8 +425,13 @@ def hex_fade(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
-def delta_line(delta: float, unit: str, higher_is_better=True) -> str:
-    """Dòng chênh lệch dưới con số lớn trong thẻ."""
+def delta_line(delta: float, unit: str, higher_is_better=True, has_prev: bool = True) -> str:
+    """Dòng chênh lệch dưới con số lớn trong thẻ.
+    has_prev=False nghĩa là kỳ trước KHÔNG CÓ DỮ LIỆU — khác hẳn với kỳ trước bằng 0.
+    Nếu không phân biệt, thẻ sẽ hiện '▲ 2.331 đơn so với hôm qua' trong khi thực tế
+    hôm qua chưa có số liệu, gây hiểu nhầm là tăng vọt."""
+    if not has_prev:
+        return "<div class='tile-delta d-flat'>chưa có dữ liệu kỳ trước để so sánh</div>"
     good = (delta > 0) == higher_is_better
     cls = "d-flat" if abs(delta) < 1e-9 else ("d-up" if good else "d-down")
     arrow = "" if abs(delta) < 1e-9 else ("▲" if delta > 0 else "▼")
@@ -1104,23 +1125,27 @@ if group == "Tổng quan":
     vol_now = float(sl(g_gtc, dA, dB)["Trọng Số"].sum())
     vol_prev = float(sl(g_gtc, pA, pB)["Trọng Số"].sum())
 
+    # Kỳ trước CÓ dữ liệu hay không — quyết định có hiện chênh lệch hay không.
+    has_prev_gtc = not sl(g_gtc, pA, pB).empty
+    has_prev_tts = not sl(g_tts, pA, pB).empty
+
     tiles = [
         ("Sản lượng hôm nay", f"{vol_now:,.0f}", vol_now - vol_prev, "đơn", True,
-         "bar", d_gtc["Ngày"], d_gtc["Trọng Số"], BLUE),
+         "bar", d_gtc["Ngày"], d_gtc["Trọng Số"], BLUE, has_prev_gtc),
         ("%GTC tổng", f"{v_gtc:,.2f}%", v_gtc - p_gtc, "%", True,
-         "line", d_gtc["Ngày"], d_gtc["Giá Trị"], CYAN),
+         "line", d_gtc["Ngày"], d_gtc["Giá Trị"], CYAN, has_prev_gtc),
         ("%GTC TikTok", f"{v_tts:,.2f}%", v_tts - p_tts, "%", True,
-         "line", d_tts["Ngày"], d_tts["Giá Trị"], VIOLET),
+         "line", d_tts["Ngày"], d_tts["Giá Trị"], VIOLET, has_prev_tts),
         ("Doanh thu tháng", f"{v_dt/1_000_000:,.1f} tr", None, "đ", True,
-         "bar", d_dt["Ngày"], d_dt["Giá Trị"], BRASS),
+         "bar", d_dt["Ngày"], d_dt["Giá Trị"], BRASS, True),
     ]
     cols = st.columns(4)
-    for col, (cap, valtxt, delta, unit, hib, kind, xs, ys, color) in zip(cols, tiles):
+    for col, (cap, valtxt, delta, unit, hib, kind, xs, ys, color, has_prev) in zip(cols, tiles):
         with col:
             with st.container(border=True):
                 st.markdown(f"<div class='tile-cap'>{esc(cap)}</div>"
                             f"<div class='tile-num'>{valtxt}</div>"
-                            + (delta_line(delta, unit, hib) if delta is not None
+                            + (delta_line(delta, unit, hib, has_prev) if delta is not None
                                else "<div class='tile-delta d-flat'>lũy kế tháng này</div>"),
                             unsafe_allow_html=True)
                 if len(ys) > 1:
@@ -1152,7 +1177,14 @@ if group == "Tổng quan":
                               annotation_font=dict(size=9, color=SLATE))
                 fig.update_yaxes(ticksuffix="%")
                 fig.update_layout(height=326, margin=dict(l=42, r=14, t=30, b=30))
+                # Chỉ có 1 ngày thì Plotly chia trục theo mili giây — ép định dạng ngày.
+                fig.update_xaxes(tickformat="%d/%m", dtick="D1" if len(lines[0][1]) <= 31 else None)
                 st.plotly_chart(fig, use_container_width=True)
+                n_days = max(len(d) for _, d, _ in lines)
+                if n_days < 2:
+                    st.markdown("<div class='fig-cap' style='color:#C2540A;'>Mới có 1 ngày dữ liệu "
+                                "trong khoảng này nên chưa vẽ được đường xu hướng. Biểu đồ sẽ đầy đủ "
+                                "khi sheet tích lũy thêm ngày.</div>", unsafe_allow_html=True)
             else:
                 empty("Chưa có dữ liệu vận hành trong 30 ngày gần nhất.")
 
@@ -1375,11 +1407,16 @@ elif group == "Vận hành":
             if not f_range.empty:
                 g = daily(f_range)
                 fig = px.area(g, x="Ngày", y="Giá Trị")
-                fig.update_traces(line=dict(color=color, width=2), fillcolor=hex_fade(color, .08))
+                fig.update_traces(line=dict(color=color, width=2), fillcolor=hex_fade(color, .08),
+                                  mode="lines+markers", marker=dict(size=5, color=color))
                 if target:
                     fig.add_hline(y=target, line_dash="dot", line_color=SLATE, line_width=1.3)
                 fig.update_yaxes(ticksuffix="%" if unit == "%" else "")
+                fig.update_xaxes(tickformat="%d/%m")
                 st.plotly_chart(sized(fig, 260), use_container_width=True)
+                if len(g) < 2:
+                    st.markdown("<div class='fig-cap' style='color:#C2540A;'>Mới có 1 ngày dữ liệu — "
+                                "đường xu hướng cần ít nhất 2 ngày.</div>", unsafe_allow_html=True)
             else:
                 empty("Chưa có dữ liệu trong khoảng đã chọn.")
         with cB:
