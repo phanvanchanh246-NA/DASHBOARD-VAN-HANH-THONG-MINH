@@ -421,7 +421,11 @@ def month_end(ts: pd.Timestamp) -> pd.Timestamp:
     return nxt - timedelta(days=nxt.day)
 
 
-def fmt_money(v: float) -> str:
+def fmt_money(v: float, full: bool = True) -> str:
+    """Định dạng tiền. Mặc định hiển thị ĐẦY ĐỦ số đồng, không rút gọn về 'triệu'
+    và không làm tròn — vì rút gọn 1.846.505 thành '1,8 tr đ' làm mất số liệu thật."""
+    if full:
+        return f"{v:,.0f} đ".replace(",", ".")
     if abs(v) >= 1_000_000:
         return f"{v/1_000_000:,.1f} tr đ"
     return f"{v:,.0f} đ"
@@ -697,6 +701,33 @@ def arrow_span(delta: float, suffix: str, decimals: int = 2, higher_is_better=Tr
     return f"<span class='{cls}'>{arrow} {abs(delta):,.{decimals}f}{suffix}</span>"
 
 
+def synced_range_picker(label: str, default_a, default_b, key: str, sync_token=None):
+    """Ô chọn khoảng ngày ĐỒNG BỘ với nút 'Chọn nhanh'.
+
+    Streamlit giữ lại giá trị widget theo key, nên nếu chỉ truyền `value` thì đổi
+    nút Chọn nhanh sẽ KHÔNG làm ô ngày đổi theo. Cách xử lý: theo dõi lựa chọn
+    trước đó, khi người dùng bấm sang lựa chọn khác thì ghi đè thẳng vào
+    session_state trước lúc vẽ widget. Nhờ vậy ô ngày luôn khớp nút Chọn nhanh,
+    mà người dùng vẫn tự sửa ngày được sau đó.
+    """
+    da, db = clamp(default_a), clamp(default_b)
+    if da > db:
+        da = db
+
+    token_key = f"__sync_{key}"
+    changed = sync_token is not None and st.session_state.get(token_key) != sync_token
+    if changed or key not in st.session_state:
+        st.session_state[token_key] = sync_token
+        st.session_state[key] = (da.date(), db.date())
+
+    picked = st.date_input(label, min_value=DATA_MIN.date(), max_value=REF_DATE.date(), key=key)
+    if isinstance(picked, (list, tuple)) and len(picked) >= 2:
+        return pd.to_datetime(picked[0]), pd.to_datetime(picked[1])
+    if isinstance(picked, (list, tuple)) and len(picked) == 1:
+        return pd.to_datetime(picked[0]), pd.to_datetime(picked[0])
+    return da, db
+
+
 def date_range_picker(label: str, default_a, default_b, key: str):
     """Ô chọn khoảng ngày. default_a / default_b là giá trị điền sẵn khi mở trang.
     Giá trị luôn được kẹp trong khoảng ngày thực có của dữ liệu."""
@@ -713,18 +744,27 @@ def date_range_picker(label: str, default_a, default_b, key: str):
 
 
 def pay_period(ref: pd.Timestamp):
-    """Kỳ lương GHN. Ngày 01–15 là Kỳ 20, ngày 16–cuối tháng là Kỳ 05."""
+    """Kỳ lương GHN. Kỳ được gọi tên theo THÁNG CHI LƯƠNG, không phải tháng phát sinh.
+
+      Kỳ 20 tháng M : dữ liệu ngày 01–15 tháng M,        chi lương ngày 20 tháng M
+      Kỳ 05 tháng M : dữ liệu ngày 16–hết tháng (M-1),   chi lương ngày 05 tháng M
+
+    Ví dụ theo đúng yêu cầu: Kỳ 20 tháng 08 (dữ liệu 01–15/08) so với kỳ liền trước
+    là Kỳ 05 tháng 08 — tức dữ liệu từ 16 đến hết tháng 07.
+    """
     if ref.day <= 15:
         a = ref.replace(day=1)
         b = ref.replace(day=15)
-        name = f"Kỳ 20 · tháng {a:%m/%Y}"
-        prev_b = a - timedelta(days=1)
-        prev_a = prev_b.replace(day=16)
-        prev_name = f"Kỳ 05 · tháng {prev_a:%m/%Y}"
+        name = f"Kỳ 20 · tháng {a:%m/%Y}"          # chi lương 20 tháng này
+        prev_b = a - timedelta(days=1)              # ngày cuối tháng trước
+        prev_a = prev_b.replace(day=16)             # 16 tháng trước
+        # Kỳ này chi lương ngày 05 của THÁNG NÀY, nên gọi theo tháng của `a`.
+        prev_name = f"Kỳ 05 · tháng {a:%m/%Y}"
     else:
         a = ref.replace(day=16)
         b = month_end(a)
-        name = f"Kỳ 05 · tháng {a:%m/%Y}"
+        pay_month = b + timedelta(days=1)           # chi lương ngày 05 tháng sau
+        name = f"Kỳ 05 · tháng {pay_month:%m/%Y}"
         prev_a, prev_b = ref.replace(day=1), ref.replace(day=15)
         prev_name = f"Kỳ 20 · tháng {prev_a:%m/%Y}"
     return a, b, name, prev_a, prev_b, prev_name
@@ -820,20 +860,27 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
     fig = go.Figure(go.Indicator(
         mode="gauge+number+delta",
         value=float(value),
+        # domain rõ ràng để đồng hồ nằm giữa khung.
+        domain={"x": [0, 1], "y": [0, 1]},
         number={"suffix": "%", "valueformat": ".2f",
-                "font": {"size": 51, "color": needle, "family": "Montserrat"}},
-        delta={"reference": target, "suffix": " pp",
+                "font": {"size": 46, "color": needle, "family": "Montserrat"}},
+        # "position": "bottom" xếp delta XUỐNG DƯỚI số chính. Mặc định Plotly đặt
+        # delta nằm cạnh số, khiến cụm số bị đẩy lệch sang một bên tâm đồng hồ.
+        delta={"reference": target, "suffix": " pp", "position": "bottom",
+               "font": {"size": 20, "family": "Montserrat"},
                "increasing": {"color": SUCCESS if higher_is_better else DANGER},
                "decreasing": {"color": DANGER if higher_is_better else SUCCESS}},
         title={"text": f"<b>{esc(title)}</b>",
-               "font": {"size": 22, "color": PRIMARY, "family": "Montserrat"}},
+               "font": {"size": 22, "color": PRIMARY, "family": "Montserrat"},
+               "align": "center"},
         gauge={"axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": MUTED},
                "bar": {"color": needle, "thickness": 0.3},
                "bgcolor": BG, "borderwidth": 1, "bordercolor": LINE,
                "steps": steps,
                "threshold": {"line": {"color": PRIMARY, "width": 4},
                              "thickness": 0.85, "value": target}}))
-    fig.update_layout(height=300, margin=dict(l=25, r=25, t=60, b=15))
+    fig.update_layout(height=360, margin=dict(l=40, r=40, t=90, b=30),
+                      showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -945,7 +992,8 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     M_LEAD = metric_frame("gtc_tong", [["leadtime"], ["lead time"]], is_pct=False)
     M_CA = metric_frame("sl_theo_ca", [["% gtc"], ["gtc"]], extra_dim=[["loai hang"], ["ca"]])
     M_TRA = metric_frame("tra_hang", [["% return"], ["return"], ["chuyen tra"], ["tra hang"], ["tra"]])
-    M_GTB = metric_frame("gtb_thu_tien", [["gtb"], ["thu tien"], ["% gtb"]])
+    M_GTB = metric_frame("gtb_thu_tien",
+                         [["da thu chuyen tra"], ["da thu"], ["gtb"], ["thu tien"]])
     M_TTS = metric_frame("gtc_tts", [["% gtc"], ["gtc tts"], ["gtc"]])
     M_ODR = metric_frame("odr_tts", [["odr"], ["ontime"], ["dung han"]])
     M_DT = metric_frame("doanh_thu", [["doanh thu"]], weight_keys=None, is_pct=False)
@@ -993,6 +1041,13 @@ def clamp(d: pd.Timestamp) -> pd.Timestamp:
 
 
 DEFAULT_N1 = clamp(YESTERDAY_VN)
+
+# Mặc định 7 ngày gần nhất theo giờ Việt Nam: từ N-7 đến N-1.
+# Kẹp lại trong khoảng ngày thực có trong dữ liệu để st.date_input không báo lỗi.
+DEFAULT_7D_END = clamp(YESTERDAY_VN)
+DEFAULT_7D_START = clamp(YESTERDAY_VN - timedelta(days=6))
+if DEFAULT_7D_START > DEFAULT_7D_END:
+    DEFAULT_7D_START = DEFAULT_7D_END
 
 
 SHEET_LABELS = {
@@ -1278,10 +1333,12 @@ with tab2:
     with f1:
         bc_vh = st.selectbox("Bưu cục", ALL_BC, key="bc_vh")
     with f2:
-        quick_vh = st.radio("Chọn nhanh", ["Ngày", "Tuần", "Tháng", "Tùy chọn"],
+        quick_vh = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng", "Tùy chọn"],
                             horizontal=True, key="quick_vh")
-    if quick_vh == "Ngày":
-        # Mặc định khi mở trang: N-1 theo giờ Việt Nam, tính động theo ngày hệ thống.
+    if quick_vh == "7 ngày gần nhất":
+        # Mặc định khi mở trang: 7 ngày gần nhất theo giờ Việt Nam (N-7 đến N-1).
+        a_vh, b_vh = DEFAULT_7D_START, DEFAULT_7D_END
+    elif quick_vh == "Ngày":
         a_vh, b_vh = DEFAULT_N1, DEFAULT_N1
     elif quick_vh == "Tuần":
         a_vh, b_vh = REF_DATE - timedelta(days=REF_DATE.weekday()), REF_DATE
@@ -1290,7 +1347,9 @@ with tab2:
     else:
         a_vh, b_vh = DATA_MIN, REF_DATE
     with f3:
-        a_vh, b_vh = date_range_picker("Khoảng ngày", a_vh, b_vh, "date_vh")
+        # sync_token = lựa chọn Chọn nhanh -> đổi nút là ô ngày tự cập nhật theo.
+        a_vh, b_vh = synced_range_picker("Khoảng ngày", a_vh, b_vh, "date_vh",
+                                         sync_token=quick_vh)
 
     lh_options = (sorted({x for x in M_CA["Chiều"].dropna().astype(str).str.strip().unique()
                           if x and x.lower() != "nan"})
@@ -1441,13 +1500,27 @@ with tab2:
 # TAB 3 — KINH DOANH
 # ═══════════════════════════════════════════════════════════════════════
 with tab3:
-    k1, k2, k3 = st.columns([1.1, 1.3, 1.3])
+    k1, k2, k3, k4 = st.columns([1, 1.1, 1.5, 1.2])
     with k1:
         bc_kd = st.selectbox("Bưu cục", ALL_BC, key="bc_kd")
     with k2:
         view_kd = st.radio("Gộp theo", ["Ngày", "Tuần", "Tháng"], horizontal=True, key="view_kd")
     with k3:
-        a_kd, b_kd = date_range_picker("Khoảng ngày", DEFAULT_N1, DEFAULT_N1, "date_kd")
+        quick_kd = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng", "Tùy chọn"],
+                            horizontal=True, key="quick_kd")
+    if quick_kd == "7 ngày gần nhất":
+        a_kd, b_kd = DEFAULT_7D_START, DEFAULT_7D_END
+    elif quick_kd == "Ngày":
+        a_kd, b_kd = DEFAULT_N1, DEFAULT_N1
+    elif quick_kd == "Tuần":
+        a_kd, b_kd = REF_DATE - timedelta(days=REF_DATE.weekday()), REF_DATE
+    elif quick_kd == "Tháng":
+        a_kd, b_kd = REF_DATE.replace(day=1), REF_DATE
+    else:
+        a_kd, b_kd = DATA_MIN, REF_DATE
+    with k4:
+        a_kd, b_kd = synced_range_picker("Khoảng ngày", a_kd, b_kd, "date_kd",
+                                         sync_token=quick_kd)
 
     dt_scope = scope(M_DT, bc_kd)
 
@@ -1592,28 +1665,60 @@ with tab4:
     nv_col_luong = pick_col(DF_LUONG, [["nhan vien"]])
     nv_col_gtc = pick_col(DF_NSGTC, [["nhan vien"]])
 
+    def staff_id(name) -> str:
+        """Khóa gộp nhân viên.
+
+        Hai sheet ghi TÊN KHÁC NHAU cho cùng một người:
+          sheet lương    : '3029537-Lê Thị Thúy Kiều'
+          sheet năng suất: '3029537_Lê Thị Kiều'
+        Khác cả dấu phân cách lẫn cách viết tên. Vì vậy gộp theo MÃ NHÂN VIÊN
+        (cụm số ở đầu). Nếu không có mã thì rơi về so tên đã bỏ dấu và bỏ '_', '-'.
+        """
+        s = str(name).strip()
+        m = re.match(r"^\s*(\d{4,})", s)
+        if m:
+            return m.group(1)
+        return norm(s).replace("_", "").replace("-", "").replace(" ", "")
+
+    def staff_label(name) -> str:
+        """Tên hiển thị: thống nhất dùng dấu gạch dưới cho dễ đọc."""
+        return re.sub(r"[_\-]+", " · ", str(name).strip(), count=1)
+
     n1, n2, n3 = st.columns([1.1, 1.3, 1.3])
     with n1:
         bc_ns = st.selectbox("Bưu cục", ALL_BC, key="bc_ns")
-    staff_set: set[str] = set()
+
+    # Gom danh sách nhân viên từ CẢ HAI sheet, gộp theo mã để không bị trùng dòng.
+    staff_map: dict[str, str] = {}
     for _df, _col in ((DF_LUONG, nv_col_luong), (DF_NSGTC, nv_col_gtc)):
         if _col and not _df.empty:
             _scoped = _df if bc_ns == "Tất cả" else _df[_df["Bưu Cục"].map(norm) == norm(bc_ns)]
-            staff_set |= set(_scoped[_col].dropna().astype(str).str.strip())
+            for raw in _scoped[_col].dropna().astype(str).str.strip().unique():
+                if not raw or raw == "nan":
+                    continue
+                key_id = staff_id(raw)
+                # Giữ bản tên dài hơn (thường đầy đủ hơn) làm nhãn hiển thị
+                if key_id not in staff_map or len(raw) > len(staff_map[key_id]):
+                    staff_map[key_id] = raw
+
+    staff_display = {staff_label(v): k for k, v in staff_map.items()}
     with n2:
-        nv_ns = st.selectbox("Nhân viên",
-                             ["Tất cả"] + sorted(x for x in staff_set if x and x != "nan"),
-                             key="nv_ns")
+        nv_ns = st.selectbox("Nhân viên", ["Tất cả"] + sorted(staff_display), key="nv_ns")
+    nv_id = staff_display.get(nv_ns)
     with n3:
         ns_pa, ns_pb, _, _, _, _ = pay_period(REF_DATE)
         a_ns, b_ns = date_range_picker("Khoảng ngày (theo kỳ lương)", ns_pa, ns_pb, "date_ns")
+
+    if nv_ns != "Tất cả":
+        st.caption(f"Đang lọc theo mã nhân viên **{nv_id}** — gộp mọi cách ghi tên của người này "
+                   "ở cả sheet lương và sheet năng suất.")
 
     def filter_staff(df, col):
         if df is None or df.empty:
             return pd.DataFrame()
         out = df if bc_ns == "Tất cả" else df[df["Bưu Cục"].map(norm) == norm(bc_ns)]
-        if nv_ns != "Tất cả" and col:
-            out = out[out[col].astype(str).str.strip() == nv_ns]
+        if nv_ns != "Tất cả" and col and nv_id:
+            out = out[out[col].map(staff_id) == nv_id]
         return out
 
     L = filter_staff(DF_LUONG, nv_col_luong)
@@ -1644,6 +1749,11 @@ with tab4:
     col_gan = pick_col(G, [["gan giao"], ["so don gan"], ["gan"]])
     col_gtc = pick_col(G, [["giao tinh luong"], ["don gtc"], ["giao thanh cong"], ["gtc"]],
                        exclude=["%"])
+    # %GTC lấy thẳng cột "%GTC" của sheet Năng suất nhân viên (gid 1695228663)
+    col_pct = pick_col(G, [["% gtc"], ["%gtc"]])
+    # Sản lượng GTC = Đơn GTC + Đơn GTBTT, lấy ở sheet Đơn Giá - Lương (gid 2000227799)
+    col_don_gtc = pick_col(L, [["don gtc"]], exclude=["lhh", "%"])
+    col_don_gtbtt = pick_col(L, [["don gtbtt"], ["gtbtt"]], exclude=["lhh", "%"])
     pay_cols = {k: pick_col(L, [[k.lower()], [k.split()[-1].lower()]]) for k in SALARY_PARTS}
     pay_cols = {k: v for k, v in pay_cols.items() if v}
 
@@ -1657,22 +1767,34 @@ with tab4:
     L_range, G_range = cut(L, a_ns, b_ns), cut(G, a_ns, b_ns)
 
     def avg_price(d):
+        """Đơn giá trung bình — giữ nguyên độ chính xác, không làm tròn."""
         if not col_price or d is None or d.empty:
             return 0.0
         s = pd.to_numeric(_as_series(d[col_price]), errors="coerce")
         return float(s.mean()) if s.notna().any() else 0.0
 
     def sum_gtc(d):
-        if not col_gtc or d is None or d.empty:
+        """Sản lượng GTC = Đơn GTC + Đơn GTBTT (theo sheet Đơn Giá - Lương)."""
+        if d is None or d.empty:
             return 0.0
-        return float(pd.to_numeric(_as_series(d[col_gtc]), errors="coerce").sum())
+        total = 0.0
+        for c in (col_don_gtc, col_don_gtbtt):
+            if c and c in d.columns:
+                total += float(pd.to_numeric(_as_series(d[c]), errors="coerce").sum())
+        return total
 
     def pct_gtc(d):
-        if d is None or d.empty or not col_gan or not col_gtc:
+        """%GTC: bình quân có trọng số của cột %GTC, trọng số là sản lượng gán.
+        Không lấy trung bình cộng vì người giao 1 đơn đạt 100% sẽ kéo lệch kết quả."""
+        if d is None or d.empty:
             return 0.0
-        total_gan = float(pd.to_numeric(_as_series(d[col_gan]), errors="coerce").sum())
-        total_gtc = float(pd.to_numeric(_as_series(d[col_gtc]), errors="coerce").sum())
-        return (total_gtc / total_gan * 100) if total_gan > 0 else 0.0
+        if col_pct and col_gan:
+            return wavg(rescale_pct(d[col_pct]), d[col_gan])
+        if col_gan and col_gtc:
+            total_gan = float(pd.to_numeric(_as_series(d[col_gan]), errors="coerce").sum())
+            total_gtc = float(pd.to_numeric(_as_series(d[col_gtc]), errors="coerce").sum())
+            return (total_gtc / total_gan * 100) if total_gan > 0 else 0.0
+        return 0.0
 
     def total_salary(d):
         if not pay_cols or d is None or d.empty:
@@ -1684,17 +1806,22 @@ with tab4:
 
     section("1. So sánh kỳ lương hiện tại với kỳ trước")
     rows_ky = [
-        ["Đơn giá trung bình", f"{avg_price(L_cur):,.0f} đ", f"{avg_price(L_prev):,.0f} đ",
-         arrow_span(avg_price(L_cur) - avg_price(L_prev), " đ", 0)],
-        ["Sản lượng GTC", f"{sum_gtc(G_cur):,.0f} đơn", f"{sum_gtc(G_prev):,.0f} đơn",
-         arrow_span(sum_gtc(G_cur) - sum_gtc(G_prev), " đơn", 0)],
+        # Đơn giá: giữ 3 chữ số thập phân, không làm tròn về số nguyên.
+        ["Đơn giá trung bình", f"{avg_price(L_cur):,.3f} đ", f"{avg_price(L_prev):,.3f} đ",
+         arrow_span(avg_price(L_cur) - avg_price(L_prev), " đ", 3)],
+        # Sản lượng GTC = Đơn GTC + Đơn GTBTT, lấy từ sheet Đơn Giá - Lương.
+        ["Sản lượng GTC", f"{sum_gtc(L_cur):,.0f} đơn", f"{sum_gtc(L_prev):,.0f} đơn",
+         arrow_span(sum_gtc(L_cur) - sum_gtc(L_prev), " đơn", 0)],
         ["%GTC", f"{pct_gtc(G_cur):,.2f}%", f"{pct_gtc(G_prev):,.2f}%",
          arrow_span(pct_gtc(G_cur) - pct_gtc(G_prev), " pp", 2)],
-        ["Tổng lương", f"{total_salary(L_cur):,.0f} đ", f"{total_salary(L_prev):,.0f} đ",
+        ["Tổng lương", fmt_money(total_salary(L_cur)), fmt_money(total_salary(L_prev)),
          arrow_span(total_salary(L_cur) - total_salary(L_prev), " đ", 0)],
     ]
     st.markdown(html_table(["Chỉ tiêu", cur_name, prev_name, "Chênh lệch"], rows_ky),
                 unsafe_allow_html=True)
+    st.caption("Sản lượng GTC = Đơn GTC + Đơn GTBTT (sheet Đơn Giá - Lương) · "
+               "%GTC lấy từ cột %GTC của sheet Năng suất nhân viên, bình quân có trọng số "
+               "theo sản lượng gán.")
     st.caption("Tổng lương = LHH LTC + LHH GTC + LHH GTBTT · "
                + " · ".join(f"**{k}**: {v}" for k, v in SALARY_PARTS.items()))
 
@@ -1892,7 +2019,7 @@ with tab6:
     with z1:
         # Mặc định: N-1 theo giờ Việt Nam
         a_ai, b_ai = date_range_picker("Khoảng ngày AI được đọc",
-                                       DEFAULT_N1, DEFAULT_N1, "date_ai")
+                                       DEFAULT_7D_START, DEFAULT_7D_END, "date_ai")
     with z2:
         bc_ai = st.selectbox("Bưu cục", ALL_BC, key="bc_ai")
 
