@@ -993,7 +993,7 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     M_CA = metric_frame("sl_theo_ca", [["% gtc"], ["gtc"]], extra_dim=[["loai hang"], ["ca"]])
     M_TRA = metric_frame("tra_hang", [["% return"], ["return"], ["chuyen tra"], ["tra hang"], ["tra"]])
     M_GTB = metric_frame("gtb_thu_tien",
-                         [["da thu can thu"], ["da thu"], ["gtb"], ["thu tien"]])
+                         [["da thu chuyen tra"], ["da thu"], ["gtb"], ["thu tien"]])
     M_TTS = metric_frame("gtc_tts", [["% gtc"], ["gtc tts"], ["gtc"]])
     M_ODR = metric_frame("odr_tts", [["odr"], ["ontime"], ["dung han"]])
     M_DT = metric_frame("doanh_thu", [["doanh thu"]], weight_keys=None, is_pct=False)
