@@ -13,8 +13,8 @@ Biến môi trường (KHÔNG fix cứng key vào code):
     GEMINI_API_KEY      — khóa Google Gemini
     TELEGRAM_TOKEN      — token bot Telegram (tùy chọn)
     TELEGRAM_CHAT_ID    — id nhóm nhận báo cáo (tùy chọn)
-    ADMIN_PASS          — mật khẩu tài khoản ADMIN (mặc định: ghn@admin)
-    USER_PASS           — mật khẩu tài khoản USER  (mặc định: ghn@user)
+    ADMIN_PASS          — mật khẩu tài khoản ADMIN (tùy chọn)
+    USER_PASS           — mật khẩu tài khoản USER  (tùy chọn)
 """
 
 from __future__ import annotations
