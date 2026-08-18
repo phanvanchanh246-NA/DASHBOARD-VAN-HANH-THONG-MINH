@@ -747,7 +747,7 @@ def pay_period(ref: pd.Timestamp):
     """Kỳ lương GHN. Kỳ được gọi tên theo THÁNG CHI LƯƠNG, không phải tháng phát sinh.
 
       Kỳ 20 tháng M : dữ liệu ngày 01–15 tháng M,        chi lương ngày 20 tháng M
-      Kỳ 05 tháng M : dữ liệu ngày 16–hết tháng (M-1),   chi lương ngày 05 tháng M
+      Kỳ 05 tháng (M+1) : dữ liệu ngày 16–hết tháng M,   chi lương ngày 05 tháng (M+1)
 
     Ví dụ theo đúng yêu cầu: Kỳ 20 tháng 08 (dữ liệu 01–15/08) so với kỳ liền trước
     là Kỳ 05 tháng 08 — tức dữ liệu từ 16 đến hết tháng 07.
