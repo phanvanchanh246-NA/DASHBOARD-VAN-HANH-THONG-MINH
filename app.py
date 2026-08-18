@@ -938,7 +938,7 @@ for _k, _v in {"auth": None, "ai_cache": {}, "chat": [], "kpi_manual": {}}.items
     st.session_state.setdefault(_k, _v)
 
 ACCOUNTS = {
-    "ADMIN": {"password": ADMIN_PASS, "role": "Giám Đốc"},
+    "ADMIN": {"password": ADMIN_PASS, "role": "Giám Đốc.AM"},
     "USER": {"password": USER_PASS, "role": "Nhân Viên"},
 }
 
@@ -976,7 +976,7 @@ if st.session_state.auth is None:
     st.stop()
 
 AUTH = st.session_state.auth
-IS_ADMIN = AUTH["role"] == "Giám Đốc"
+IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
 
 
 # ═══════════════════════════════════════════════════════════════════════
