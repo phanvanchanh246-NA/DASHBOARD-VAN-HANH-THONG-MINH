@@ -13,8 +13,8 @@ Biến môi trường (KHÔNG fix cứng key vào code):
     GEMINI_API_KEY      — khóa Google Gemini
     TELEGRAM_TOKEN      — token bot Telegram (tùy chọn)
     TELEGRAM_CHAT_ID    — id nhóm nhận báo cáo (tùy chọn)
-    ADMIN_PASS          — mật khẩu tài khoản ADMIN (tùy chọn)
-    USER_PASS           — mật khẩu tài khoản USER  (tùy chọn)
+    ADMIN_PASS          — mật khẩu tài khoản ADMIN (mặc định: ghn@admin)
+    USER_PASS           — mật khẩu tài khoản USER  (mặc định: ghn@user)
 """
 
 from __future__ import annotations
@@ -2062,11 +2062,19 @@ with tab6:
             s = df[(df["Ngày"] >= a) & (df["Ngày"] <= b)]
             if bc_ai != "Tất cả" and "Bưu Cục" in s.columns:
                 s = s[s["Bưu Cục"].map(norm) == norm(bc_ai)]
-            if not s.empty:
-                keep = [c for c in s.columns if c != "Ngày"][:8]
-                o = s[["Ngày"] + keep].copy()
-                o["Ngày"] = o["Ngày"].dt.strftime("%d/%m/%Y")
-                parts.append(f"\n--- {label} ---\n{o.head(400).to_csv(index=False)}")
+            if s.empty:
+                continue
+
+            # LỖI CŨ: cắt còn 8 cột đầu ([:8]) làm mất các cột nằm sau, trong đó có
+            # "Đơn giá" (cột thứ 14 của sheet lương). AI vì thế không thấy đơn giá
+            # và trả lời là không có dữ liệu. Nay giữ ĐỦ cột, chỉ bỏ cột rỗng hoàn toàn.
+            keep = [c for c in s.columns if c != "Ngày" and not s[c].isna().all()]
+            o = s[["Ngày"] + keep].copy()
+            o["Ngày"] = o["Ngày"].dt.strftime("%d/%m/%Y")
+            parts.append(f"\n--- {label} (đủ {len(keep)} cột) ---\n"
+                         f"{o.head(600).to_csv(index=False)}")
+            if len(o) > 600:
+                parts.append(f"(Đã cắt bớt, tổng cộng {len(o):,} dòng trong kỳ này.)\n")
 
         return "".join(parts) or "(Không có dữ liệu trong khoảng thời gian đã chọn.)"
 
@@ -2087,6 +2095,18 @@ GHI CHÚ VỀ CHỈ SỐ:
 - ODR là cam kết giao đúng hạn với sàn TikTok Shop, càng cao càng tốt, thấp là bị phạt.
 - %Trả hàng là đơn quay đầu về kho, càng thấp càng tốt.
 - Mọi tỷ lệ đã được tính trung bình có trọng số theo sản lượng.
+
+GHI CHÚ VỀ BẢNG LUONG NHAN VIEN (đơn vị tiền là VNĐ):
+- "Đơn giá" là đơn giá bình quân mỗi đơn của nhân viên trong ngày đó.
+- "Đơn LTC" là đơn lấy thành công, "Đơn GTC" là đơn giao thành công,
+  "Đơn GTBTT" là đơn giao thất bại nhưng thu được tiền.
+- Sản lượng GTC dùng để tính lương = Đơn GTC + Đơn GTBTT.
+- "LHH LTC", "LHH GTC", "LHH GTBTT" là ba khoản lương hoa hồng; tổng lương là tổng ba khoản này.
+- Kỳ lương gọi theo tháng CHI lương: Kỳ 20 tháng M gồm dữ liệu ngày 01-15 tháng M;
+  Kỳ 05 tháng M+1 gồm dữ liệu ngày 16 đến hết tháng M.
+- Cột "Nhân Viên" ghi theo dạng "mã_họ tên" hoặc "mã-họ tên". Cùng một mã là cùng một người,
+  kể cả khi tên viết khác nhau giữa các bảng.
+- Khi tính đơn giá bình quân cho nhiều dòng, hãy nói rõ là trung bình cộng của các dòng nào.
 
 Câu hỏi của người quản lý: {question}
 
