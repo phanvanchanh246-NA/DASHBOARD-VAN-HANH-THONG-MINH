@@ -747,7 +747,7 @@ def pay_period(ref: pd.Timestamp):
     """Kỳ lương GHN. Kỳ được gọi tên theo THÁNG CHI LƯƠNG, không phải tháng phát sinh.
 
       Kỳ 20 tháng M : dữ liệu ngày 01–15 tháng M,        chi lương ngày 20 tháng M
-      Kỳ 05 tháng (M+1) : dữ liệu ngày 16–hết tháng M,   chi lương ngày 05 tháng (M+1)
+      Kỳ 05 tháng M : dữ liệu ngày 16–hết tháng (M-1),   chi lương ngày 05 tháng M
 
     Ví dụ theo đúng yêu cầu: Kỳ 20 tháng 08 (dữ liệu 01–15/08) so với kỳ liền trước
     là Kỳ 05 tháng 08 — tức dữ liệu từ 16 đến hết tháng 07.
@@ -835,12 +835,20 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
     fig = go.Figure(go.Bar(x=g["r"], y=g["Bưu Cục"], orientation="h",
                            marker=dict(color=colors),
                            text=[f"{v:,.2f}%" for v in g["r"]], textposition="outside",
+                           textfont=dict(size=20), cliponaxis=False,
                            customdata=g["w"],
                            hovertemplate="%{y}<br>%{x:.2f}%<br>Sản lượng %{customdata:,.0f} đơn<extra></extra>"))
     if target:
         fig.add_vline(x=target, line_dash="dot", line_color=ACCENT, line_width=2)
-    fig.update_layout(title=title, height=max(220, 60 * len(g)), margin=dict(l=10, r=60, t=50, b=30))
-    fig.update_xaxes(ticksuffix="%")
+    # Nới trục ngang thêm 22% so với giá trị lớn nhất để nhãn số đặt ngoài đầu cột
+    # không bị cắt. Cỡ chữ đã phóng 1.5 lần nên nhãn chiếm nhiều chỗ hơn trước.
+    x_max = float(max(g["r"].max(), target or 0))
+    fig.update_xaxes(range=[0, x_max * 1.22], ticksuffix="%", automargin=True)
+    fig.update_yaxes(automargin=True, tickfont=dict(size=20))
+    fig.update_layout(title=title,
+                      height=max(300, 110 * len(g) + 130),
+                      margin=dict(l=20, r=120, t=90, b=60),
+                      showlegend=False, bargap=0.45)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -1333,7 +1341,7 @@ with tab2:
     with f1:
         bc_vh = st.selectbox("Bưu cục", ALL_BC, key="bc_vh")
     with f2:
-        quick_vh = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng", "Tùy chọn"],
+        quick_vh = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng"],
                             horizontal=True, key="quick_vh")
     if quick_vh == "7 ngày gần nhất":
         # Mặc định khi mở trang: 7 ngày gần nhất theo giờ Việt Nam (N-7 đến N-1).
@@ -1342,10 +1350,8 @@ with tab2:
         a_vh, b_vh = DEFAULT_N1, DEFAULT_N1
     elif quick_vh == "Tuần":
         a_vh, b_vh = REF_DATE - timedelta(days=REF_DATE.weekday()), REF_DATE
-    elif quick_vh == "Tháng":
+    else:  # "Tháng"
         a_vh, b_vh = REF_DATE.replace(day=1), REF_DATE
-    else:
-        a_vh, b_vh = DATA_MIN, REF_DATE
     with f3:
         # sync_token = lựa chọn Chọn nhanh -> đổi nút là ô ngày tự cập nhật theo.
         a_vh, b_vh = synced_range_picker("Khoảng ngày", a_vh, b_vh, "date_vh",
@@ -1500,13 +1506,11 @@ with tab2:
 # TAB 3 — KINH DOANH
 # ═══════════════════════════════════════════════════════════════════════
 with tab3:
-    k1, k2, k3, k4 = st.columns([1, 1.1, 1.5, 1.2])
+    k1, k3, k4 = st.columns([1.1, 1.7, 1.3])
     with k1:
         bc_kd = st.selectbox("Bưu cục", ALL_BC, key="bc_kd")
-    with k2:
-        view_kd = st.radio("Gộp theo", ["Ngày", "Tuần", "Tháng"], horizontal=True, key="view_kd")
     with k3:
-        quick_kd = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng", "Tùy chọn"],
+        quick_kd = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng"],
                             horizontal=True, key="quick_kd")
     if quick_kd == "7 ngày gần nhất":
         a_kd, b_kd = DEFAULT_7D_START, DEFAULT_7D_END
@@ -1514,10 +1518,8 @@ with tab3:
         a_kd, b_kd = DEFAULT_N1, DEFAULT_N1
     elif quick_kd == "Tuần":
         a_kd, b_kd = REF_DATE - timedelta(days=REF_DATE.weekday()), REF_DATE
-    elif quick_kd == "Tháng":
+    else:  # "Tháng"
         a_kd, b_kd = REF_DATE.replace(day=1), REF_DATE
-    else:
-        a_kd, b_kd = DATA_MIN, REF_DATE
     with k4:
         a_kd, b_kd = synced_range_picker("Khoảng ngày", a_kd, b_kd, "date_kd",
                                          sync_token=quick_kd)
@@ -1585,22 +1587,18 @@ with tab3:
             st.markdown(metric_card("Còn thiếu so với mục tiêu", fmt_money(thieu), None,
                                     sub="nếu giữ nguyên tốc độ"), unsafe_allow_html=True)
 
-    section(f"3. Biểu đồ doanh thu — gộp theo {view_kd.lower()}")
+    section("3. Biểu đồ doanh thu theo ngày")
     d_kd_range = sl(dt_scope, a_kd, b_kd)
     if not d_kd_range.empty:
-        plot_kd = d_kd_range.copy()
-        if view_kd == "Tuần":
-            plot_kd["Ngày"] = plot_kd["Ngày"].dt.to_period("W").apply(lambda r: r.start_time)
-        elif view_kd == "Tháng":
-            plot_kd["Ngày"] = plot_kd["Ngày"].dt.to_period("M").apply(lambda r: r.start_time)
-        plot_kd = plot_kd.groupby("Ngày", as_index=False)["Giá Trị"].sum()
-        fig_kd = px.bar(plot_kd, x="Ngày", y="Giá Trị", title="Doanh thu")
-        fig_kd.update_traces(marker_color=PRIMARY, marker_line_width=0)
-        if view_kd == "Tháng":
-            fig_kd.add_hline(y=target_dt, line_dash="dot", line_color=ACCENT, line_width=2,
-                             annotation_text="Mục tiêu", annotation_position="top left")
-        fig_kd.update_xaxes(tickformat="%d/%m" if view_kd == "Ngày" else "%m/%Y")
-        fig_kd.update_layout(height=340, showlegend=False, margin=dict(t=90, b=70))
+        # Vẽ theo từng ngày trong khoảng đã lọc. Khoảng ngày do bộ lọc "Chọn nhanh"
+        # quyết định nên không cần thêm ô "Gộp theo" nữa.
+        plot_kd = d_kd_range.groupby("Ngày", as_index=False)["Giá Trị"].sum()
+        fig_kd = px.bar(plot_kd, x="Ngày", y="Giá Trị", title="Doanh thu theo ngày")
+        fig_kd.update_traces(marker_color=PRIMARY, marker_line_width=0,
+                             hovertemplate="%{x|%d/%m/%Y}<br>%{y:,.0f} đ<extra></extra>")
+        fig_kd.update_xaxes(tickformat="%d/%m")
+        fig_kd.update_yaxes(tickformat=",.0f")
+        fig_kd.update_layout(height=380, showlegend=False, margin=dict(t=90, b=70))
         st.plotly_chart(fig_kd, use_container_width=True)
     else:
         note("Chưa có doanh thu trong khoảng đã chọn.")
@@ -1724,26 +1722,25 @@ with tab4:
     L = filter_staff(DF_LUONG, nv_col_luong)
     G = filter_staff(DF_NSGTC, nv_col_gtc)
 
-    # ── Logic kỳ lương GHN ─────────────────────────────────────────────
-    # Ngày 01–15  -> Kỳ 20 (chi lương ngày 20 cùng tháng)
-    # Ngày 16–cuối -> Kỳ 05 (chi lương ngày 05 tháng sau)
-    if REF_DATE.day <= 15:
-        cur_a, cur_b = REF_DATE.replace(day=1), REF_DATE.replace(day=15)
-        prev_b = cur_a - timedelta(days=1)
-        prev_a = prev_b.replace(day=16)
-        cur_name = f"Kỳ 20 · tháng {cur_a:%m/%Y}"
-        prev_name = f"Kỳ 05 · tháng {prev_a:%m/%Y}"
-    else:
-        cur_a = REF_DATE.replace(day=16)
-        cur_b = month_end(cur_a)
-        prev_a, prev_b = REF_DATE.replace(day=1), REF_DATE.replace(day=15)
-        cur_name = f"Kỳ 05 · tháng {cur_a:%m/%Y}"
-        prev_name = f"Kỳ 20 · tháng {prev_a:%m/%Y}"
+    # ── Kỳ lương GHN ───────────────────────────────────────────────────
+    # Dùng chung hàm pay_period() để tên kỳ luôn nhất quán toàn app.
+    # Kỳ được gọi theo THÁNG CHI LƯƠNG:
+    #   Kỳ 20 tháng M     : dữ liệu 01–15 tháng M,        chi lương 20 tháng M
+    #   Kỳ 05 tháng (M+1) : dữ liệu 16–hết tháng M,       chi lương 05 tháng (M+1)
+    #
+    # Mốc tính lấy theo NGÀY KẾT THÚC của bộ lọc, nên khi đổi bộ lọc ngày thì
+    # bảng so sánh bên dưới cũng đổi kỳ theo, không còn cố định theo REF_DATE.
+    anchor = b_ns if b_ns is not None else REF_DATE
+    cur_a, cur_b, cur_name, prev_a, prev_b, prev_name = pay_period(anchor)
 
-    st.info(f"**Kỳ lương hiện tại:** {cur_name} ({cur_a:%d/%m} – {cur_b:%d/%m}) "
-            f"— so với {prev_name}. "
-            f"Kỳ 20 tính từ ngày 01 đến 15 chi lương ngày 20; "
-            f"Kỳ 05 tính từ ngày 16 đến hết tháng chi lương ngày 05 tháng sau.")
+    st.info(
+        f"**Kỳ lương đang xét:** {cur_name} — dữ liệu {cur_a:%d/%m/%Y} đến {cur_b:%d/%m/%Y}, "
+        f"chi lương ngày {'20' if cur_name.startswith('Kỳ 20') else '05'}.  \n"
+        f"**So với kỳ liền trước:** {prev_name} — dữ liệu {prev_a:%d/%m/%Y} đến {prev_b:%d/%m/%Y}.  \n"
+        f"Quy ước: Kỳ 20 tháng M gồm dữ liệu ngày 01–15 tháng M, chi lương ngày 20 tháng M. "
+        f"Kỳ 05 tháng M+1 gồm dữ liệu ngày 16 đến hết tháng M, chi lương ngày 05 tháng M+1. "
+        f"Mốc kỳ chạy theo ngày kết thúc của bộ lọc ({anchor:%d/%m/%Y})."
+    )
 
     col_price = pick_col(L, [["don gia"]])
     col_gan = pick_col(G, [["gan giao"], ["so don gan"], ["gan"]])
