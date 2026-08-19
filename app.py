@@ -291,6 +291,36 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .tag-warn {{ background: #FFF4E5; color: #B36200; }}
 .tag-ok {{ background: #E8F6EC; color: {SUCCESS}; }}
 
+/* ── Trạng thái đang xử lý ────────────────────────────────────────────
+   Streamlit hiện nút "Stop" ở góc phải trên khi đang chạy. Ẩn nút đó đi và
+   thay bằng nhãn "Đang xử lý" cho đỡ gây hiểu nhầm là nút bấm được. */
+[data-testid="stStatusWidget"] {{
+    position: fixed !important;
+    top: 14px !important;
+    right: 18px !important;
+    z-index: 999999 !important;
+    background: #FFF4E5 !important;
+    border: 2px solid {ACCENT} !important;
+    border-radius: 999px !important;
+    padding: 8px 20px !important;
+    box-shadow: 0 3px 10px rgba(255,140,0,0.28) !important;
+}}
+[data-testid="stStatusWidget"] button,
+[data-testid="stStatusWidget"] svg,
+[data-testid="stStatusWidget"] label,
+[data-testid="stStatusWidget"] a {{
+    display: none !important;
+}}
+[data-testid="stStatusWidget"]::after {{
+    content: "Đang xử lý…";
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 19.5px;
+    color: #B36200;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}}
+
 .section-title {{
     font-size: 25.5px; font-weight: 900; color: {PRIMARY};
     text-transform: uppercase; letter-spacing: 0.3px;
@@ -922,6 +952,69 @@ def ask_ai(prompt: str) -> str:
         return f"Lỗi Google AI: {exc}"
 
 
+ADVISOR_ROLES = {
+    "Giám đốc": (
+        "Bạn là Giám đốc vùng. Nhìn ở tầm quản trị: đánh giá bức tranh tổng thể, "
+        "nêu rủi ro hệ thống và tác động tới chi phí, cam kết với sàn và uy tín khu vực. "
+        "Đề xuất mang tính chiến lược, phân bổ nguồn lực. Giọng chuyên nghiệp, quyết đoán."
+    ),
+    "Quản lý khu vực": (
+        "Bạn là Quản lý khu vực (AM) phụ trách trực tiếp các bưu cục. Nhìn ở tầm điều hành: "
+        "chỉ đích danh bưu cục và nhân viên đang có vấn đề, nêu việc phải làm trong 24-48 giờ tới, "
+        "gắn người chịu trách nhiệm. Giọng dứt khoát, thực chiến, sát mặt đất."
+    ),
+}
+
+
+def ai_advisor(key: str, tab_label: str, data_text: str, extra_note: str = ""):
+    """Khối cố vấn AI đặt ở cuối mỗi tab: đọc đúng số liệu đang hiển thị trên tab đó
+    rồi đưa ra nhận định và đề xuất hành động theo góc nhìn Giám đốc hoặc AM."""
+    section("Cố vấn AI — nhận định và đề xuất hành động")
+    c1, c2 = st.columns([1.2, 2.4])
+    with c1:
+        role = st.selectbox("Góc nhìn", list(ADVISOR_ROLES), key=f"role_{key}")
+    with c2:
+        st.markdown("<div style='height:34px'></div>", unsafe_allow_html=True)
+        run = st.button(f"PHÂN TÍCH {tab_label.upper()}", key=f"btn_adv_{key}",
+                        use_container_width=True)
+
+    if run:
+        with st.spinner("AI đang đọc số liệu và soạn nhận định..."):
+            prompt = f"""{ADVISOR_ROLES[role]}
+
+Dưới đây là số liệu THỰC TẾ đang hiển thị trên tab "{tab_label}" của dashboard
+Trung tâm vận hành chiến lược GHN:
+
+{data_text}
+
+{extra_note}
+
+QUY ƯỚC CHỈ SỐ:
+- %GTC là tỷ lệ giao thành công, càng cao càng tốt.
+- ODR là cam kết giao đúng hạn với sàn TikTok Shop, càng cao càng tốt, thấp là bị sàn phạt.
+- %Trả hàng là đơn quay đầu về kho, càng thấp càng tốt.
+- Mọi tỷ lệ đã tính trung bình có trọng số theo sản lượng.
+
+Trình bày đúng 3 phần, mỗi phần có tiêu đề in đậm:
+1. **ĐÁNH GIÁ** — bức tranh hiện tại, nêu con số cụ thể để chứng minh.
+2. **VẤN ĐỀ & RỦI RO** — chỉ rõ chỉ số nào đang hỏng, hỏng ở đâu, hệ quả nếu để tiếp.
+3. **ĐỀ XUẤT HÀNH ĐỘNG** — tối đa 4 việc, mỗi việc một dòng, ghi rõ làm gì và ai chịu trách nhiệm.
+
+Chỉ dùng số liệu được cung cấp. Nếu thiếu dữ liệu cho phần nào thì ghi rõ "chưa đủ dữ liệu",
+tuyệt đối không suy đoán hay bịa số. Viết ngắn gọn. Kết thúc bằng dòng [HẾT]."""
+            st.session_state.ai_cache[key] = ask_ai(prompt)
+
+    result = st.session_state.ai_cache.get(key)
+    if result:
+        st.markdown(f"<div class='ghn-alert'>{result}</div>", unsafe_allow_html=True)
+        if st.button("GỬI LÊN NHÓM TELEGRAM", key=f"tele_adv_{key}"):
+            ok, msg = send_telegram(f"[{tab_label.upper()}]\n\n" + result.replace("*", ""))
+            (st.success if ok else st.error)(msg)
+    else:
+        note("Chọn góc nhìn rồi bấm nút phía trên để AI đọc số liệu đang hiển thị "
+             "và đưa ra nhận định kèm đề xuất hành động.")
+
+
 def send_telegram(text: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return False, "Chưa cấu hình TELEGRAM_TOKEN / TELEGRAM_CHAT_ID."
@@ -971,12 +1064,6 @@ def login_screen():
                     st.rerun()
                 else:
                     st.error("ID hoặc mật khẩu không chính xác.")
-
-        if ADMIN_PASS == "ghn@admin" or USER_PASS == "ghn@user":
-            st.warning(
-                "Đang dùng mật khẩu mặc định. Trước khi đưa lên máy chủ thật, hãy đặt biến "
-                "môi trường ADMIN_PASS và USER_PASS để không ai đoán được mật khẩu.",
-                icon="⚠️")
 
 
 if st.session_state.auth is None:
@@ -1297,40 +1384,25 @@ with tab1:
             "theo tháng của sheet đó sẽ bằng 0 nếu tháng hiện tại chưa có dòng nào.\n"
             "- *Thiếu cột Ngày*: không so sánh được theo thời gian.")
 
-    section("Phân tích Group Chat — điểm nóng về lương và tác phong")
-    chat_input = st.text_area(
-        "Dán nội dung thảo luận trên nhóm Zalo hoặc Telegram vào đây",
-        height=160, key="chat_extract",
-        placeholder="Dán đoạn hội thoại... Nội dung chỉ dùng cho lần phân tích này, không lưu lại.")
+    ai_advisor(
+        "ov", "Tổng quan",
+        f"""Ngày phân tích: {REF_DATE:%d/%m/%Y}. Phạm vi: {bc_ov}.
 
-    if st.button("TRÍCH XUẤT ĐIỂM NÓNG", key="btn_chat"):
-        if not chat_input.strip():
-            st.warning("Bạn chưa dán nội dung nhóm vào ô phía trên.")
-        else:
-            with st.spinner("AI đang đọc nội dung nhóm..."):
-                prompt_chat = f"""Bạn là trợ lý nhân sự của GHN. Dưới đây là đoạn hội thoại nội bộ
-của nhân viên giao hàng. Hãy phân tích và chỉ ra các điểm nóng.
+CHỈ SỐ HÔM NAY (so với hôm trước):
+- Sản lượng: {p_vol['n']:,.0f} đơn (hôm trước {p_vol['n1']:,.0f})
+- %GTC tổng: {p_gtc['n']:.2f}% (hôm trước {p_gtc['n1']:.2f}%) — mốc KPI {t_gtc_ov:.2f}%
+- %GTC TikTok: {p_tts['n']:.2f}% (hôm trước {p_tts['n1']:.2f}%) — mốc KPI {t_tts_ov:.2f}%
+- ODR TikTok: {p_odr['n']:.2f}% (hôm trước {p_odr['n1']:.2f}%) — mốc {t_odr_ov:.2f}%
+- Tỷ lệ trả hàng: {p_tra['n']:.2f}% (hôm trước {p_tra['n1']:.2f}%) — ngưỡng tối đa {t_tra_ov:.2f}%
 
-NỘI DUNG NHÓM:
-{chat_input.strip()[:8000]}
+LŨY KẾ THÁNG:
+- Doanh thu tháng: {fmt_money(p_dt['m'])} (tháng trước {fmt_money(p_dt['m1'])})
 
-Trình bày đúng 4 mục:
-1. LƯƠNG & THU NHẬP — anh em đang bàn gì, có bức xúc gì không
-2. TÁC PHONG & KỶ LUẬT — dấu hiệu vi phạm, đi muộn, thái độ
-3. ĐIỂM ĐẠT — điều gì tích cực đáng ghi nhận
-4. ĐIỂM CHƯA ĐẠT & CẦN XỬ LÝ — tối đa 4 việc, mỗi việc gắn người chịu trách nhiệm
+NHỊP TUẦN:
+- %GTC tuần này {p_gtc['w']:.2f}% so với tuần trước {p_gtc['w1']:.2f}%
+- %Trả hàng tuần này {p_tra['w']:.2f}% so với tuần trước {p_tra['w1']:.2f}%
 
-Nếu không có dữ liệu cho mục nào thì ghi rõ "không có thông tin", đừng suy đoán.
-Kết thúc bằng dòng [HẾT]."""
-                st.session_state.ai_cache["chat"] = ask_ai(prompt_chat)
-
-    if st.session_state.ai_cache.get("chat"):
-        st.markdown(f"<div class='ghn-alert'>{st.session_state.ai_cache['chat']}</div>",
-                    unsafe_allow_html=True)
-        if st.button("GỬI LÊN NHÓM TELEGRAM", key="tele_chat"):
-            ok, msg = send_telegram("[PHÂN TÍCH NHÓM]\n\n"
-                                    + st.session_state.ai_cache["chat"].replace("*", ""))
-            (st.success if ok else st.error)(msg)
+CHỈ SỐ ĐANG TRƯỢT MỐC: {', '.join(f"{n} ({a:.2f}% / mốc {t:.2f}%)" for _, n, a, t, _, _ in issues) if issues else 'không có, mọi chỉ số đạt mốc'}""")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1501,6 +1573,24 @@ with tab2:
     else:
         note("Không có dữ liệu chi tiết trong khoảng đã chọn.")
 
+    def _w(d):
+        return wavg(d["Giá Trị"], d["Trọng Số"]) if d is not None and not d.empty else 0.0
+
+    ai_advisor(
+        "vh", "Vận hành",
+        f"""Khoảng ngày: {a_vh:%d/%m/%Y} – {b_vh:%d/%m/%Y}. Bưu cục: {bc_vh}.
+Loại hàng đang lọc: {', '.join(lh_pick) if lh_pick else 'tất cả'}.
+
+BÌNH QUÂN TRONG KHOẢNG ĐÃ LỌC:
+- %GTC tổng: {_w(s_gtc):.2f}% (mốc KPI {t_gtc_vh:.2f}%)
+- %Trả hàng: {_w(s_tra):.2f}% (ngưỡng tối đa {t_tra_vh:.2f}%)
+- %GTB thu tiền: {_w(s_gtb):.2f}%
+- %GTC TikTok: {_w(s_tts):.2f}% (mốc KPI {t_tts_vh:.2f}%)
+- ODR TikTok: {_w(s_odr):.2f}% (mốc 98%)
+- Tỷ lệ gán: {_w(s_gan):.2f}%
+- Leadtime bình quân: {s_lead['Giá Trị'].mean() if not s_lead.empty else 0:.2f} giờ
+- Tổng sản lượng: {s_gtc['Trọng Số'].sum() if not s_gtc.empty else 0:,.0f} đơn""")
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 3 — KINH DOANH
@@ -1579,7 +1669,7 @@ with tab3:
                                     sub=f"đã qua {days_done}/{days_total} ngày"),
                         unsafe_allow_html=True)
         with e2:
-            st.markdown(metric_card("Dự kiến cuối tháng", fmt_money(forecast_dt), None,
+            st.markdown(metric_card("Dự phóng cuối tháng", fmt_money(forecast_dt), None,
                                     sub="theo tốc độ hiện tại", accent=True),
                         unsafe_allow_html=True)
         with e3:
@@ -1654,6 +1744,23 @@ with tab3:
             note("Không có dòng nào ở trạng thái 'Khách hàng tiềm năng'.")
     else:
         note("Cần cột Trạng thái trong sheet Khách hàng mới để lọc danh sách tiềm năng.")
+
+    ai_advisor(
+        "kd", "Kinh doanh",
+        f"""Khoảng ngày: {a_kd:%d/%m/%Y} – {b_kd:%d/%m/%Y}. Bưu cục: {bc_kd}.
+
+DOANH THU:
+- Hôm qua: {fmt_money(p_kd['n'])} (hôm kia {fmt_money(p_kd['n1'])})
+- Tuần này: {fmt_money(p_kd['w'])} (tuần trước {fmt_money(p_kd['w1'])})
+- Lũy kế tháng: {fmt_money(p_kd['m'])} (tháng trước {fmt_money(p_kd['m1'])})
+
+TIẾN ĐỘ THÁNG:
+- Mục tiêu tháng: {fmt_money(target_dt)}
+- Đã qua {days_done}/{days_total} ngày
+- Dự phóng cuối tháng: {fmt_money(forecast_dt)}
+- Còn thiếu so với mục tiêu: {fmt_money(max(target_dt - forecast_dt, 0))}
+
+KHÁCH HÀNG: {len(pheu_df) if not pheu_df.empty else 0} khách trong phễu.""")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1905,6 +2012,22 @@ with tab4:
         st.download_button("TẢI CSV XẾP HẠNG", rank.to_csv(index=False).encode("utf-8-sig"),
                            "xep_hang_nhan_vien.csv", "text/csv", key="dl_rank")
 
+    ai_advisor(
+        "ns", "Năng suất & Lương",
+        f"""Bưu cục: {bc_ns}. Nhân viên: {nv_ns}.
+Kỳ đang xét: {cur_name} (dữ liệu {cur_a:%d/%m/%Y} – {cur_b:%d/%m/%Y}).
+Kỳ liền trước: {prev_name} (dữ liệu {prev_a:%d/%m/%Y} – {prev_b:%d/%m/%Y}).
+
+SO SÁNH HAI KỲ:
+- Đơn giá trung bình: {avg_price(L_cur):,.3f} đ / kỳ trước {avg_price(L_prev):,.3f} đ
+- Sản lượng GTC (Đơn GTC + Đơn GTBTT): {sum_gtc(L_cur):,.0f} đơn / kỳ trước {sum_gtc(L_prev):,.0f} đơn
+- %GTC: {pct_gtc(G_cur):.2f}% / kỳ trước {pct_gtc(G_prev):.2f}%
+- Tổng lương: {fmt_money(total_salary(L_cur))} / kỳ trước {fmt_money(total_salary(L_prev))}
+
+Mốc thưởng %GTC là 80%.""",
+        extra_note="Lưu ý: đơn giá giảm mà sản lượng tăng thường là dấu hiệu cơ cấu đơn đổi "
+                   "sang loại đơn giá thấp, cần soi kỹ trước khi kết luận nhân viên làm kém.")
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 5 — TIẾN ĐỘ HOÀN THÀNH KPI
@@ -2003,6 +2126,19 @@ with tab5:
                            "kpi_theo_ngay.csv", "text/csv", key="dl_kpi")
     else:
         note("Chưa có dữ liệu KPI trong khoảng đã chọn.")
+
+    ai_advisor(
+        "kpi", "Tiến độ KPI",
+        f"""Khoảng ngày: {a_kpi:%d/%m/%Y} – {b_kpi:%d/%m/%Y}. Bưu cục: {bc_kpi}.
+
+ĐỐI CHIẾU VỚI MỐC KPI:
+- %GTC tổng: thực tế {a_gtc:.2f}% / mốc tối thiểu {t_gtc:.2f}% -> {'ĐẠT' if a_gtc >= t_gtc else 'CHƯA ĐẠT'}
+- %GTC TikTok: thực tế {a_tts:.2f}% / mốc tối thiểu {t_tts:.2f}% -> {'ĐẠT' if a_tts >= t_tts else 'CHƯA ĐẠT'}
+- %Trả hàng: thực tế {a_tra:.2f}% / ngưỡng tối đa {t_tra:.2f}% -> {'ĐẠT' if a_tra <= t_tra else 'CHƯA ĐẠT'}
+
+Đã qua {(b_kpi - a_kpi).days + 1} ngày trong kỳ theo dõi.""",
+        extra_note="Hãy ước lượng khả năng về đích của từng chỉ số nếu giữ nguyên tốc độ hiện tại, "
+                   "và nói rõ cần kéo thêm bao nhiêu điểm phần trăm.")
 
 
 # ═══════════════════════════════════════════════════════════════════════
