@@ -91,7 +91,26 @@ SHEET_LINKS: dict[str, str] = {
     # Năng suất & Lương
     "ns_luong": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=2000227799",
     "ns_gtc": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=1695228663",
+    # Năng suất tháng trước (tab "Năng Suất Tháng 07") — dùng cho tab Thi đua
+    "ns_thang_truoc": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=1826894473",
 }
+
+# Chốt chặn: mọi nguồn có nhãn thì phải có link, và ngược lại.
+# Lần trước thêm nguồn "ns_thang_truoc" mà lệnh chèn link thất bại, chỉ có nhãn được thêm,
+# nên app âm thầm trả bảng rỗng và tab Thi đua hiện 0.00% suốt nhiều lượt sửa.
+def _kiem_tra_nguon() -> list[str]:
+    thieu_link = [k for k in SHEET_LABELS if k not in SHEET_LINKS]
+    thieu_nhan = [k for k in SHEET_LINKS if k not in SHEET_LABELS]
+    loi = []
+    if thieu_link:
+        loi.append(f"Thiếu link trong SHEET_LINKS cho: {', '.join(thieu_link)}")
+    if thieu_nhan:
+        loi.append(f"Thiếu nhãn trong SHEET_LABELS cho: {', '.join(thieu_nhan)}")
+    for k, v in SHEET_LINKS.items():
+        if "/edit?gid=" not in v and "/export?format=csv" not in v:
+            loi.append(f"Link nguồn '{k}' không đúng mẫu, không đổi sang CSV được")
+    return loi
+
 
 SALARY_PARTS = {
     "LHH LTC": "Lương hoa hồng lấy thành công",
@@ -291,47 +310,36 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .tag-warn {{ background: #FFF4E5; color: #B36200; }}
 .tag-ok {{ background: #E8F6EC; color: {SUCCESS}; }}
 
-/* ── Trạng thái đang xử lý ──────────────────────────────────────────── */
+/* ── Trạng thái đang xử lý ────────────────────────────────────────────
+   Streamlit hiện nút "Stop" ở góc phải trên khi đang chạy. Ẩn nút đó đi và
+   thay bằng nhãn "Đang xử lý" cho đỡ gây hiểu nhầm là nút bấm được. */
 [data-testid="stStatusWidget"] {{
     position: fixed !important;
-    top: 12px !important;
+    top: 14px !important;
     right: 18px !important;
     z-index: 999999 !important;
-
-    /* Ép thành hình chữ nhật, chữ căn giữa cả ngang lẫn dọc */
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    width: 130px !important;
-    height: 38px !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    line-height: 1 !important;
-
     background: #FFF4E5 !important;
-    border: 1px solid {ACCENT} !important;
-    border-radius: 8px !important;
-    box-shadow: none !important;
+    border: 2px solid {ACCENT} !important;
+    border-radius: 999px !important;
+    padding: 8px 20px !important;
+    box-shadow: 0 3px 10px rgba(255,140,0,0.28) !important;
 }}
-
-/* Ẩn TẤT CẢ phần tử con. Trước đây chỉ ẩn button/svg/label nên các thẻ bọc
-   vẫn chiếm chiều cao, làm khung bị cao và chữ bị đẩy xuống đáy. */
-[data-testid="stStatusWidget"] * {{
+[data-testid="stStatusWidget"] button,
+[data-testid="stStatusWidget"] svg,
+[data-testid="stStatusWidget"] label,
+[data-testid="stStatusWidget"] a {{
     display: none !important;
 }}
-
 [data-testid="stStatusWidget"]::after {{
-    content: "Loading…";
-    display: block !important;
+    content: "Đang xử lý…";
     font-family: 'Montserrat', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
+    font-weight: 800;
+    font-size: 19.5px;
     color: #B36200;
     letter-spacing: 0.3px;
-    line-height: 1;
     white-space: nowrap;
 }}
+
 .section-title {{
     font-size: 25.5px; font-weight: 900; color: {PRIMARY};
     text-transform: uppercase; letter-spacing: 0.3px;
@@ -561,10 +569,19 @@ def load_sheet(key: str) -> pd.DataFrame:
 
 
 def safe_load(key: str) -> pd.DataFrame:
+    """Đọc sheet, nuốt lỗi thành bảng rỗng nhưng GHI LẠI lý do thật.
+
+    Trước đây lỗi bị nuốt hoàn toàn nên một nguồn khai báo thiếu link vẫn chỉ hiện
+    'không đọc được', rất khó tìm ra. Nay lý do được lưu để bảng chẩn đoán hiển thị.
+    """
+    if key not in SHEET_LINKS:
+        st.session_state.setdefault("load_errors", {})[key] = (
+            f"Chưa khai báo link cho nguồn '{key}' trong SHEET_LINKS.")
+        return pd.DataFrame()
     try:
         return load_sheet(key)
     except Exception as exc:  # noqa: BLE001
-        st.session_state.setdefault("load_errors", {})[key] = str(exc)
+        st.session_state.setdefault("load_errors", {})[key] = f"{type(exc).__name__}: {exc}"
         return pd.DataFrame()
 
 
@@ -1096,7 +1113,7 @@ for _k, _v in {"auth": None, "ai_cache": {}, "chat": [], "kpi_manual": {}}.items
     st.session_state.setdefault(_k, _v)
 
 ACCOUNTS = {
-    "ADMIN": {"password": ADMIN_PASS, "role": "Giám Đốc.AM"},
+    "ADMIN": {"password": ADMIN_PASS, "role": "Giám Đốc"},
     "USER": {"password": USER_PASS, "role": "Nhân Viên"},
 }
 
@@ -1128,7 +1145,7 @@ if st.session_state.auth is None:
     st.stop()
 
 AUTH = st.session_state.auth
-IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
+IS_ADMIN = AUTH["role"] == "Giám Đốc"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1219,10 +1236,11 @@ def sheet_diagnostics() -> pd.DataFrame:
     for key, label in SHEET_LABELS.items():
         raw = safe_load(key)
         if raw.empty:
+            ly_do = st.session_state.get("load_errors", {}).get(key, "sheet rỗng hoặc chưa chia sẻ")
             rows.append({
                 "Sheet": label, "Số dòng": 0, "Từ ngày": "—", "Đến ngày": "—",
                 "Cột đơn vị": "—", "Giá trị đơn vị": "—",
-                "Tình trạng": "Không đọc được / rỗng",
+                "Tình trạng": f"Không đọc được — {ly_do}",
                 "Các cột trong sheet": "—"})
             continue
 
@@ -1300,10 +1318,16 @@ with st.sidebar:
     if st.button("Đăng xuất", use_container_width=True):
         st.session_state.auth = None
         st.rerun()
+    cau_hinh_loi = _kiem_tra_nguon()
+    if cau_hinh_loi:
+        st.divider()
+        st.error("Khai báo nguồn dữ liệu sai:\n\n"
+                 + "\n".join(f"- {e}" for e in cau_hinh_loi))
     errs = st.session_state.get("load_errors", {})
     if errs:
         st.divider()
-        st.error(f"{len(errs)} nguồn chưa đọc được:\n\n" + "\n".join(f"- {k}" for k in errs))
+        st.error(f"{len(errs)} nguồn chưa đọc được:\n\n"
+                 + "\n".join(f"- **{SHEET_LABELS.get(k, k)}**: {v}" for k, v in errs.items()))
 
 tab1, tab2, tab3, tab4, tab5, tab7, tab6 = st.tabs([
     "TỔNG QUAN", "VẬN HÀNH", "KINH DOANH",
@@ -2197,64 +2221,114 @@ with tab7:
         bc_td = st.selectbox("Bưu cục", ALL_BC, key="bc_td")
 
     # ── Gom dữ liệu theo nhân viên cho từng tháng ──────────────────────
-    def gom_thang(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
-        """Gộp sản lượng gán và GTC theo từng nhân viên trong cả tháng.
+    # ── Chuẩn hóa từng nguồn về một khung chung ────────────────────────
+    def chuan_hoa(df: pd.DataFrame, ten_nguon: str) -> tuple[pd.DataFrame, dict]:
+        """Đưa một sheet năng suất về khung: MaNV | Nhân Viên | Bưu Cục | Kỳ | Gán | GTC.
 
-        %GTC tháng = tổng GTC / tổng gán, KHÔNG lấy trung bình cộng cột %GTC theo ngày —
-        vì ngày giao ít đơn mà đạt 100% sẽ kéo lệch kết quả cả tháng.
+        Trả kèm nhật ký chẩn đoán để biết chính xác vì sao một nguồn không ra số,
+        thay vì âm thầm hiện 0.
         """
-        empty = pd.DataFrame(columns=["MaNV", "Nhân Viên", "Bưu Cục", "Gán", "GTC", "%GTC"])
+        cols = ["MaNV", "Nhân Viên", "Bưu Cục", "Kỳ", "Gán", "GTC"]
+        log = {"Nguồn": ten_nguon, "Số dòng đọc được": 0, "Cột nhân viên": "—",
+               "Cột gán": "—", "Cột GTC": "—", "Khoảng ngày": "—",
+               "Số nhân viên": 0, "Tình trạng": ""}
+
         if df is None or df.empty:
-            return empty, "—"
+            log["Tình trạng"] = "Không đọc được sheet hoặc sheet rỗng"
+            return pd.DataFrame(columns=cols), log
+
+        log["Số dòng đọc được"] = len(df)
         nv_c = pick_col(df, [["nhan vien"]])
         gan_c = pick_col(df, [["san luong gan"], ["gan giao"], ["so don gan"], ["gan"]])
         gtc_c = pick_col(df, [["san luong gtc"], ["don gtc"], ["giao thanh cong"], ["gtc"]],
                          exclude=["%"])
+        log["Cột nhân viên"] = nv_c or "KHÔNG TÌM THẤY"
+        log["Cột gán"] = gan_c or "KHÔNG TÌM THẤY"
+        log["Cột GTC"] = gtc_c or "KHÔNG TÌM THẤY"
+
         if not (nv_c and gan_c and gtc_c):
-            return empty, "—"
+            log["Tình trạng"] = "Thiếu cột bắt buộc"
+            return pd.DataFrame(columns=cols), log
 
         d = df.copy()
-        if bc_td != "Tất cả" and "Bưu Cục" in d.columns:
-            d = d[d["Bưu Cục"].map(norm) == norm(bc_td)]
+        if "Ngày" in d.columns and d["Ngày"].notna().any():
+            log["Khoảng ngày"] = f"{d['Ngày'].min():%d/%m/%Y} – {d['Ngày'].max():%d/%m/%Y}"
+            d["Kỳ"] = d["Ngày"].dt.to_period("M")
+        else:
+            log["Tình trạng"] = "Không đọc được cột ngày nên không xác định được tháng"
+            return pd.DataFrame(columns=cols), log
+
+        out = pd.DataFrame({
+            "MaNV": d[nv_c].map(staff_id),
+            "Nhân Viên": d[nv_c].astype(str).str.strip(),
+            "Bưu Cục": d["Bưu Cục"] if "Bưu Cục" in d.columns else "Chưa phân loại",
+            "Kỳ": d["Kỳ"],
+            "Gán": pd.to_numeric(_as_series(d[gan_c]), errors="coerce").fillna(0),
+            "GTC": pd.to_numeric(_as_series(d[gtc_c]), errors="coerce").fillna(0),
+        }).dropna(subset=["Kỳ"])
+
+        log["Số nhân viên"] = out["MaNV"].nunique()
+        log["Tình trạng"] = "Bình thường" if not out.empty else "Không còn dòng nào sau xử lý"
+        return out, log
+
+    raw_now, log_now = chuan_hoa(DF_NSGTC, "Năng suất nhân viên (tháng này)")
+    raw_prev, log_prev = chuan_hoa(DF_NS_PREV, "Năng suất tháng trước")
+
+    # Gộp CẢ HAI nguồn rồi mới tách theo tháng. Nhờ vậy nếu một sheet chứa sẵn dữ liệu
+    # của cả hai tháng, hoặc một sheet hỏng, phần còn lại vẫn dùng được.
+    kho = pd.concat([raw_now, raw_prev], ignore_index=True)
+    kho = kho.drop_duplicates(subset=["MaNV", "Kỳ", "Gán", "GTC"], keep="first")
+
+    if bc_td != "Tất cả" and not kho.empty:
+        kho = kho[kho["Bưu Cục"].map(norm) == norm(bc_td)]
+
+    with st.expander("Chẩn đoán nguồn dữ liệu thi đua", expanded=kho.empty):
+        st.dataframe(pd.DataFrame([log_now, log_prev]), use_container_width=True, hide_index=True)
+        if not kho.empty:
+            ky_co = sorted(kho["Kỳ"].dropna().unique())
+            st.markdown("**Các tháng gộp được:** "
+                        + " · ".join(f"{k}: {kho[kho['Kỳ'] == k]['MaNV'].nunique()} nhân viên"
+                                     for k in ky_co))
+        st.caption("Nếu cột nhân viên/gán/GTC báo KHÔNG TÌM THẤY thì sheet đó đặt tên cột khác "
+                   "thường. Gửi mình tên cột thật để bổ sung từ khóa nhận diện.")
+
+    if kho.empty:
+        note("Chưa gộp được dữ liệu thi đua. Xem bảng chẩn đoán phía trên để biết nguồn nào lỗi.")
+        st.stop()
+
+    ky_list = sorted(kho["Kỳ"].dropna().unique())
+    ky_now = ky_list[-1]
+    ky_prev = ky_now - 1
+
+    def gom_ky(ky) -> pd.DataFrame:
+        """Gộp theo nhân viên trong một tháng.
+        %GTC tháng = tổng GTC / tổng gán, không lấy trung bình cộng %GTC từng ngày."""
+        d = kho[kho["Kỳ"] == ky]
         if d.empty:
-            return empty, "—"
-
-        thang = f"{d['Ngày'].max():%m/%Y}" if d["Ngày"].notna().any() else "—"
-        d["MaNV"] = d[nv_c].map(staff_id)
-        d["_gan"] = pd.to_numeric(_as_series(d[gan_c]), errors="coerce").fillna(0)
-        d["_gtc"] = pd.to_numeric(_as_series(d[gtc_c]), errors="coerce").fillna(0)
-
+            return pd.DataFrame(columns=["MaNV", "Nhân Viên", "Bưu Cục", "Gán", "GTC", "%GTC"])
         g = d.groupby("MaNV", as_index=False).agg(
-            **{"Nhân Viên": (nv_c, lambda x: max(x.astype(str), key=len)),
+            **{"Nhân Viên": ("Nhân Viên", lambda x: max(x.astype(str), key=len)),
                "Bưu Cục": ("Bưu Cục", "first"),
-               "Gán": ("_gan", "sum"),
-               "GTC": ("_gtc", "sum")})
+               "Gán": ("Gán", "sum"),
+               "GTC": ("GTC", "sum")})
         g["%GTC"] = np.where(g["Gán"] > 0, g["GTC"] / g["Gán"] * 100, 0.0)
-        return g, thang
+        return g
 
-    cur_td, thang_n = gom_thang(DF_NSGTC)
-    prev_td, thang_n1 = gom_thang(DF_NS_PREV)
+    cur_td = gom_ky(ky_now)
+    prev_td = gom_ky(ky_prev)
+    thang_n = f"{ky_now.month:02d}/{ky_now.year}"
+    thang_n1 = f"{ky_prev.month:02d}/{ky_prev.year}"
 
-    # Sheet tháng trước đang trỏ cố định vào tab "Năng Suất Tháng 07". Nếu tháng hiện tại
-    # đã sang tháng khác thì nó không còn là tháng liền kề, phải báo rõ thay vì âm thầm
-    # tính sai mức cải thiện.
-    if thang_n != "—" and thang_n1 != "—":
-        try:
-            m_now = pd.Period(f"{thang_n.split('/')[1]}-{thang_n.split('/')[0]}", freq="M")
-            m_prev = pd.Period(f"{thang_n1.split('/')[1]}-{thang_n1.split('/')[0]}", freq="M")
-            if (m_now - m_prev).n != 1:
-                st.warning(
-                    f"Sheet đối chiếu đang là tháng **{thang_n1}**, trong khi tháng hiện tại là "
-                    f"**{thang_n}** — cách nhau {(m_now - m_prev).n} tháng, không phải tháng liền kề. "
-                    "Mức cải thiện đang so sai kỳ. Hãy trỏ nguồn `ns_thang_truoc` trong SHEET_LINKS "
-                    "sang sheet của tháng liền trước.", icon="⚠️")
-        except Exception:  # noqa: BLE001
-            pass
-    elif thang_n1 == "—":
+    if prev_td.empty:
         st.warning(
-            "Chưa đọc được dữ liệu tháng trước nên cột %GTC tháng trước đang bằng 0 và mức "
-            "cải thiện bị thổi phồng bằng đúng %GTC tháng này. Mở mục Chẩn đoán nguồn dữ liệu "
-            "ở tab Tổng quan để xem sheet 'Năng suất tháng trước' báo lỗi gì.", icon="⚠️")
+            f"Không có dữ liệu tháng **{thang_n1}** trong cả hai sheet, nên cột %GTC tháng trước "
+            f"đang bằng 0 và mức cải thiện bị thổi phồng đúng bằng %GTC tháng {thang_n}. "
+            "Xem bảng chẩn đoán phía trên để biết nguồn nào chưa đọc được.", icon="⚠️")
+    else:
+        khop = cur_td["MaNV"].isin(prev_td["MaNV"]).sum()
+        st.caption(f"Đối chiếu tháng {thang_n} với tháng {thang_n1} · "
+                   f"{len(cur_td)} nhân viên tháng này, {len(prev_td)} nhân viên tháng trước, "
+                   f"{khop} người khớp mã ở cả hai tháng.")
 
     if cur_td.empty:
         note("Chưa đọc được dữ liệu năng suất tháng này. Mở mục Chẩn đoán nguồn dữ liệu "
