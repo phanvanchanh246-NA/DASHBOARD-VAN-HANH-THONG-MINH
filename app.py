@@ -310,33 +310,45 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .tag-warn {{ background: #FFF4E5; color: #B36200; }}
 .tag-ok {{ background: #E8F6EC; color: {SUCCESS}; }}
 
-/* ── Trạng thái đang xử lý ────────────────────────────────────────────
-   Streamlit hiện nút "Stop" ở góc phải trên khi đang chạy. Ẩn nút đó đi và
-   thay bằng nhãn "Đang xử lý" cho đỡ gây hiểu nhầm là nút bấm được. */
+/* ── Trạng thái đang xử lý ──────────────────────────────────────────── */
 [data-testid="stStatusWidget"] {{
     position: fixed !important;
-    top: 14px !important;
+    top: 12px !important;
     right: 18px !important;
     z-index: 999999 !important;
+
+    /* Ép thành hình chữ nhật, chữ căn giữa cả ngang lẫn dọc */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 130px !important;
+    height: 38px !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    line-height: 1 !important;
+
     background: #FFF4E5 !important;
-    border: 2px solid {ACCENT} !important;
-    border-radius: 999px !important;
-    padding: 8px 20px !important;
-    box-shadow: 0 3px 10px rgba(255,140,0,0.28) !important;
+    border: 1px solid {ACCENT} !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
 }}
-[data-testid="stStatusWidget"] button,
-[data-testid="stStatusWidget"] svg,
-[data-testid="stStatusWidget"] label,
-[data-testid="stStatusWidget"] a {{
+
+/* Ẩn TẤT CẢ phần tử con. Trước đây chỉ ẩn button/svg/label nên các thẻ bọc
+   vẫn chiếm chiều cao, làm khung bị cao và chữ bị đẩy xuống đáy. */
+[data-testid="stStatusWidget"] * {{
     display: none !important;
 }}
+
 [data-testid="stStatusWidget"]::after {{
-    content: "Đang xử lý…";
+    content: "Loading…";
+    display: block !important;
     font-family: 'Montserrat', sans-serif;
-    font-weight: 800;
-    font-size: 19.5px;
+    font-weight: 700;
+    font-size: 13px;
     color: #B36200;
     letter-spacing: 0.3px;
+    line-height: 1;
     white-space: nowrap;
 }}
 
@@ -1113,7 +1125,7 @@ for _k, _v in {"auth": None, "ai_cache": {}, "chat": [], "kpi_manual": {}}.items
     st.session_state.setdefault(_k, _v)
 
 ACCOUNTS = {
-    "ADMIN": {"password": ADMIN_PASS, "role": "Giám Đốc"},
+    "ADMIN": {"password": ADMIN_PASS, "role": "Giám Đốc.AM"},
     "USER": {"password": USER_PASS, "role": "Nhân Viên"},
 }
 
@@ -1145,7 +1157,7 @@ if st.session_state.auth is None:
     st.stop()
 
 AUTH = st.session_state.auth
-IS_ADMIN = AUTH["role"] == "Giám Đốc"
+IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2209,11 +2221,18 @@ with tab5:
 # TAB 7 — THI ĐUA GIAO THÀNH CÔNG THÁNG
 # ═══════════════════════════════════════════════════════════════════════
 with tab7:
+    # Dùng div thay cho h2: quy tắc chung "h1,h2,h3,h4 { color: xanh đậm !important }"
+    # sẽ đè lên màu trắng, khiến chữ xanh đậm chìm nghỉm trên nền xanh.
     st.markdown(f"""
     <div style="background:linear-gradient(120deg,{PRIMARY} 0%,#00B4D8 100%);
-                border-radius:10px;padding:18px 26px;margin-bottom:18px;">
-        <h2 style="color:#FFF !important;margin:0;font-size:33px;font-weight:900;
-                   text-transform:uppercase;">Bảng xếp hạng thi đua giao thành công tháng</h2>
+                border-radius:10px;padding:20px 26px;margin-bottom:18px;
+                box-shadow:0 3px 10px rgba(0,119,182,0.25);">
+        <div style="color:#FFFFFF;margin:0;font-size:33px;font-weight:900;line-height:1.2;
+                    text-transform:uppercase;letter-spacing:0.5px;
+                    text-shadow:0 1px 3px rgba(0,0,0,0.28);
+                    font-family:'Montserrat',sans-serif;">
+            Bảng xếp hạng thi đua giao thành công tháng
+        </div>
     </div>""", unsafe_allow_html=True)
 
     r1, r2 = st.columns([1.2, 2])
