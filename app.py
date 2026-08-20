@@ -300,10 +300,9 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
     right: 18px !important;
     z-index: 999999 !important;
     background: #FFF4E5 !important;
-    border: 2px solid {ACCENT} !important;
-    border-radius: 999px !important;
-    padding: 8px 20px !important;
-    box-shadow: 0 3px 10px rgba(255,140,0,0.28) !important;
+     border: 1px solid {ACCENT} !important;      /* 2px -> 1px */
+    padding: 4px 12px !important;                /* 8px 20px -> nhỏ lại */
+    box-shadow: 0 2px 6px rgba(255,140,0,0.20) !important;
 }}
 [data-testid="stStatusWidget"] button,
 [data-testid="stStatusWidget"] svg,
@@ -314,8 +313,8 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 [data-testid="stStatusWidget"]::after {{
     content: "Loading…";
     font-family: 'Montserrat', sans-serif;
-    font-weight: 800;
-    font-size: 19.5px;
+    font-weight: 700;                            /* 800 -> 700 cho nhẹ chữ */
+    font-size: 13px;                             /* 19.5px -> 13px */
     color: #B36200;
     letter-spacing: 0.3px;
     white-space: nowrap;
