@@ -1669,7 +1669,7 @@ with tab3:
                                     sub=f"đã qua {days_done}/{days_total} ngày"),
                         unsafe_allow_html=True)
         with e2:
-            st.markdown(metric_card("Dự phóng cuối tháng", fmt_money(forecast_dt), None,
+            st.markdown(metric_card("Dự kiến cuối tháng", fmt_money(forecast_dt), None,
                                     sub="theo tốc độ hiện tại", accent=True),
                         unsafe_allow_html=True)
         with e3:
