@@ -476,6 +476,12 @@ def fmt_money(v: float, full: bool = True) -> str:
 # 3. TẢI DỮ LIỆU TỪ 12 GOOGLE SHEETS
 # ═══════════════════════════════════════════════════════════════════════
 DATE_KEYS = [["ngay"], ["thoi gian"], ["date"]]
+# Các cột CÓ chữ "ngày" nhưng KHÔNG phải ngày phát sinh dữ liệu.
+# Sheet năng suất có cả "Ngày vào làm" đứng TRƯỚC cột "Thời gian"; nếu không loại trừ,
+# app sẽ lấy ngày vào làm (2018, 2020, 2022...) làm mốc thời gian và mọi so sánh
+# theo tháng đều sai.
+DATE_EXCLUDE = ["vao lam", "sinh", "nghi viec", "thu viec", "ky hop dong",
+                "bat dau", "ket thuc", "cap nhat", "tao"]
 # Sheet doanh thu dùng cột "Vùng" (giá trị TTB) thay vì "Bưu cục" — đã kiểm chứng
 # trực tiếp trong sheet. Thiếu từ khóa này thì mọi dòng bị gán "Chưa phân loại"
 # và lọc theo bưu cục sẽ luôn trả về 0.
@@ -538,7 +544,7 @@ def load_sheet(key: str) -> pd.DataFrame:
     if df.empty:
         return df
 
-    dcol = pick_col(df, DATE_KEYS)
+    dcol = pick_col(df, DATE_KEYS, exclude=DATE_EXCLUDE)
     bcol = pick_col(df, BC_KEYS)
     df["Ngày"] = parse_dates(df[dcol]) if dcol else pd.NaT
     df["Bưu Cục"] = df[bcol].astype(str).str.strip() if bcol else "Chưa phân loại"
@@ -2228,6 +2234,27 @@ with tab7:
 
     cur_td, thang_n = gom_thang(DF_NSGTC)
     prev_td, thang_n1 = gom_thang(DF_NS_PREV)
+
+    # Sheet tháng trước đang trỏ cố định vào tab "Năng Suất Tháng 07". Nếu tháng hiện tại
+    # đã sang tháng khác thì nó không còn là tháng liền kề, phải báo rõ thay vì âm thầm
+    # tính sai mức cải thiện.
+    if thang_n != "—" and thang_n1 != "—":
+        try:
+            m_now = pd.Period(f"{thang_n.split('/')[1]}-{thang_n.split('/')[0]}", freq="M")
+            m_prev = pd.Period(f"{thang_n1.split('/')[1]}-{thang_n1.split('/')[0]}", freq="M")
+            if (m_now - m_prev).n != 1:
+                st.warning(
+                    f"Sheet đối chiếu đang là tháng **{thang_n1}**, trong khi tháng hiện tại là "
+                    f"**{thang_n}** — cách nhau {(m_now - m_prev).n} tháng, không phải tháng liền kề. "
+                    "Mức cải thiện đang so sai kỳ. Hãy trỏ nguồn `ns_thang_truoc` trong SHEET_LINKS "
+                    "sang sheet của tháng liền trước.", icon="⚠️")
+        except Exception:  # noqa: BLE001
+            pass
+    elif thang_n1 == "—":
+        st.warning(
+            "Chưa đọc được dữ liệu tháng trước nên cột %GTC tháng trước đang bằng 0 và mức "
+            "cải thiện bị thổi phồng bằng đúng %GTC tháng này. Mở mục Chẩn đoán nguồn dữ liệu "
+            "ở tab Tổng quan để xem sheet 'Năng suất tháng trước' báo lỗi gì.", icon="⚠️")
 
     if cur_td.empty:
         note("Chưa đọc được dữ liệu năng suất tháng này. Mở mục Chẩn đoán nguồn dữ liệu "
