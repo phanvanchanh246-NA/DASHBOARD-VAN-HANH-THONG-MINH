@@ -291,32 +291,45 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .tag-warn {{ background: #FFF4E5; color: #B36200; }}
 .tag-ok {{ background: #E8F6EC; color: {SUCCESS}; }}
 
-/* ── Trạng thái đang xử lý ────────────────────────────────────────────
-   Streamlit hiện nút "Stop" ở góc phải trên khi đang chạy. Ẩn nút đó đi và
-   thay bằng nhãn "Loading" cho đỡ gây hiểu nhầm là nút bấm được. */
+/* ── Trạng thái đang xử lý ──────────────────────────────────────────── */
 [data-testid="stStatusWidget"] {{
     position: fixed !important;
-    top: 14px !important;
+    top: 12px !important;
     right: 18px !important;
     z-index: 999999 !important;
+
+    /* Ép thành hình chữ nhật, chữ căn giữa cả ngang lẫn dọc */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 130px !important;
+    height: 38px !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    line-height: 1 !important;
+
     background: #FFF4E5 !important;
-     border: 1px solid {ACCENT} !important;      /* 2px -> 1px */
-    padding: 4px 12px !important;                /* 8px 20px -> nhỏ lại */
-    box-shadow: 0 2px 6px rgba(255,140,0,0.20) !important;
+    border: 1px solid {ACCENT} !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
 }}
-[data-testid="stStatusWidget"] button,
-[data-testid="stStatusWidget"] svg,
-[data-testid="stStatusWidget"] label,
-[data-testid="stStatusWidget"] a {{
+
+/* Ẩn TẤT CẢ phần tử con. Trước đây chỉ ẩn button/svg/label nên các thẻ bọc
+   vẫn chiếm chiều cao, làm khung bị cao và chữ bị đẩy xuống đáy. */
+[data-testid="stStatusWidget"] * {{
     display: none !important;
 }}
+
 [data-testid="stStatusWidget"]::after {{
     content: "Loading…";
+    display: block !important;
     font-family: 'Montserrat', sans-serif;
-    font-weight: 700;                            /* 800 -> 700 cho nhẹ chữ */
-    font-size: 13px;                             /* 19.5px -> 13px */
+    font-weight: 700;
+    font-size: 13px;
     color: #B36200;
     letter-spacing: 0.3px;
+    line-height: 1;
     white-space: nowrap;
 }}
 
