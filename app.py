@@ -293,7 +293,7 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 
 /* ── Trạng thái đang xử lý ────────────────────────────────────────────
    Streamlit hiện nút "Stop" ở góc phải trên khi đang chạy. Ẩn nút đó đi và
-   thay bằng nhãn "Đang xử lý" cho đỡ gây hiểu nhầm là nút bấm được. */
+   thay bằng nhãn "Loading" cho đỡ gây hiểu nhầm là nút bấm được. */
 [data-testid="stStatusWidget"] {{
     position: fixed !important;
     top: 14px !important;
@@ -312,7 +312,7 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
     display: none !important;
 }}
 [data-testid="stStatusWidget"]::after {{
-    content: "Đang xử lý…";
+    content: "Loading…";
     font-family: 'Montserrat', sans-serif;
     font-weight: 800;
     font-size: 19.5px;
