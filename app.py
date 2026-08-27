@@ -10,7 +10,8 @@ Chạy trên Render:
     streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
 
 Biến môi trường (KHÔNG fix cứng key vào code):
-    GEMINI_API_KEY      — khóa Google Gemini
+    ANTHROPIC_API_KEY   — khóa Claude API (lấy ở console.anthropic.com)
+    CLAUDE_MODEL        — tùy chọn, mặc định claude-sonnet-5
     TELEGRAM_TOKEN      — token bot Telegram (tùy chọn)
     TELEGRAM_CHAT_ID    — id nhóm nhận báo cáo (tùy chọn)
     ADMIN_PASS          — mật khẩu tài khoản ADMIN (mặc định: ghn@admin)
@@ -35,11 +36,10 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 try:
-    from google import genai
-    from google.genai import types as genai_types
-    GENAI_AVAILABLE = True
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
 except ImportError:
-    GENAI_AVAILABLE = False
+    ANTHROPIC_AVAILABLE = False
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -64,13 +64,15 @@ LINE = "#E9ECEF"
 PRIMARY_SOFT = "#CFE8F5"
 
 # ── Khóa API lấy từ biến môi trường ────────────────────────────────────
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "ghn@admin").strip()
 USER_PASS = os.environ.get("USER_PASS", "ghn@user").strip()
 
-GEMINI_MODEL = "gemini-3.6-flash"
+# Model Claude. Đổi sang "claude-haiku-4-5" nếu muốn rẻ và nhanh hơn,
+# hoặc "claude-opus-5" nếu cần phân tích sâu hơn.
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5").strip()
 CACHE_TTL = 300
 
 # ── 12 nguồn dữ liệu Google Sheets ─────────────────────────────────────
@@ -987,33 +989,54 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# 6. AI GEMINI & TELEGRAM
+# 6. AI CLAUDE & TELEGRAM
 # ═══════════════════════════════════════════════════════════════════════
+SYSTEM_PROMPT = (
+    "Bạn là trợ lý phân tích dữ liệu vận hành của GHN, một công ty chuyển phát nhanh "
+    "tại Việt Nam. Luôn trả lời bằng tiếng Việt. "
+    "Chỉ dùng đúng số liệu được cung cấp, tuyệt đối không bịa số và không suy đoán. "
+    "Nếu thiếu dữ liệu cho phần nào thì nói rõ là chưa đủ dữ liệu. "
+    "Viết ngắn gọn, đi thẳng vào việc, tránh sáo rỗng."
+)
+
+
 @st.cache_resource
-def genai_client():
-    if not GENAI_AVAILABLE or not GEMINI_API_KEY:
+def claude_client():
+    """Tạo client Claude một lần rồi dùng lại cho cả phiên."""
+    if not ANTHROPIC_AVAILABLE or not ANTHROPIC_API_KEY:
         return None
     try:
-        return genai.Client(api_key=GEMINI_API_KEY)
+        return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     except Exception:  # noqa: BLE001
         return None
 
 
-def ask_ai(prompt: str) -> str:
-    if not GENAI_AVAILABLE:
-        return "Thiếu thư viện. Chạy: pip install google-genai"
-    client = genai_client()
+def ask_ai(prompt: str, max_tokens: int = 4096) -> str:
+    """Gọi Claude API. Trả về chuỗi tiếng Việt, hoặc thông báo lỗi dễ hiểu."""
+    if not ANTHROPIC_AVAILABLE:
+        return "Thiếu thư viện. Chạy: pip install anthropic"
+    client = claude_client()
     if client is None:
-        return "Chưa cấu hình GEMINI_API_KEY. Thêm biến môi trường rồi khởi động lại dịch vụ."
+        return ("Chưa cấu hình ANTHROPIC_API_KEY. Thêm biến môi trường trên máy chủ "
+                "rồi khởi động lại dịch vụ.")
     try:
-        resp = client.models.generate_content(
-            model=GEMINI_MODEL, contents=prompt,
-            config=genai_types.GenerateContentConfig(max_output_tokens=8192))
-        if not getattr(resp, "candidates", None):
-            return "AI không trả về nội dung. Thử rút gọn câu hỏi."
-        return (resp.text or "").strip() or "AI trả về nội dung rỗng."
+        msg = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        # Nội dung trả về là danh sách khối, cần ghép các khối văn bản lại.
+        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
+        return text or "Claude trả về nội dung rỗng. Thử rút gọn câu hỏi."
+    except anthropic.AuthenticationError:
+        return "Khóa ANTHROPIC_API_KEY không hợp lệ. Kiểm tra lại trong Console."
+    except anthropic.RateLimitError:
+        return "Đang bị giới hạn tần suất gọi API. Chờ một lát rồi bấm lại."
+    except anthropic.APIStatusError as exc:
+        return f"Claude API trả lỗi {exc.status_code}: {getattr(exc, 'message', '')}"
     except Exception as exc:  # noqa: BLE001
-        return f"Lỗi Google AI: {exc}"
+        return f"Lỗi khi gọi Claude: {exc}"
 
 
 def staff_id(name) -> str:
@@ -1764,7 +1787,7 @@ with tab3:
                                     sub=f"đã qua {days_done}/{days_total} ngày"),
                         unsafe_allow_html=True)
         with e2:
-            st.markdown(metric_card("Dự kiến cuối tháng", fmt_money(forecast_dt), None,
+            st.markdown(metric_card("Dự phóng cuối tháng", fmt_money(forecast_dt), None,
                                     sub="theo tốc độ hiện tại", accent=True),
                         unsafe_allow_html=True)
         with e3:
