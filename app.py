@@ -878,7 +878,7 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
     fig.update_yaxes(ticksuffix="%" if unit == "%" else "")
     fig.update_xaxes(tickformat="%d/%m")
     fig.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     if len(g) < 2:
         st.caption("Mới có 1 ngày dữ liệu nên chưa vẽ được đường xu hướng.")
 
@@ -902,7 +902,7 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
     fig.update_yaxes(title_text=bar_name, secondary_y=False)
     fig.update_yaxes(title_text=line_name, secondary_y=True, ticksuffix="%", showgrid=False)
     fig.update_xaxes(tickformat="%d/%m")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, title=""):
@@ -943,7 +943,7 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
                       height=max(300, 110 * len(g) + 130),
                       margin=dict(l=20, r=120, t=90, b=60),
                       showlegend=False, bargap=0.45)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
@@ -983,7 +983,7 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
                              "thickness": 0.85, "value": target}}))
     fig.update_layout(height=360, margin=dict(l=40, r=40, t=90, b=30),
                       showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1062,7 +1062,7 @@ def ai_advisor(key: str, tab_label: str, data_text: str, extra_note: str = ""):
     with c2:
         st.markdown("<div style='height:34px'></div>", unsafe_allow_html=True)
         run = st.button(f"PHÂN TÍCH {tab_label.upper()}", key=f"btn_adv_{key}",
-                        use_container_width=True)
+                        width="stretch")
 
     if run:
         with st.spinner("AI đang đọc số liệu và soạn nhận định..."):
@@ -1133,7 +1133,7 @@ ACCOUNTS = {
 def login_screen():
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
-        st.markdown(f"""
+        st.markdown("""
         <div class="ghn-banner" style="text-align:center;">
             <h1>Trung Tâm Vận Hành Chiến Lược</h1>
             <p>GIAO HÀNG NHANH — Hệ thống báo cáo nội bộ</p>
@@ -1142,7 +1142,7 @@ def login_screen():
         with st.form("login_form"):
             user_id = st.text_input("Mã nhân viên (ID)", placeholder="ADMIN hoặc USER")
             password = st.text_input("Mật khẩu", type="password")
-            submitted = st.form_submit_button("ĐĂNG NHẬP", use_container_width=True)
+            submitted = st.form_submit_button("ĐĂNG NHẬP", width="stretch")
             if submitted:
                 info = ACCOUNTS.get(user_id.strip().upper())
                 if info and password == info["password"]:
@@ -1199,7 +1199,7 @@ ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC)
 def today_vn() -> pd.Timestamp:
     """Ngày hiện tại theo giờ Việt Nam (UTC+7), không phụ thuộc múi giờ máy chủ.
     Render chạy theo UTC nên nếu dùng datetime.now() thì từ 17h VN trở đi sẽ lệch 1 ngày."""
-    return (pd.Timestamp.utcnow() + timedelta(hours=7)).normalize().tz_localize(None)
+    return (pd.Timestamp.now('UTC') + timedelta(hours=7)).normalize().tz_localize(None)
 
 
 TODAY_VN = today_vn()
@@ -1324,10 +1324,10 @@ with st.sidebar:
     st.markdown(f"### {AUTH['id']}")
     st.caption(f"Vai trò: {AUTH['role']}")
     st.divider()
-    if st.button("Làm mới dữ liệu", use_container_width=True):
+    if st.button("Làm mới dữ liệu", width="stretch"):
         st.cache_data.clear()
         st.rerun()
-    if st.button("Đăng xuất", use_container_width=True):
+    if st.button("Đăng xuất", width="stretch"):
         st.session_state.auth = None
         st.rerun()
     cau_hinh_loi = _kiem_tra_nguon()
@@ -1450,7 +1450,7 @@ with tab1:
         fig_ov.update_yaxes(ticksuffix="%")
         fig_ov.update_xaxes(tickformat="%d/%m")
         fig_ov.update_layout(height=480)
-        st.plotly_chart(fig_ov, use_container_width=True)
+        st.plotly_chart(fig_ov, width="stretch")
         if max(len(d) for _, d, _ in series) < 2:
             st.caption("Mới có 1 ngày dữ liệu — biểu đồ sẽ đầy đủ khi sheet tích lũy thêm ngày.")
     else:
@@ -1467,7 +1467,7 @@ with tab1:
                 f"{len(bad)}/{len(diag)} nguồn đang có vấn đề: "
                 + ", ".join(f"**{r['Sheet']}** ({r['Tình trạng']})" for _, r in bad.iterrows()),
                 icon="⚠️")
-        st.dataframe(diag, use_container_width=True, hide_index=True, height=460)
+        st.dataframe(diag, width="stretch", hide_index=True, height=460)
         st.download_button("TẢI CSV CHẨN ĐOÁN",
                            diag.to_csv(index=False).encode("utf-8-sig"),
                            "chan_doan_du_lieu.csv", "text/csv", key="dl_diag")
@@ -1584,7 +1584,7 @@ with tab2:
                                          marker_line_width=0))
             fig_ca1.update_layout(barmode="stack", title="Sản lượng theo ca", height=430)
             fig_ca1.update_xaxes(tickformat="%d/%m")
-            st.plotly_chart(fig_ca1, use_container_width=True)
+            st.plotly_chart(fig_ca1, width="stretch")
         with cD:
             fig_ca2 = go.Figure()
             for i, ca in enumerate(sorted(g_ca["Chiều"].unique())):
@@ -1596,7 +1596,7 @@ with tab2:
             fig_ca2.update_layout(title="%GTC theo ca", height=430)
             fig_ca2.update_yaxes(ticksuffix="%", range=[0, 100])
             fig_ca2.update_xaxes(tickformat="%d/%m")
-            st.plotly_chart(fig_ca2, use_container_width=True)
+            st.plotly_chart(fig_ca2, width="stretch")
     else:
         note("Chưa đọc được cột ca hoặc loại hàng trong sheet Sản lượng theo ca.")
 
@@ -1650,7 +1650,7 @@ with tab2:
             fig_lead.update_traces(line=dict(color=PRIMARY, width=3), marker=dict(size=7))
             fig_lead.update_xaxes(tickformat="%d/%m")
             fig_lead.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
-            st.plotly_chart(fig_lead, use_container_width=True)
+            st.plotly_chart(fig_lead, width="stretch")
         else:
             note("Chưa đọc được cột Leadtime.")
 
@@ -1658,7 +1658,7 @@ with tab2:
     if not s_gtc.empty:
         detail_vh = s_gtc.rename(columns={"Trọng Số": "Sản lượng", "Giá Trị": "%GTC"})[
             ["Ngày", "Bưu Cục", "Sản lượng", "%GTC"]].sort_values("Ngày", ascending=False)
-        st.dataframe(detail_vh, use_container_width=True, hide_index=True, height=300,
+        st.dataframe(detail_vh, width="stretch", hide_index=True, height=300,
                      column_config={
                          "Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
                          "Sản lượng": st.column_config.NumberColumn(format="%,d"),
@@ -1784,7 +1784,7 @@ with tab3:
         fig_kd.update_xaxes(tickformat="%d/%m")
         fig_kd.update_yaxes(tickformat=",.0f")
         fig_kd.update_layout(height=380, showlegend=False, margin=dict(t=90, b=70))
-        st.plotly_chart(fig_kd, use_container_width=True)
+        st.plotly_chart(fig_kd, width="stretch")
     else:
         note("Chưa có doanh thu trong khoảng đã chọn.")
 
@@ -1806,14 +1806,14 @@ with tab3:
             fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=380,
                                      showlegend=False,
                                      hovermode="closest")
-            st.plotly_chart(fig_funnel, use_container_width=True)
+            st.plotly_chart(fig_funnel, width="stretch")
         else:
             note("Chưa đọc được cột Trạng thái trong sheet phễu khách hàng.")
     with fB:
         if not pheu_df.empty and status_col:
             cnt = (pheu_df.groupby(status_col).size().reset_index(name="Số lượng")
                    .sort_values("Số lượng", ascending=False))
-            st.dataframe(cnt, use_container_width=True, hide_index=True, height=200)
+            st.dataframe(cnt, width="stretch", hide_index=True, height=200)
             st.markdown(metric_card("Tổng khách trong phễu", f"{len(pheu_df):,}", None,
                                     sub="tất cả trạng thái"), unsafe_allow_html=True)
         else:
@@ -1831,7 +1831,7 @@ with tab3:
             st.markdown(metric_card("Khách hàng tiềm năng chờ chốt", f"{len(tn_show):,}",
                                     None, accent=True, sub="đang trong danh sách"),
                         unsafe_allow_html=True)
-            st.dataframe(tn_show, use_container_width=True, hide_index=True, height=340)
+            st.dataframe(tn_show, width="stretch", hide_index=True, height=340)
             st.download_button("TẢI CSV DANH SÁCH",
                                tn_show.to_csv(index=False).encode("utf-8-sig"),
                                "khach_hang_tiem_nang.csv", "text/csv", key="dl_tn")
@@ -2035,7 +2035,7 @@ with tab4:
         fig_ns.update_yaxes(title_text="% GTC", secondary_y=True, ticksuffix="%",
                             showgrid=False, range=[0, 100])
         fig_ns.update_xaxes(tickformat="%d/%m")
-        st.plotly_chart(fig_ns, use_container_width=True)
+        st.plotly_chart(fig_ns, width="stretch")
     else:
         note("Chưa đủ dữ liệu gán và giao để vẽ biểu đồ.")
 
@@ -2051,7 +2051,7 @@ with tab4:
             fig_price.update_yaxes(title_text="VNĐ")
             fig_price.update_xaxes(tickformat="%d/%m")
             fig_price.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
-            st.plotly_chart(fig_price, use_container_width=True)
+            st.plotly_chart(fig_price, width="stretch")
         else:
             note("Chưa đọc được cột Đơn giá.")
     with cL:
@@ -2066,7 +2066,7 @@ with tab4:
             fig_pay.update_yaxes(title_text="VNĐ")
             fig_pay.update_xaxes(tickformat="%d/%m")
             fig_pay.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
-            st.plotly_chart(fig_pay, use_container_width=True)
+            st.plotly_chart(fig_pay, width="stretch")
         else:
             note("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
 
@@ -2079,7 +2079,7 @@ with tab4:
         rank.insert(0, "Hạng", [f"{medals[i]} {i+1}" if i < 3 else str(i + 1)
                                 for i in range(len(rank))])
         rank["Thưởng (≥80%)"] = np.where(rank["%GTC"] >= 80, "Đạt", "Chưa")
-        st.dataframe(rank, use_container_width=True, hide_index=True,
+        st.dataframe(rank, width="stretch", hide_index=True,
                      column_config={
                          col_gan: st.column_config.NumberColumn("Đơn gán", format="%,d"),
                          col_gtc: st.column_config.NumberColumn("Đơn GTC", format="%,d"),
@@ -2180,7 +2180,7 @@ with tab5:
         fig_kpi.update_yaxes(ticksuffix="%")
         fig_kpi.update_xaxes(tickformat="%d/%m")
         fig_kpi.update_layout(height=470)
-        st.plotly_chart(fig_kpi, use_container_width=True)
+        st.plotly_chart(fig_kpi, width="stretch")
 
         tbl_kpi = daily(sl(scope(M_GTC, bc_kpi), a_kpi, b_kpi)).rename(
             columns={"Giá Trị": "%GTC", "Trọng Số": "Sản lượng"})
@@ -2190,7 +2190,7 @@ with tab5:
             tbl_kpi = tbl_kpi.merge(d, on="Ngày", how="outer")
         tbl_kpi = tbl_kpi.sort_values("Ngày", ascending=False)
         tbl_kpi["Đạt mốc GTC"] = np.where(tbl_kpi["%GTC"] >= t_gtc, "Đạt", "Chưa")
-        st.dataframe(tbl_kpi, use_container_width=True, hide_index=True, height=320,
+        st.dataframe(tbl_kpi, width="stretch", hide_index=True, height=320,
                      column_config={
                          "Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
                          "Sản lượng": st.column_config.NumberColumn(format="%,d"),
@@ -2302,7 +2302,7 @@ with tab7:
         kho = kho[kho["Bưu Cục"].map(norm) == norm(bc_td)]
 
     with st.expander("Chẩn đoán nguồn dữ liệu thi đua", expanded=kho.empty):
-        st.dataframe(pd.DataFrame([log_now, log_prev]), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame([log_now, log_prev]), width="stretch", hide_index=True)
         if not kho.empty:
             ky_co = sorted(kho["Kỳ"].dropna().unique())
             st.markdown("**Các tháng gộp được:** "
@@ -2452,7 +2452,7 @@ with tab7:
                       "Tổng Điểm", "Đủ ĐK (≥80%)", "Hạng Thưởng", "Thưởng"]
         show = show[cols_order]
         st.dataframe(
-            show, use_container_width=True, hide_index=True, height=560,
+            show, width="stretch", hide_index=True, height=560,
             column_config={
                 "Xếp Hạng Tổng": st.column_config.NumberColumn("Hạng", format="%d", width="small"),
                 "Gán": st.column_config.NumberColumn("Tổng Đơn Gán", format="%,d"),
@@ -2486,7 +2486,7 @@ with tab7:
         fig_td.update_yaxes(automargin=True, tickfont=dict(size=18))
         fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
                              margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
-        st.plotly_chart(fig_td, use_container_width=True)
+        st.plotly_chart(fig_td, width="stretch")
 
         # ── Thể lệ ─────────────────────────────────────────────────────
         section("Thể lệ chương trình")
