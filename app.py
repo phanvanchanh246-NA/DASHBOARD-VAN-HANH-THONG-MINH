@@ -135,18 +135,18 @@ pio.templates["ghn"] = go.layout.Template(layout=dict(
     # t=90 chừa chỗ cho tiêu đề; b=120 chừa chỗ cho legend nằm dưới.
     margin=dict(l=70, r=30, t=90, b=120),
     title=dict(x=0, xanchor="left", y=0.97, yanchor="top",
-               font=dict(family="Montserrat", size=21, color=PRIMARY)),
+               font=dict(family="Montserrat, sans-serif", size=21, color=PRIMARY)),
     xaxis=dict(showgrid=False, linecolor=LINE, linewidth=1,
-               ticks="outside", tickcolor=LINE, tickfont=dict(size=24),
+               ticks="outside", tickcolor=LINE, tickfont=dict(size=20),
                automargin=True),
-    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=24),
+    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=20),
                automargin=True),
     # Legend nằm DƯỚI biểu đồ. Trước đây đặt y=1.02 (phía trên) nên đè lên tiêu đề.
     # orientation="h" giúp legend tự xuống dòng khi màn hình hẹp, không tràn chữ.
     legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0,
                 font=dict(size=18), itemwidth=30),
     hoverlabel=dict(bgcolor=PRIMARY, bordercolor=PRIMARY,
-                    font=dict(family="Montserrat", size=18, color="#FFFFFF")),
+                    font=dict(family="Montserrat, sans-serif", size=18, color="#FFFFFF")),
 ))
 pio.templates.default = "ghn"
 
@@ -925,7 +925,8 @@ def pay_period(ref: pd.Timestamp):
     return a, b, name, prev_a, prev_b, prev_name
 
 
-def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float | None = None):
+def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float | None = None,
+               y_title: str | None = None):
     if df is None or df.empty:
         note(f"Chưa có dữ liệu: {title}")
         return
@@ -936,8 +937,9 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
     if target:
         fig.add_hline(y=target, line_dash="dot", line_color=ACCENT, line_width=2,
                       annotation_text="Mốc KPI", annotation_position="top left")
-    fig.update_yaxes(ticksuffix="%" if unit == "%" else "")
-    fig.update_xaxes(tickformat="%d/%m")
+    fig.update_yaxes(ticksuffix="%" if unit == "%" else "",
+                     title_text=y_title or ("Tỷ lệ (%)" if unit == "%" else "Giá trị"))
+    fig.update_xaxes(tickformat="%d/%m", title_text=None)
     fig.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
     st.plotly_chart(fig, width="stretch")
     if len(g) < 2:
@@ -1026,15 +1028,15 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
         # domain rõ ràng để đồng hồ nằm giữa khung.
         domain={"x": [0, 1], "y": [0, 1]},
         number={"suffix": "%", "valueformat": ".2f",
-                "font": {"size": 46, "color": needle, "family": "Montserrat"}},
+                "font": {"size": 46, "color": needle, "family": "Montserrat, sans-serif"}},
         # "position": "bottom" xếp delta XUỐNG DƯỚI số chính. Mặc định Plotly đặt
         # delta nằm cạnh số, khiến cụm số bị đẩy lệch sang một bên tâm đồng hồ.
         delta={"reference": target, "suffix": " pp", "position": "bottom",
-               "font": {"size": 20, "family": "Montserrat"},
+               "font": {"size": 20, "family": "Montserrat, sans-serif"},
                "increasing": {"color": SUCCESS if higher_is_better else DANGER},
                "decreasing": {"color": DANGER if higher_is_better else SUCCESS}},
         title={"text": f"<b>{esc(title)}</b>",
-               "font": {"size": 22, "color": PRIMARY, "family": "Montserrat"},
+               "font": {"size": 22, "color": PRIMARY, "family": "Montserrat, sans-serif"},
                "align": "center"},
         gauge={"axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": MUTED},
                "bar": {"color": needle, "thickness": 0.3},
@@ -1739,7 +1741,8 @@ if tab2.open:
                 fig_lead = px.line(g_lead, x="Ngày", y="Giá Trị", markers=True,
                                    title="Leadtime theo ngày (giờ)")
                 fig_lead.update_traces(line=dict(color=PRIMARY, width=3), marker=dict(size=7))
-                fig_lead.update_xaxes(tickformat="%d/%m")
+                fig_lead.update_xaxes(tickformat="%d/%m", title_text=None)
+                fig_lead.update_yaxes(title_text="Giờ")
                 fig_lead.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
                 st.plotly_chart(fig_lead, width="stretch")
             else:
@@ -1873,8 +1876,8 @@ if tab3.open:
             fig_kd = px.bar(plot_kd, x="Ngày", y="Giá Trị", title="Doanh thu theo ngày")
             fig_kd.update_traces(marker_color=PRIMARY, marker_line_width=0,
                                  hovertemplate="%{x|%d/%m/%Y}<br>%{y:,.0f} đ<extra></extra>")
-            fig_kd.update_xaxes(tickformat="%d/%m")
-            fig_kd.update_yaxes(tickformat=",.0f")
+            fig_kd.update_xaxes(tickformat="%d/%m", title_text=None)
+            fig_kd.update_yaxes(tickformat=",.0f", title_text="Doanh thu (đ)")
             fig_kd.update_layout(height=380, showlegend=False, margin=dict(t=90, b=70))
             st.plotly_chart(fig_kd, width="stretch")
         else:
@@ -1891,11 +1894,15 @@ if tab3.open:
             if not pheu_df.empty and status_col:
                 cnt = (pheu_df.groupby(status_col).size().reset_index(name="Số lượng")
                        .sort_values("Số lượng", ascending=False))
+                top = float(cnt["Số lượng"].max()) or 1.0
+                labels = [f"{st_} · {n:,} ({n / top:.0%})"
+                          for st_, n in zip(cnt[status_col], cnt["Số lượng"])]
                 fig_funnel = go.Figure(go.Funnel(
-                    y=cnt[status_col], x=cnt["Số lượng"], textinfo="value+percent initial",
+                    y=labels, x=cnt["Số lượng"], textinfo="none",
                     marker=dict(color=[PRIMARY, "#00B4D8", ACCENT, SUCCESS, MUTED]),
                     connector=dict(line=dict(color=LINE, width=1))))
-                fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=380,
+                fig_funnel.update_yaxes(tickfont=dict(size=18))
+                fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=380, funnelgap=0.12, margin=dict(l=20, r=20),
                                          showlegend=False,
                                          hovermode="closest")
                 st.plotly_chart(fig_funnel, width="stretch")
@@ -1905,7 +1912,8 @@ if tab3.open:
             if not pheu_df.empty and status_col:
                 cnt = (pheu_df.groupby(status_col).size().reset_index(name="Số lượng")
                        .sort_values("Số lượng", ascending=False))
-                st.dataframe(cnt, width="stretch", hide_index=True, height=200)
+                st.dataframe(cnt, width="stretch", hide_index=True,
+                             height=min(72 + 54 * len(cnt), 460))
                 st.markdown(metric_card("Tổng khách trong phễu", f"{len(pheu_df):,}", None,
                                         sub="tất cả trạng thái"), unsafe_allow_html=True)
             else:
@@ -2078,17 +2086,23 @@ if tab4.open:
             return float(d[cols].apply(pd.to_numeric, errors="coerce").sum().sum())
 
         section("1. So sánh kỳ lương hiện tại với kỳ trước")
+        def ky_row(label, fn, fmt, d_cur, d_prev, suffix, decimals):
+            """Một dòng so sánh kỳ. Kỳ nào chưa có dữ liệu thì hiện '—' và không tính chênh lệch
+            (trước đây hiện 0 kèm mũi tên đỏ, dễ hiểu nhầm là tụt hẳn về 0)."""
+            has_cur = d_cur is not None and not d_cur.empty
+            has_prev = d_prev is not None and not d_prev.empty
+            v_cur = fn(d_cur) if has_cur else None
+            v_prev = fn(d_prev) if has_prev else None
+            delta = arrow_span(v_cur - v_prev, suffix, decimals) if has_cur and has_prev else "—"
+            return [label, fmt(v_cur) if has_cur else "—", fmt(v_prev) if has_prev else "—", delta]
+
         rows_ky = [
             # Đơn giá: giữ 3 chữ số thập phân, không làm tròn về số nguyên.
-            ["Đơn giá trung bình", f"{avg_price(L_cur):,.3f} đ", f"{avg_price(L_prev):,.3f} đ",
-             arrow_span(avg_price(L_cur) - avg_price(L_prev), " đ", 3)],
+            ky_row("Đơn giá trung bình", avg_price, lambda v: f"{v:,.3f} đ", L_cur, L_prev, " đ", 3),
             # Sản lượng GTC = Đơn GTC + Đơn GTBTT, lấy từ sheet Đơn Giá - Lương.
-            ["Sản lượng GTC", f"{sum_gtc(L_cur):,.0f} đơn", f"{sum_gtc(L_prev):,.0f} đơn",
-             arrow_span(sum_gtc(L_cur) - sum_gtc(L_prev), " đơn", 0)],
-            ["%GTC", f"{pct_gtc(G_cur):,.2f}%", f"{pct_gtc(G_prev):,.2f}%",
-             arrow_span(pct_gtc(G_cur) - pct_gtc(G_prev), " pp", 2)],
-            ["Tổng lương", fmt_money(total_salary(L_cur)), fmt_money(total_salary(L_prev)),
-             arrow_span(total_salary(L_cur) - total_salary(L_prev), " đ", 0)],
+            ky_row("Sản lượng GTC", sum_gtc, lambda v: f"{v:,.0f} đơn", L_cur, L_prev, " đơn", 0),
+            ky_row("%GTC", pct_gtc, lambda v: f"{v:,.2f}%", G_cur, G_prev, " pp", 2),
+            ky_row("Tổng lương", total_salary, fmt_money, L_cur, L_prev, " đ", 0),
         ]
         st.markdown(html_table(["Chỉ tiêu", cur_name, prev_name, "Chênh lệch"], rows_ky),
                     unsafe_allow_html=True)
