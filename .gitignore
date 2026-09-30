@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+.venv/
+vps_sync/config.yaml
+vps_sync/.env
+vps_sync/credentials.json
+vps_sync/state/
+vps_sync/downloads/

@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════════════════
+# CẤU HÌNH ĐỒNG BỘ BÁO CÁO — copy file này thành config.yaml rồi sửa.
+# Mật khẩu KHÔNG ghi ở đây: dùng ${TEN_BIEN} và khai trong file .env
+#
+# Cách tìm "selector" (địa chỉ nút bấm / bảng trên trang):
+#   Cách dễ nhất: trên máy tính cá nhân chạy
+#       playwright codegen https://trang-bao-cao-cong-ty
+#   rồi đăng nhập, bấm thử các nút → cửa sổ bên cạnh hiện sẵn selector để copy.
+#   Selector dạng chữ cũng dùng được: "text=Xuất Excel", "button:has-text('Tìm kiếm')"
+# ═══════════════════════════════════════════════════════════════════════
+
+login:
+  url: https://baocao.congty.vn/login            # trang đăng nhập
+  check_url: https://baocao.congty.vn/dashboard  # trang chỉ vào được khi đã đăng nhập
+  logged_in_selector: "text=Đăng xuất"           # thứ chỉ xuất hiện khi đã đăng nhập
+  steps:
+    - goto: https://baocao.congty.vn/login
+    - fill: { selector: "input[name='username']", value: "${BAO_CAO_USER}" }
+    - fill: { selector: "input[type='password']", value: "${BAO_CAO_PASS}" }
+    - click: "button[type='submit']"
+    - wait_for: "text=Đăng xuất"
+  # Nếu trang có OTP/captcha: xóa phần steps, chạy "python sync.py login --headed"
+  # trên máy có màn hình để đăng nhập tay, rồi copy state/session.json lên VPS.
+
+jobs:
+  # ── Loại 1: trang CÓ nút xuất file Excel/CSV ─────────────────────────
+  - name: gtc_tong
+    kind: download
+    steps:                                  # thao tác trước khi bấm Xuất
+      - goto: https://baocao.congty.vn/van-hanh/giao-thanh-cong
+      - click: "text=Hôm nay"
+      - click: "button:has-text('Tìm kiếm')"
+      - wait_for: "table tbody tr"
+    download_click: "button:has-text('Xuất Excel')"
+    read:
+      sheet: 0          # tab thứ mấy trong file Excel (0 = tab đầu), hoặc tên tab
+      header_row: 1     # dòng tiêu đề nằm ở dòng số mấy trong file
+    key_columns: ["Ngày", "Bưu cục"]        # cột xác định 1 dòng là duy nhất (bỏ trống = so cả dòng)
+    add_timestamp_column: "Thời điểm cập nhật"
+    target:
+      # Dán nguyên link tab Google Sheet (có gid=...) — giống link trong app.py
+      sheet_url: https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=1806026577
+
+  # ── Loại 2: trang KHÔNG xuất được, phải bôi đen + copy bảng ─────────
+  - name: tra_hang
+    kind: table
+    steps:
+      - goto: https://baocao.congty.vn/van-hanh/tra-hang
+      - wait_for: "table tbody tr"
+    table:
+      selector: "table"          # bảng thứ index (0 = bảng đầu tiên) khớp selector
+      index: 0
+      next_selector: "li.ant-pagination-next"   # nút "Trang sau" (bỏ dòng này nếu chỉ 1 trang)
+      max_pages: 20
+    columns: ["Mã đơn", "Bưu cục", "Ngày", "Lý do"]   # (tùy chọn) chỉ lấy các cột này
+    key_columns: ["Mã đơn"]
+    target:
+      sheet_url: https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=452321599
+
+  # ── Loại 2b: bảng dựng bằng <div> thay vì <table> ───────────────────
+  - name: kpi_div
+    enabled: false                  # đặt true để bật
+    kind: table
+    steps:
+      - goto: https://baocao.congty.vn/kpi
+      - wait_for: ".grid-row"
+    table:
+      grid:
+        row_selector: ".grid-row"
+        cell_selector: ".grid-cell"
+        header_selector: ".grid-header .grid-cell"   # bỏ dòng này nếu dòng đầu là tiêu đề
+    target:
+      sheet_url: https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=1344197558
+      # tab: "KPI tự động"   # hoặc ghi vào tab theo tên (tự tạo nếu chưa có)

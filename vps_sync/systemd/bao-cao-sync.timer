@@ -1,0 +1,14 @@
+[Unit]
+Description=Lich chay dong bo bao cao (theo ca, gio Viet Nam)
+
+[Timer]
+# Sửa giờ chạy ở đây. Mỗi dòng OnCalendar là một mốc.
+OnCalendar=*-*-* 07:05:00 Asia/Ho_Chi_Minh
+OnCalendar=*-*-* 12:05:00 Asia/Ho_Chi_Minh
+OnCalendar=*-*-* 17:05:00 Asia/Ho_Chi_Minh
+OnCalendar=*-*-* 22:05:00 Asia/Ho_Chi_Minh
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

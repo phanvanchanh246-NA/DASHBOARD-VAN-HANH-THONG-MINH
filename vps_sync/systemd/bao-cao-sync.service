@@ -1,0 +1,12 @@
+[Unit]
+Description=Dong bo bao cao cong ty -> Google Sheets
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__DIR__
+EnvironmentFile=__DIR__/.env
+ExecStart=__DIR__/.venv/bin/python __DIR__/sync.py
+TimeoutStartSec=30min
