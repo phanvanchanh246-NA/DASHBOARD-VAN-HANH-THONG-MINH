@@ -20,10 +20,14 @@ Biến môi trường (KHÔNG fix cứng key vào code):
 from __future__ import annotations
 
 import html as html_lib
+import io
 import os
 import re
+import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -31,6 +35,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import requests
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 import streamlit as st
 from plotly.subplots import make_subplots
 
@@ -373,12 +378,14 @@ def esc(x) -> str:
     return html_lib.escape(str(x))
 
 
+@lru_cache(maxsize=8192)
 def strip_accents(text: str) -> str:
     nfkd = unicodedata.normalize("NFD", str(text))
     out = "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
     return out.replace("đ", "d").replace("Đ", "D")
 
 
+@lru_cache(maxsize=8192)
 def norm(text: str) -> str:
     s = strip_accents(text).lower().replace("\xa0", " ")
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9% ]+", " ", s)).strip()
@@ -527,25 +534,32 @@ def parse_dates(raw: pd.Series) -> pd.Series:
     """
     s = raw.astype(str).str.strip().replace({"": None, "nan": None, "None": None})
 
-    candidates = []
-    # YY-MM-DD, ví dụ 26-07-03 = 03/07/2026
-    try:
-        candidates.append(pd.to_datetime(s, format="%y-%m-%d", errors="coerce"))
-    except Exception:  # noqa: BLE001
-        pass
-    # YYYY-MM-DD chuẩn ISO
-    try:
-        candidates.append(pd.to_datetime(s, format="%Y-%m-%d", errors="coerce"))
-    except Exception:  # noqa: BLE001
-        pass
-    candidates.append(pd.to_datetime(s, errors="coerce", dayfirst=False))
-    candidates.append(pd.to_datetime(s, errors="coerce", dayfirst=True))
-
-    best = candidates[0]
-    for c in candidates[1:]:
-        if c.notna().sum() > best.notna().sum():
+    target = int(s.notna().sum())
+    # Kiểu nào đọc được TOÀN BỘ dòng có giá trị thì dừng ngay (kết quả y hệt việc
+    # thử hết rồi chọn kiểu tốt nhất), tránh đường đọc từng ô chậm của dateutil.
+    attempts = (
+        lambda: pd.to_datetime(s, format="%y-%m-%d", errors="coerce"),   # 26-07-03 = 03/07/2026
+        lambda: pd.to_datetime(s, format="%Y-%m-%d", errors="coerce"),   # ISO chuẩn
+        lambda: pd.to_datetime(s, errors="coerce", dayfirst=False),
+        lambda: pd.to_datetime(s, errors="coerce", dayfirst=True),
+    )
+    best = None
+    for attempt in attempts:
+        try:
+            c = attempt()
+        except Exception:  # noqa: BLE001
+            continue
+        if best is None or c.notna().sum() > best.notna().sum():
             best = c
-    return best
+        if best.notna().sum() >= target:
+            break
+    return best if best is not None else pd.Series(pd.NaT, index=raw.index)
+
+
+def _parse_num_col(col: pd.Series) -> pd.Series:
+    """parse_num cho cả cột, chỉ parse mỗi giá trị khác nhau một lần."""
+    lookup = {u: parse_num(u) for u in col.dropna().unique()}
+    return col.map(lookup).astype(float)
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
@@ -555,7 +569,9 @@ def load_sheet(key: str) -> pd.DataFrame:
     Đọc toàn bộ sheet qua export CSV — không giới hạn range hay số dòng, nên khi
     Google Sheet có thêm ngày mới là dashboard tự lấy được, không phải sửa code.
     """
-    df = pd.read_csv(make_csv_url(SHEET_LINKS[key]))
+    resp = requests.get(make_csv_url(SHEET_LINKS[key]), timeout=30)
+    resp.raise_for_status()
+    df = pd.read_csv(io.BytesIO(resp.content))
     df.columns = df.columns.astype(str).str.strip().str.replace("\xa0", " ", regex=False)
     df = df.loc[:, ~df.columns.str.match(r"^Unnamed")]
     # Google Sheet có thể có hai cột cùng tên. Khi đó df["X"] trả về DataFrame chứ
@@ -576,7 +592,7 @@ def load_sheet(key: str) -> pd.DataFrame:
         if col in keep_text:
             df[col] = df[col].astype(str).str.strip()
         else:
-            df[col] = df[col].apply(parse_num)
+            df[col] = _parse_num_col(df[col])
     return df
 
 
@@ -586,15 +602,39 @@ def safe_load(key: str) -> pd.DataFrame:
     Trước đây lỗi bị nuốt hoàn toàn nên một nguồn khai báo thiếu link vẫn chỉ hiện
     'không đọc được', rất khó tìm ra. Nay lý do được lưu để bảng chẩn đoán hiển thị.
     """
+    errors = st.session_state.setdefault("load_errors", {})
     if key not in SHEET_LINKS:
-        st.session_state.setdefault("load_errors", {})[key] = (
-            f"Chưa khai báo link cho nguồn '{key}' trong SHEET_LINKS.")
+        errors[key] = f"Chưa khai báo link cho nguồn '{key}' trong SHEET_LINKS."
+        return pd.DataFrame()
+    if key in errors:          # prefetch_sheets đã thử và thất bại ở lượt chạy này
         return pd.DataFrame()
     try:
         return load_sheet(key)
     except Exception as exc:  # noqa: BLE001
-        st.session_state.setdefault("load_errors", {})[key] = f"{type(exc).__name__}: {exc}"
+        errors[key] = f"{type(exc).__name__}: {exc}"
         return pd.DataFrame()
+
+
+def prefetch_sheets() -> None:
+    """Tải song song mọi sheet chưa có trong cache (trước đây tải lần lượt từng cái).
+    Sheet đã cache thì trả về gần như tức thì; sheet lỗi được ghi vào load_errors."""
+    st.session_state["load_errors"] = {}
+    keys = [k for k in SHEET_LINKS]
+    ctx = get_script_run_ctx()
+
+    def _work(key: str):
+        if ctx is not None:
+            add_script_run_ctx(threading.current_thread(), ctx)
+        try:
+            load_sheet(key)
+            return key, None
+        except Exception as exc:  # noqa: BLE001
+            return key, f"{type(exc).__name__}: {exc}"
+
+    with ThreadPoolExecutor(max_workers=min(8, len(keys))) as pool:
+        for key, err in pool.map(_work, keys):
+            if err:
+                st.session_state["load_errors"][key] = err
 
 
 def rescale_pct(s) -> pd.Series:
@@ -1164,6 +1204,7 @@ IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
 # 8. NẠP TOÀN BỘ DỮ LIỆU
 # ═══════════════════════════════════════════════════════════════════════
 with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
+    prefetch_sheets()
     # Cột thật đã đối chiếu với sheet:
     #   File1_BuuCuc / File2_TTS: Ngày | Cấp Quản Lý | Bưu cục | Volume | % Gán | % GTC | % Chuyển trả | Leadtime
     #   File3_TheoCa            : thêm cột "Loại Hàng (Ca)"
