@@ -19,6 +19,7 @@ Biến môi trường (KHÔNG fix cứng key vào code):
 
 from __future__ import annotations
 
+import base64
 import html as html_lib
 import io
 import os
@@ -197,6 +198,26 @@ h1, h2, h3, h4 {{
     margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;
 }}
 .ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: 21px; font-weight: 600; margin: 0; }}
+.ghn-banner-row {{ display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }}
+.ghn-banner-text {{ flex: 1 1 320px; min-width: 0; }}
+.ghn-logo-plate {{
+    background: #FFFFFF; border-radius: 12px; padding: 10px 18px; flex: 0 0 auto;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+}}
+.ghn-logo-plate {{ max-width: 100%; box-sizing: border-box; }}
+.ghn-logo-plate img {{ height: 58px; width: auto; max-width: 100%; object-fit: contain; display: block; }}
+.ghn-banner-row h1 {{ font-size: 36px; }}
+.ghn-login-logo {{ text-align: center; margin: 40px 0 20px 0; }}
+.ghn-login-logo img {{ width: min(360px, 85%); height: auto; }}
+@media (max-width: 640px) {{
+    .block-container {{ padding-top: 3.2rem; }}
+    .ghn-banner {{ padding: 16px 16px; }}
+    .ghn-banner-row {{ gap: 14px; }}
+    .ghn-banner-row h1 {{ font-size: 26px; }}
+    .ghn-banner p {{ font-size: 16px; }}
+    .ghn-logo-plate {{ width: 100%; padding: 8px 12px; }}
+    .ghn-logo-plate img {{ height: auto; width: 100%; max-width: 260px; margin: 0 auto; }}
+}}
 
 /* ── Metric Card: nền trắng, đổ bóng, bo góc, viền trái xanh ────────── */
 .metric-card {{
@@ -1170,9 +1191,23 @@ ACCOUNTS = {
 }
 
 
+@lru_cache(maxsize=1)
+def logo_uri() -> str:
+    """Logo công ty dạng data-URI (nhúng thẳng vào HTML). Trả về '' nếu chưa có file."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.png")
+    try:
+        with open(path, "rb") as fh:
+            return "data:image/png;base64," + base64.b64encode(fh.read()).decode("ascii")
+    except OSError:
+        return ""
+
+
 def login_screen():
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
+        if logo_uri():
+            st.markdown(f'<div class="ghn-login-logo"><img src="{logo_uri()}" alt="GiaoHangNhanh"></div>',
+                        unsafe_allow_html=True)
         st.markdown("""
         <div class="ghn-banner" style="text-align:center;">
             <h1>Trung Tâm Vận Hành Chiến Lược</h1>
@@ -1353,12 +1388,18 @@ def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả") -> float:
 # ═══════════════════════════════════════════════════════════════════════
 # 9. BANNER & THANH BÊN
 # ═══════════════════════════════════════════════════════════════════════
+_logo_html = (f'<div class="ghn-logo-plate"><img src="{logo_uri()}" alt="GiaoHangNhanh"></div>'
+              if logo_uri() else "")
 st.markdown(f"""
 <div class="ghn-banner">
-    <h1>Trung Tâm Vận Hành Chiến Lược — GHN</h1>
-    <p>Hiệu suất thực · Quyết định nhanh · AI cố vấn &nbsp;|&nbsp;
-       {esc(AUTH['id'])} · {esc(AUTH['role'])} &nbsp;|&nbsp;
-       Dữ liệu đến {REF_DATE:%d/%m/%Y} · Đồng bộ {datetime.now():%H:%M}</p>
+  <div class="ghn-banner-row">{_logo_html}
+    <div class="ghn-banner-text">
+      <h1>Trung Tâm Vận Hành Chiến Lược — GHN</h1>
+      <p>Hiệu suất thực · Quyết định nhanh · AI cố vấn &nbsp;|&nbsp;
+         {esc(AUTH['id'])} · {esc(AUTH['role'])} &nbsp;|&nbsp;
+         Dữ liệu đến {REF_DATE:%d/%m/%Y} · Đồng bộ {datetime.now():%H:%M}</p>
+    </div>
+  </div>
 </div>""", unsafe_allow_html=True)
 
 with st.sidebar:
