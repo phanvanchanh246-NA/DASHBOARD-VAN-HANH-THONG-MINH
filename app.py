@@ -36,6 +36,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import requests
+from PIL import Image, ImageDraw, ImageFont
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 import streamlit as st
 from plotly.subplots import make_subplots
@@ -1050,6 +1051,141 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# 5b. XUẤT ẢNH BẢNG XẾP HẠNG (gửi nhân viên mỗi ngày)
+# ═══════════════════════════════════════════════════════════════════════
+_ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+
+
+def _rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _font(bold: bool, size: int):
+    """Phông Liberation Sans đi kèm trong assets/fonts (có đủ dấu tiếng Việt)."""
+    name = "LiberationSans-Bold.ttf" if bold else "LiberationSans-Regular.ttf"
+    try:
+        return ImageFont.truetype(os.path.join(_ASSETS, "fonts", name), size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def render_rank_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str,
+                      threshold: float = 80.0) -> bytes:
+    """Vẽ bảng xếp hạng thành ảnh PNG để gửi nhân viên.
+    `rows` gồm các cột: Hạng (int), Nhân viên, Đơn gán, Đơn GTC, %GTC."""
+    S = 2                                   # vẽ gấp đôi rồi giữ nguyên độ phân giải cho nét
+    W, PAD = 1400 * S, 40 * S
+    HEAD_H, TH_H, ROW_H, FOOT_H = 170 * S, 66 * S, 62 * S, 70 * S
+    n = len(rows)
+    H = HEAD_H + 24 * S + TH_H + ROW_H * n + FOOT_H
+
+    c_primary, c_accent = _rgb(PRIMARY), _rgb(ACCENT)
+    c_text, c_muted, c_line = _rgb(TEXT), _rgb(MUTED), _rgb(LINE)
+    c_ok, c_zebra = _rgb(SUCCESS), (247, 250, 252)
+    medal = {1: (255, 193, 7), 2: (173, 181, 189), 3: (205, 127, 50)}
+    medal_bg = {1: (255, 248, 225), 2: (245, 246, 247), 3: (252, 240, 230)}
+
+    img = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    f_title, f_sub = _font(True, 40 * S), _font(False, 25 * S)
+    f_th, f_td, f_tdb = _font(True, 22 * S), _font(False, 26 * S), _font(True, 26 * S)
+    f_small = _font(False, 21 * S)
+
+    def text_w(t, f):
+        return d.textlength(t, font=f)
+
+    def fit(t, f, max_w):
+        if text_w(t, f) <= max_w:
+            return t
+        while t and text_w(t + "…", f) > max_w:
+            t = t[:-1]
+        return t + "…"
+
+    # ── Tiêu đề: nền xanh, logo trên tấm trắng, dải cam dưới cùng ──
+    d.rectangle([0, 0, W, HEAD_H], fill=c_primary)
+    d.rectangle([0, HEAD_H - 8 * S, W, HEAD_H], fill=c_accent)
+    x_text = PAD
+    try:
+        logo = Image.open(os.path.join(_ASSETS, "logo.png")).convert("RGBA")
+        lh = 72 * S
+        logo = logo.resize((round(logo.width * lh / logo.height), lh), Image.LANCZOS)
+        px, py = 18 * S, 14 * S
+        plate_w, plate_h = logo.width + 2 * px, lh + 2 * py
+        y0 = (HEAD_H - 8 * S - plate_h) // 2
+        d.rounded_rectangle([PAD, y0, PAD + plate_w, y0 + plate_h], radius=14 * S, fill=(255, 255, 255))
+        img.paste(logo, (PAD + px, y0 + py), logo)
+        x_text = PAD + plate_w + 36 * S
+    except OSError:
+        pass
+    d.text((x_text, 38 * S), title, font=f_title, fill=(255, 255, 255))
+    d.text((x_text, 38 * S + 62 * S), subtitle, font=f_sub, fill=(225, 240, 250))
+
+    # ── Cột ──
+    x_rank, x_name = PAD + 14 * S, PAD + 130 * S
+    r_gan, r_gtc = 790 * S, 945 * S
+    x_bar, bar_w = 975 * S, 140 * S
+    x_pct_r = 1245 * S
+
+    y = HEAD_H + 24 * S
+    d.rectangle([PAD, y, W - PAD, y + TH_H], fill=(232, 243, 250))
+    mid = y + TH_H // 2
+    d.text((x_rank, mid), "HẠNG", font=f_th, fill=c_primary, anchor="lm")
+    d.text((x_name, mid), "NHÂN VIÊN", font=f_th, fill=c_primary, anchor="lm")
+    d.text((r_gan, mid), "ĐƠN GÁN", font=f_th, fill=c_primary, anchor="rm")
+    d.text((r_gtc, mid), "ĐƠN GTC", font=f_th, fill=c_primary, anchor="rm")
+    d.text((x_bar, mid), "%GTC", font=f_th, fill=c_primary, anchor="lm")
+    d.text((W - PAD - 14 * S, mid), "THƯỞNG", font=f_th, fill=c_primary, anchor="rm")
+    y += TH_H
+
+    # ── Dòng dữ liệu ──
+    for i, r in enumerate(rows.itertuples(index=False)):
+        rank_no = int(r[0])
+        top = rank_no in medal
+        bg = medal_bg[rank_no] if top else (c_zebra if i % 2 else (255, 255, 255))
+        d.rectangle([PAD, y, W - PAD, y + ROW_H], fill=bg)
+        d.line([PAD, y + ROW_H, W - PAD, y + ROW_H], fill=c_line, width=S)
+        cy = y + ROW_H // 2
+        if top:
+            rad = 21 * S
+            cx = x_rank + rad
+            d.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=medal[rank_no])
+            d.text((cx, cy), str(rank_no), font=f_tdb, fill=(255, 255, 255), anchor="mm")
+        else:
+            d.text((x_rank + 21 * S, cy), str(rank_no), font=f_td, fill=c_muted, anchor="mm")
+        name = fit(str(r[1]), f_tdb if top else f_td, r_gan - x_name - 150 * S)
+        d.text((x_name, cy), name, font=f_tdb if top else f_td, fill=c_text, anchor="lm")
+        d.text((r_gan, cy), f"{int(r[2]):,}", font=f_td, fill=c_text, anchor="rm")
+        d.text((r_gtc, cy), f"{int(r[3]):,}", font=f_td, fill=c_text, anchor="rm")
+        pct = float(r[4])
+        passed = pct >= threshold
+        bh = 16 * S
+        d.rounded_rectangle([x_bar, cy - bh // 2, x_bar + bar_w, cy + bh // 2], radius=bh // 2,
+                            fill=(233, 236, 239))
+        fill_w = max(bh, round(bar_w * min(max(pct, 0.0), 100.0) / 100.0))
+        d.rounded_rectangle([x_bar, cy - bh // 2, x_bar + fill_w, cy + bh // 2], radius=bh // 2,
+                            fill=c_ok if passed else c_accent)
+        d.text((x_pct_r, cy), f"{pct:.2f}%", font=f_tdb, fill=c_ok if passed else c_text, anchor="rm")
+        label = "Đạt" if passed else "Chưa"
+        pw, ph = 84 * S, 38 * S
+        px1 = W - PAD - 14 * S
+        d.rounded_rectangle([px1 - pw, cy - ph // 2, px1, cy + ph // 2], radius=ph // 2,
+                            fill=c_ok if passed else (233, 236, 239))
+        d.text((px1 - pw // 2, cy), label, font=_font(True, 22 * S),
+               fill=(255, 255, 255) if passed else c_muted, anchor="mm")
+        y += ROW_H
+
+    d.text((PAD, y + FOOT_H // 2), footer, font=f_small, fill=c_muted, anchor="lm")
+    d.rectangle([PAD, y + FOOT_H - 4 * S, W - PAD, y + FOOT_H - 1 * S], fill=c_primary)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # 6. AI GEMINI & TELEGRAM
 # ═══════════════════════════════════════════════════════════════════════
 @st.cache_resource
@@ -1427,7 +1563,7 @@ with st.sidebar:
 
 # Tab đang ẩn không vẽ widget nên Streamlit sẽ xóa giá trị bộ lọc của tab đó.
 # Ghi lại giá trị ở đầu mỗi lượt chạy để bộ lọc còn nguyên khi quay lại tab.
-_FILTER_KEY_PREFIXES = ("bc_", "quick_", "lh_", "nv_", "role_", "date_", "kpi_", "num_dt_")
+_FILTER_KEY_PREFIXES = ("bc_", "quick_", "lh_", "nv_", "role_", "date_", "kpi_", "num_dt_", "rank_")
 for _k in list(st.session_state.keys()):
     if isinstance(_k, str) and _k.startswith(_FILTER_KEY_PREFIXES):
         st.session_state[_k] = st.session_state[_k]
@@ -2192,8 +2328,33 @@ if tab4.open:
                              col_gtc: st.column_config.NumberColumn("Đơn GTC", format="%,d"),
                              "%GTC": st.column_config.ProgressColumn("%GTC", format="%.2f%%",
                                                                      min_value=0, max_value=100)})
-            st.download_button("TẢI CSV XẾP HẠNG", rank.to_csv(index=False).encode("utf-8-sig"),
-                               "xep_hang_nhan_vien.csv", "text/csv", key="dl_rank")
+            bt1, bt2, bt3 = st.columns([1.3, 1, 1])
+            with bt1:
+                n_pick = st.selectbox("Số nhân viên trong ảnh",
+                                      ["Tất cả", "Top 10", "Top 20", "Top 50"], key="rank_img_n")
+            top_n = {"Top 10": 10, "Top 20": 20, "Top 50": 50}.get(n_pick, len(rank))
+            img_rows = pd.DataFrame({
+                "Hạng": range(1, len(rank) + 1),
+                "Nhân viên": rank[nv_col_gtc].astype(str),
+                "Đơn gán": pd.to_numeric(rank[col_gan], errors="coerce").fillna(0),
+                "Đơn GTC": pd.to_numeric(rank[col_gtc], errors="coerce").fillna(0),
+                "%GTC": rank["%GTC"],
+            }).head(top_n)
+            png = render_rank_image(
+                img_rows, "BẢNG XẾP HẠNG NHÂN VIÊN THEO %GTC",
+                f"{a_ns:%d/%m/%Y} – {b_ns:%d/%m/%Y}  ·  Bưu cục: {bc_ns}",
+                f"Mốc thưởng: %GTC ≥ 80%  ·  {len(img_rows)}/{len(rank)} nhân viên  ·  "
+                f"Dữ liệu đến {REF_DATE:%d/%m/%Y}")
+            with bt2:
+                st.download_button("TẢI ẢNH BẢNG XẾP HẠNG", png,
+                                   f"xep_hang_gtc_{b_ns:%Y%m%d}.png", "image/png",
+                                   key="dl_rank_img", width="stretch")
+            with bt3:
+                st.download_button("TẢI CSV XẾP HẠNG", rank.to_csv(index=False).encode("utf-8-sig"),
+                                   "xep_hang_nhan_vien.csv", "text/csv", key="dl_rank",
+                                   width="stretch")
+            with st.expander("Xem trước ảnh"):
+                st.image(png, width="stretch")
 
         ai_advisor(
             "ns", "Năng suất & Lương",
