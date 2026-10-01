@@ -131,24 +131,24 @@ SALARY_PARTS = {
 # 1. GIAO DIỆN — CSS TÙY CHỈNH
 # ═══════════════════════════════════════════════════════════════════════
 pio.templates["ghn"] = go.layout.Template(layout=dict(
-    font=dict(family="Montserrat, sans-serif", size=18, color=TEXT),
+    font=dict(family="Montserrat, sans-serif", size=15, color=TEXT),
     plot_bgcolor=BG, paper_bgcolor=BG, hovermode="x unified",
     colorway=[PRIMARY, ACCENT, SUCCESS, DANGER, "#00B4D8", "#6C757D"],
     # t=90 chừa chỗ cho tiêu đề; b=120 chừa chỗ cho legend nằm dưới.
     margin=dict(l=70, r=30, t=90, b=120),
     title=dict(x=0, xanchor="left", y=0.97, yanchor="top",
-               font=dict(family="Montserrat, sans-serif", size=21, color=PRIMARY)),
+               font=dict(family="Montserrat, sans-serif", size=18, color=PRIMARY)),
     xaxis=dict(showgrid=False, linecolor=LINE, linewidth=1,
-               ticks="outside", tickcolor=LINE, tickfont=dict(size=20),
+               ticks="outside", tickcolor=LINE, tickfont=dict(size=17),
                automargin=True),
-    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=20),
+    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=17),
                automargin=True),
     # Legend nằm DƯỚI biểu đồ. Trước đây đặt y=1.02 (phía trên) nên đè lên tiêu đề.
     # orientation="h" giúp legend tự xuống dòng khi màn hình hẹp, không tràn chữ.
     legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0,
-                font=dict(size=18), itemwidth=30),
+                font=dict(size=15), itemwidth=30),
     hoverlabel=dict(bgcolor=PRIMARY, bordercolor=PRIMARY,
-                    font=dict(family="Montserrat, sans-serif", size=18, color="#FFFFFF")),
+                    font=dict(family="Montserrat, sans-serif", size=15, color="#FFFFFF")),
 ))
 pio.templates.default = "ghn"
 
@@ -160,7 +160,7 @@ st.markdown(f"""
    Streamlit dùng rem cho phần lớn thành phần của nó (ô chọn, nút, bảng,
    chat...). Đổi cỡ chữ gốc từ 16px lên 24px là mọi thứ đó tự phóng theo.
    Các cỡ px trong CSS bên dưới đã được nhân sẵn 1.5. */
-html {{ font-size: 24px; }}
+html {{ font-size: 20px; }}
 
 html, body, [class*="css"], .stApp {{
     font-family: 'Montserrat', sans-serif !important;
@@ -196,10 +196,10 @@ h1, h2, h3, h4 {{
     box-shadow: 0 4px 14px rgba(0,119,182,0.25);
 }}
 .ghn-banner h1 {{
-    color: #FFFFFF !important; font-size: 45px; font-weight: 900 !important;
+    color: #FFFFFF !important; font-size: 38.25px; font-weight: 900 !important;
     margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;
 }}
-.ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: 21px; font-weight: 600; margin: 0; }}
+.ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: 17.75px; font-weight: 600; margin: 0; }}
 .ghn-banner-row {{ display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }}
 .ghn-banner-text {{ flex: 1 1 320px; min-width: 0; }}
 .ghn-logo-plate {{
@@ -207,16 +207,16 @@ h1, h2, h3, h4 {{
     box-shadow: 0 2px 10px rgba(0,0,0,0.18);
 }}
 .ghn-logo-plate {{ max-width: 100%; box-sizing: border-box; }}
-.ghn-logo-plate img {{ height: 58px; width: auto; max-width: 100%; object-fit: contain; display: block; }}
-.ghn-banner-row h1 {{ font-size: 36px; }}
+.ghn-logo-plate img {{ height: 50px; width: auto; max-width: 100%; object-fit: contain; display: block; }}
+.ghn-banner-row h1 {{ font-size: 30.5px; }}
 .ghn-login-logo {{ text-align: center; margin: 40px 0 20px 0; }}
 .ghn-login-logo img {{ width: min(360px, 85%); height: auto; }}
 @media (max-width: 640px) {{
     .block-container {{ padding-top: 3.2rem; }}
     .ghn-banner {{ padding: 16px 16px; }}
     .ghn-banner-row {{ gap: 14px; }}
-    .ghn-banner-row h1 {{ font-size: 26px; }}
-    .ghn-banner p {{ font-size: 16px; }}
+    .ghn-banner-row h1 {{ font-size: 22px; }}
+    .ghn-banner p {{ font-size: 13.5px; }}
     .ghn-logo-plate {{ width: 100%; padding: 8px 12px; }}
     .ghn-logo-plate img {{ height: auto; width: 100%; max-width: 260px; margin: 0 auto; }}
 }}
@@ -232,15 +232,15 @@ h1, h2, h3, h4 {{
     height: 100%;
 }}
 .metric-card .m-title {{
-    font-size: 18.75px; font-weight: 700; color: {MUTED};
+    font-size: 16px; font-weight: 700; color: {MUTED};
     text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;
 }}
 .metric-card .m-value {{
-    font-size: 42px; font-weight: 900; color: {PRIMARY};
+    font-size: 35.75px; font-weight: 900; color: {PRIMARY};
     line-height: 1.1; font-variant-numeric: tabular-nums;
 }}
 .metric-card .m-value.accent {{ color: {ACCENT}; }}
-.metric-card .m-delta {{ font-size: 18.75px; font-weight: 700; margin-top: 6px; }}
+.metric-card .m-delta {{ font-size: 16px; font-weight: 700; margin-top: 6px; }}
 .metric-card .m-delta.up {{ color: {SUCCESS}; }}
 .metric-card .m-delta.down {{ color: {DANGER}; }}
 .metric-card .m-delta.flat {{ color: {MUTED}; }}
@@ -258,7 +258,7 @@ h1, h2, h3, h4 {{
 }}
 .stTabs [data-baseweb="tab"] p {{
     font-family: 'Montserrat', sans-serif !important;
-    font-size: 22.5px !important; font-weight: 700 !important; color: {MUTED} !important;
+    font-size: 19px !important; font-weight: 700 !important; color: {MUTED} !important;
 }}
 .stTabs [aria-selected="true"] {{
     background: #FFF6EC !important;
@@ -278,17 +278,17 @@ div[data-testid="stDataFrame"] thead tr th {{
     color: #FFFFFF !important;
     font-weight: 800 !important;
     font-family: 'Montserrat', sans-serif !important;
-    text-transform: uppercase; font-size: 18px !important;
+    text-transform: uppercase; font-size: 15.25px !important;
 }}
 div[data-testid="stDataFrame"] [role="columnheader"] {{
     background-color: {PRIMARY} !important; color: #FFFFFF !important; font-weight: 800 !important;
 }}
 
 /* ── Bảng HTML tự dựng ──────────────────────────────────────────────── */
-table.ghn-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 20.25px; }}
+table.ghn-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 17.25px; }}
 table.ghn-table thead th {{
     background: {PRIMARY}; color: #FFFFFF; font-weight: 800; text-transform: uppercase;
-    font-size: 18px; padding: 10px 12px; text-align: right; letter-spacing: 0.3px;
+    font-size: 15.25px; padding: 10px 12px; text-align: right; letter-spacing: 0.3px;
 }}
 table.ghn-table thead th:first-child, table.ghn-table td:first-child {{ text-align: left; }}
 table.ghn-table td {{
@@ -304,21 +304,21 @@ table.ghn-table td span.down {{ color: {DANGER}; font-weight: 800; }}
 /* ── Nút bấm màu cam ────────────────────────────────────────────────── */
 .stButton > button {{
     background: {ACCENT}; color: #FFFFFF; border: none; border-radius: 6px;
-    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 19.5px;
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 16.5px;
     text-transform: uppercase; letter-spacing: 0.4px; padding: 0.55rem 1.4rem;
     box-shadow: 0 2px 6px rgba(255,140,0,0.35);
 }}
 .stButton > button:hover {{ background: #E67E00; color: #FFFFFF; }}
 .stDownloadButton > button {{
     background: {BG}; color: {PRIMARY}; border: 2px solid {PRIMARY}; border-radius: 6px;
-    font-weight: 800; font-size: 18px; text-transform: uppercase;
+    font-weight: 800; font-size: 15.25px; text-transform: uppercase;
 }}
 .stDownloadButton > button:hover {{ background: {PRIMARY}; color: #FFFFFF; }}
 
 /* ── Nhãn ô nhập ────────────────────────────────────────────────────── */
 label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea label {{
     font-family: 'Montserrat', sans-serif !important;
-    font-weight: 700 !important; font-size: 18px !important;
+    font-weight: 700 !important; font-size: 15.25px !important;
     color: {PRIMARY} !important; text-transform: uppercase; letter-spacing: 0.3px;
 }}
 
@@ -326,12 +326,12 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .ghn-alert {{
     background: #FFF; border-left: 5px solid {ACCENT}; border-radius: 8px;
     padding: 16px 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    font-size: 21px; line-height: 1.7;
+    font-size: 17.75px; line-height: 1.7;
 }}
 .ghn-alert.danger {{ border-left-color: {DANGER}; }}
 .ghn-alert.ok {{ border-left-color: {SUCCESS}; }}
 .ghn-alert .a-tag {{
-    display: inline-block; font-size: 16.5px; font-weight: 800; text-transform: uppercase;
+    display: inline-block; font-size: 14px; font-weight: 800; text-transform: uppercase;
     padding: 2px 10px; border-radius: 12px; margin-right: 8px;
 }}
 .tag-danger {{ background: #FDECEE; color: {DANGER}; }}
@@ -373,7 +373,7 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
     display: block !important;
     font-family: 'Montserrat', sans-serif;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 11px;
     color: #B36200;
     letter-spacing: 0.3px;
     line-height: 1;
@@ -381,13 +381,13 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 }}
 
 .section-title {{
-    font-size: 25.5px; font-weight: 900; color: {PRIMARY};
+    font-size: 21.75px; font-weight: 900; color: {PRIMARY};
     text-transform: uppercase; letter-spacing: 0.3px;
     border-left: 5px solid {ACCENT}; padding-left: 12px; margin: 26px 0 12px;
 }}
 .note-box {{
     background: #F8FBFD; border: 1px dashed {PRIMARY_SOFT}; border-radius: 8px;
-    padding: 18px; text-align: center; color: {MUTED}; font-size: 19.5px; font-weight: 600;
+    padding: 18px; text-align: center; color: {MUTED}; font-size: 16.5px; font-weight: 600;
     margin: 10px 0;
 }}
 </style>
@@ -997,7 +997,7 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
     fig = go.Figure(go.Bar(x=g["r"], y=g["Bưu Cục"], orientation="h",
                            marker=dict(color=colors),
                            text=[f"{v:,.2f}%" for v in g["r"]], textposition="outside",
-                           textfont=dict(size=20), cliponaxis=False,
+                           textfont=dict(size=17), cliponaxis=False,
                            customdata=g["w"],
                            hovertemplate="%{y}<br>%{x:.2f}%<br>Sản lượng %{customdata:,.0f} đơn<extra></extra>"))
     if target:
@@ -1006,7 +1006,7 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
     # không bị cắt. Cỡ chữ đã phóng 1.5 lần nên nhãn chiếm nhiều chỗ hơn trước.
     x_max = float(max(g["r"].max(), target or 0))
     fig.update_xaxes(range=[0, x_max * 1.22], ticksuffix="%", automargin=True)
-    fig.update_yaxes(automargin=True, tickfont=dict(size=20))
+    fig.update_yaxes(automargin=True, tickfont=dict(size=17))
     fig.update_layout(title=title,
                       height=max(300, 110 * len(g) + 130),
                       margin=dict(l=20, r=120, t=90, b=60),
@@ -1033,15 +1033,15 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
         # domain rõ ràng để đồng hồ nằm giữa khung.
         domain={"x": [0, 1], "y": [0, 1]},
         number={"suffix": "%", "valueformat": ".2f",
-                "font": {"size": 46, "color": needle, "family": "Montserrat, sans-serif"}},
+                "font": {"size": 39, "color": needle, "family": "Montserrat, sans-serif"}},
         # "position": "bottom" xếp delta XUỐNG DƯỚI số chính. Mặc định Plotly đặt
         # delta nằm cạnh số, khiến cụm số bị đẩy lệch sang một bên tâm đồng hồ.
         delta={"reference": target, "suffix": " pp", "position": "bottom",
-               "font": {"size": 20, "family": "Montserrat, sans-serif"},
+               "font": {"size": 17, "family": "Montserrat, sans-serif"},
                "increasing": {"color": SUCCESS if higher_is_better else DANGER},
                "decreasing": {"color": DANGER if higher_is_better else SUCCESS}},
         title={"text": f"<b>{esc(title)}</b>",
-               "font": {"size": 22, "color": PRIMARY, "family": "Montserrat, sans-serif"},
+               "font": {"size": 19, "color": PRIMARY, "family": "Montserrat, sans-serif"},
                "align": "center"},
         gauge={"axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": MUTED},
                "bar": {"color": needle, "thickness": 0.3},
@@ -2041,7 +2041,7 @@ if tab3.open:
                     y=labels, x=cnt["Số lượng"], textinfo="none",
                     marker=dict(color=[PRIMARY, "#00B4D8", ACCENT, SUCCESS, MUTED]),
                     connector=dict(line=dict(color=LINE, width=1))))
-                fig_funnel.update_yaxes(tickfont=dict(size=18))
+                fig_funnel.update_yaxes(tickfont=dict(size=15))
                 fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=380, funnelgap=0.12, margin=dict(l=20, r=20),
                                          showlegend=False,
                                          hovermode="closest")
@@ -2504,7 +2504,7 @@ if tab7.open:
     <div style="background:linear-gradient(120deg,{PRIMARY} 0%,#00B4D8 100%);
                 border-radius:10px;padding:20px 26px;margin-bottom:18px;
                 box-shadow:0 3px 10px rgba(0,119,182,0.25);">
-        <div style="color:#FFFFFF;margin:0;font-size:33px;font-weight:900;line-height:1.2;
+        <div style="color:#FFFFFF;margin:0;font-size:28px;font-weight:900;line-height:1.2;
                     text-transform:uppercase;letter-spacing:0.5px;
                     text-shadow:0 1px 3px rgba(0,0,0,0.28);
                     font-family:'Montserrat',sans-serif;">
@@ -2698,11 +2698,11 @@ if tab7.open:
                                    else "dẫn đầu bảng xếp hạng")
                         st.markdown(f"""
                 <div class="metric-card" style="border-left-color:{SUCCESS};text-align:center;">
-                    <div style="font-size:42px;line-height:1;">{medals[hang_thuong]}</div>
+                    <div style="font-size:35.75px;line-height:1;">{medals[hang_thuong]}</div>
                     <div class="m-title" style="margin-top:6px;">{esc(staff_label(row['Nhân Viên']))}</div>
                     <div class="m-value">{row[col_now]:.2f}%</div>
                     <div class="m-delta up">{fmt_money(THUONG[hang_thuong])}</div>
-                    <div style="font-size:16.5px;color:{MUTED};margin-top:4px;">
+                    <div style="font-size:14px;color:{MUTED};margin-top:4px;">
                         {row['Gán']:,.0f} đơn gán · {row['GTC']:,.0f} đơn GTC · {ghi_chu}
                     </div>
                 </div>""", unsafe_allow_html=True)
@@ -2760,13 +2760,13 @@ if tab7.open:
                     marker=dict(color=[SUCCESS if v >= 0 else DANGER
                                        for v in chart_td["Tỷ Lệ Cải Thiện"]]),
                     text=[f"{v:+.2f}" for v in chart_td["Tỷ Lệ Cải Thiện"]],
-                    textposition="outside", textfont=dict(size=18), cliponaxis=False,
+                    textposition="outside", textfont=dict(size=15), cliponaxis=False,
                     hovertemplate="%{y}<br>Cải thiện %{x:+.2f} điểm phần trăm<extra></extra>"))
                 fig_td.add_vline(x=0, line_color=MUTED, line_width=1)
                 lim = float(max(abs(chart_td["Tỷ Lệ Cải Thiện"].min()),
                                 abs(chart_td["Tỷ Lệ Cải Thiện"].max()), 1)) * 1.35
                 fig_td.update_xaxes(range=[-lim, lim], title_text="Điểm phần trăm")
-                fig_td.update_yaxes(automargin=True, tickfont=dict(size=18))
+                fig_td.update_yaxes(automargin=True, tickfont=dict(size=15))
                 fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
                                      margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
                 st.plotly_chart(fig_td, width="stretch")
@@ -2947,6 +2947,6 @@ Trình bày bằng markdown, in đậm các con số quan trọng.""")
 
 st.markdown(
     f"<div style='margin-top:36px;padding-top:16px;border-top:2px solid {LINE};"
-    f"text-align:center;color:{MUTED};font-size: 18px;font-weight:600;'>"
+    f"text-align:center;color:{MUTED};font-size: 15.25px;font-weight:600;'>"
     f"TRUNG TÂM VẬN HÀNH CHIẾN LƯỢC — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
     unsafe_allow_html=True)
