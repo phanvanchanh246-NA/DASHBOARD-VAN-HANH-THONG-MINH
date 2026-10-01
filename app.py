@@ -26,6 +26,7 @@ import os
 import re
 import threading
 import unicodedata
+from collections import Counter
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -635,10 +636,35 @@ def safe_load(key: str) -> pd.DataFrame:
     if key in errors:          # prefetch_sheets đã thử và thất bại ở lượt chạy này
         return pd.DataFrame()
     try:
-        return load_sheet(key)
+        df = load_sheet(key)
     except Exception as exc:  # noqa: BLE001
         errors[key] = f"{type(exc).__name__}: {exc}"
         return pd.DataFrame()
+    if _BC_CANON and not df.empty and "Bưu Cục" in df.columns:
+        df = df.assign(**{"Bưu Cục": df["Bưu Cục"].map(lambda v: _BC_CANON.get(norm(v), v))})
+    return df
+
+
+# Tên bưu cục chuẩn: norm(tên) -> cách viết xuất hiện nhiều nhất trên mọi sheet.
+# Sheet hay gõ lệch ('(QBI) Đông Thuận' thiếu dấu, '( QBI ) Đồng Thuận' thừa dấu cách),
+# nếu không gộp thì bộ lọc hiện hai mục cho cùng một bưu cục.
+_BC_CANON: dict[str, str] = {}
+
+
+def build_bc_canon() -> None:
+    counts: dict[str, Counter] = {}
+    for key in SHEET_LINKS:
+        try:
+            df = load_sheet(key)
+        except Exception:  # noqa: BLE001  (lỗi đã ghi ở prefetch_sheets)
+            continue
+        if df.empty or "Bưu Cục" not in df.columns:
+            continue
+        for name, n in df["Bưu Cục"].astype(str).str.strip().value_counts().items():
+            if name and name.lower() != "nan":
+                counts.setdefault(norm(name), Counter())[name] += n
+    _BC_CANON.clear()
+    _BC_CANON.update({k: c.most_common(1)[0][0] for k, c in counts.items() if k})
 
 
 def prefetch_sheets() -> None:
@@ -661,6 +687,7 @@ def prefetch_sheets() -> None:
         for key, err in pool.map(_work, keys):
             if err:
                 st.session_state["load_errors"][key] = err
+    build_bc_canon()
 
 
 def rescale_pct(s) -> pd.Series:
@@ -714,7 +741,11 @@ def bc_options(*frames) -> list[str]:
             vals |= set(f["Bưu Cục"].dropna().astype(str).str.strip())
     vals = {v for v in vals
             if v and v.lower() not in ("nan", "chưa phân loại") and not is_total_row(v)}
-    return ["Tất cả"] + sorted(vals)
+    # Gộp các cách viết khác nhau của cùng một bưu cục (khác dấu, khác khoảng trắng).
+    by_key: dict[str, str] = {}
+    for v in sorted(vals):
+        by_key.setdefault(norm(v), _BC_CANON.get(norm(v), v))
+    return ["Tất cả"] + sorted(by_key.values())
 
 
 def sl(df: pd.DataFrame, a, b) -> pd.DataFrame:
