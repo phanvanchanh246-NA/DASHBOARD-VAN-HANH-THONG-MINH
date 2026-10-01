@@ -26,6 +26,7 @@ import os
 import re
 import threading
 import unicodedata
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -568,7 +569,10 @@ def parse_dates(raw: pd.Series) -> pd.Series:
     best = None
     for attempt in attempts:
         try:
-            c = attempt()
+            with warnings.catch_warnings():
+                # Cảnh báo "Could not infer format" là bình thường với sheet ghi ngày lẫn kiểu.
+                warnings.simplefilter("ignore", UserWarning)
+                c = attempt()
         except Exception:  # noqa: BLE001
             continue
         if best is None or c.notna().sum() > best.notna().sum():
@@ -2571,10 +2575,12 @@ if tab7.open:
         kho = pd.concat([raw_now, raw_prev], ignore_index=True)
         kho = kho.drop_duplicates(subset=["MaNV", "Kỳ", "Gán", "GTC"], keep="first")
 
+        co_du_lieu_goc = not kho.empty
         if bc_td != "Tất cả" and not kho.empty:
             kho = kho[kho["Bưu Cục"].map(norm) == norm(bc_td)]
+        chi_thieu_buu_cuc = co_du_lieu_goc and kho.empty
 
-        with st.expander("Chẩn đoán nguồn dữ liệu thi đua", expanded=kho.empty):
+        with st.expander("Chẩn đoán nguồn dữ liệu thi đua", expanded=kho.empty and not chi_thieu_buu_cuc):
             st.dataframe(pd.DataFrame([log_now, log_prev]), width="stretch", hide_index=True)
             if not kho.empty:
                 ky_co = sorted(kho["Kỳ"].dropna().unique())
@@ -2584,109 +2590,113 @@ if tab7.open:
             st.caption("Nếu cột nhân viên/gán/GTC báo KHÔNG TÌM THẤY thì sheet đó đặt tên cột khác "
                        "thường. Gửi mình tên cột thật để bổ sung từ khóa nhận diện.")
 
-        if kho.empty:
+        if chi_thieu_buu_cuc:
+            note(f"Bưu cục {bc_td} không có nhân viên nào trong dữ liệu năng suất. "
+                 "Chọn bưu cục khác hoặc 'Tất cả'.")
+        elif kho.empty:
             note("Chưa gộp được dữ liệu thi đua. Xem bảng chẩn đoán phía trên để biết nguồn nào lỗi.")
-            st.stop()
+        else:
+            # Không dùng st.stop(): lệnh đó dừng CẢ TRANG (mất chân trang, các phần sau),
+            # chứ không chỉ riêng tab này.
+            ky_list = sorted(kho["Kỳ"].dropna().unique())
+            ky_now = ky_list[-1]
+            ky_prev = ky_now - 1
 
-        ky_list = sorted(kho["Kỳ"].dropna().unique())
-        ky_now = ky_list[-1]
-        ky_prev = ky_now - 1
-
-        def gom_ky(ky) -> pd.DataFrame:
-            """Gộp theo nhân viên trong một tháng.
+            def gom_ky(ky) -> pd.DataFrame:
+                """Gộp theo nhân viên trong một tháng.
         %GTC tháng = tổng GTC / tổng gán, không lấy trung bình cộng %GTC từng ngày."""
-            d = kho[kho["Kỳ"] == ky]
-            if d.empty:
-                return pd.DataFrame(columns=["MaNV", "Nhân Viên", "Bưu Cục", "Gán", "GTC", "%GTC"])
-            g = d.groupby("MaNV", as_index=False).agg(
-                **{"Nhân Viên": ("Nhân Viên", lambda x: max(x.astype(str), key=len)),
-                   "Bưu Cục": ("Bưu Cục", "first"),
-                   "Gán": ("Gán", "sum"),
-                   "GTC": ("GTC", "sum")})
-            g["%GTC"] = np.where(g["Gán"] > 0, g["GTC"] / g["Gán"] * 100, 0.0)
-            return g
+                d = kho[kho["Kỳ"] == ky]
+                if d.empty:
+                    return pd.DataFrame(columns=["MaNV", "Nhân Viên", "Bưu Cục", "Gán", "GTC", "%GTC"])
+                g = d.groupby("MaNV", as_index=False).agg(
+                    **{"Nhân Viên": ("Nhân Viên", lambda x: max(x.astype(str), key=len)),
+                       "Bưu Cục": ("Bưu Cục", "first"),
+                       "Gán": ("Gán", "sum"),
+                       "GTC": ("GTC", "sum")})
+                g["%GTC"] = np.where(g["Gán"] > 0, g["GTC"] / g["Gán"] * 100, 0.0)
+                return g
 
-        cur_td = gom_ky(ky_now)
-        prev_td = gom_ky(ky_prev)
-        thang_n = f"{ky_now.month:02d}/{ky_now.year}"
-        thang_n1 = f"{ky_prev.month:02d}/{ky_prev.year}"
+            cur_td = gom_ky(ky_now)
+            prev_td = gom_ky(ky_prev)
+            thang_n = f"{ky_now.month:02d}/{ky_now.year}"
+            thang_n1 = f"{ky_prev.month:02d}/{ky_prev.year}"
 
-        if prev_td.empty:
-            st.warning(
-                f"Không có dữ liệu tháng **{thang_n1}** trong cả hai sheet, nên cột %GTC tháng trước "
-                f"đang bằng 0 và mức cải thiện bị thổi phồng đúng bằng %GTC tháng {thang_n}. "
-                "Xem bảng chẩn đoán phía trên để biết nguồn nào chưa đọc được.", icon="⚠️")
-        else:
-            khop = cur_td["MaNV"].isin(prev_td["MaNV"]).sum()
-            st.caption(f"Đối chiếu tháng {thang_n} với tháng {thang_n1} · "
-                       f"{len(cur_td)} nhân viên tháng này, {len(prev_td)} nhân viên tháng trước, "
-                       f"{khop} người khớp mã ở cả hai tháng.")
+            if prev_td.empty:
+                st.warning(
+                    f"Không có dữ liệu tháng **{thang_n1}** trong cả hai sheet, nên cột %GTC tháng trước "
+                    f"đang bằng 0 và mức cải thiện bị thổi phồng đúng bằng %GTC tháng {thang_n}. "
+                    "Xem bảng chẩn đoán phía trên để biết nguồn nào chưa đọc được.", icon="⚠️")
+            else:
+                khop = cur_td["MaNV"].isin(prev_td["MaNV"]).sum()
+                st.caption(f"Đối chiếu tháng {thang_n} với tháng {thang_n1} · "
+                           f"{len(cur_td)} nhân viên tháng này, {len(prev_td)} nhân viên tháng trước, "
+                           f"{khop} người khớp mã ở cả hai tháng.")
 
-        if cur_td.empty:
-            note("Chưa đọc được dữ liệu năng suất tháng này. Mở mục Chẩn đoán nguồn dữ liệu "
-                 "ở tab Tổng quan để xem lý do.")
-        else:
-            # ── Ghép hai tháng theo MÃ nhân viên ───────────────────────────
-            bxh = cur_td.merge(
-                prev_td[["MaNV", "%GTC"]].rename(columns={"%GTC": f"%GTC Tháng {thang_n1}"}),
-                on="MaNV", how="left")
-            col_now = f"%GTC Tháng {thang_n}"
-            col_prev = f"%GTC Tháng {thang_n1}"
-            bxh = bxh.rename(columns={"%GTC": col_now})
-            bxh[col_prev] = bxh[col_prev].fillna(0.0)
-            bxh["Tỷ Lệ Cải Thiện"] = bxh[col_now] - bxh[col_prev]
+            if cur_td.empty:
+                note("Chưa đọc được dữ liệu năng suất tháng này. Mở mục Chẩn đoán nguồn dữ liệu "
+                     "ở tab Tổng quan để xem lý do.")
+            else:
+                # ── Ghép hai tháng theo MÃ nhân viên ───────────────────────────
+                bxh = cur_td.merge(
+                    prev_td[["MaNV", "%GTC"]].rename(columns={"%GTC": f"%GTC Tháng {thang_n1}"}),
+                    on="MaNV", how="left")
+                col_now = f"%GTC Tháng {thang_n}"
+                col_prev = f"%GTC Tháng {thang_n1}"
+                bxh = bxh.rename(columns={"%GTC": col_now})
+                bxh[col_prev] = bxh[col_prev].fillna(0.0)
+                bxh["Tỷ Lệ Cải Thiện"] = bxh[col_now] - bxh[col_prev]
 
-            # ── Ba tiêu chí xếp hạng, hạng nhỏ là tốt ──────────────────────
-            bxh["Xếp Hạng Gán"] = bxh["Gán"].rank(ascending=False, method="min").astype(int)
-            bxh["Xếp Hạng %GTC"] = bxh[col_now].rank(ascending=False, method="min").astype(int)
-            bxh["Xếp Hạng Cải Thiện"] = bxh["Tỷ Lệ Cải Thiện"].rank(ascending=False,
-                                                                    method="min").astype(int)
-            bxh["Tổng Điểm"] = (bxh["Xếp Hạng Gán"] + bxh["Xếp Hạng %GTC"]
-                                + bxh["Xếp Hạng Cải Thiện"]) / 3
+                # ── Ba tiêu chí xếp hạng, hạng nhỏ là tốt ──────────────────────
+                bxh["Xếp Hạng Gán"] = bxh["Gán"].rank(ascending=False, method="min").astype(int)
+                bxh["Xếp Hạng %GTC"] = bxh[col_now].rank(ascending=False, method="min").astype(int)
+                bxh["Xếp Hạng Cải Thiện"] = bxh["Tỷ Lệ Cải Thiện"].rank(ascending=False,
+                                                                        method="min").astype(int)
+                bxh["Tổng Điểm"] = (bxh["Xếp Hạng Gán"] + bxh["Xếp Hạng %GTC"]
+                                    + bxh["Xếp Hạng Cải Thiện"]) / 3
 
-            # Tổng điểm càng NHỎ càng tốt. Hoà điểm thì ai %GTC cao hơn xếp trước.
-            bxh = bxh.sort_values(["Tổng Điểm", col_now], ascending=[True, False]).reset_index(drop=True)
-            bxh["Xếp Hạng Tổng"] = np.arange(1, len(bxh) + 1)
+                # Tổng điểm càng NHỎ càng tốt. Hoà điểm thì ai %GTC cao hơn xếp trước.
+                bxh = bxh.sort_values(["Tổng Điểm", col_now], ascending=[True, False]).reset_index(drop=True)
+                bxh["Xếp Hạng Tổng"] = np.arange(1, len(bxh) + 1)
 
-            # ── Điều kiện thưởng: %GTC tháng N từ 80% trở lên ──────────────
-            # Giải thưởng trao cho 3 người ĐỦ ĐIỀU KIỆN xếp cao nhất, không phải 3 hạng
-            # đầu bảng. Nếu hạng 1 không đạt mốc 80% thì suất thưởng chuyển xuống người
-            # đủ điều kiện kế tiếp.
-            bxh["Đủ ĐK (≥80%)"] = np.where(bxh[col_now] >= 80, "Đạt", "Chưa")
-            THUONG = {1: 1_000_000, 2: 500_000, 3: 300_000}
+                # ── Điều kiện thưởng: %GTC tháng N từ 80% trở lên ──────────────
+                # Giải thưởng trao cho 3 người ĐỦ ĐIỀU KIỆN xếp cao nhất, không phải 3 hạng
+                # đầu bảng. Nếu hạng 1 không đạt mốc 80% thì suất thưởng chuyển xuống người
+                # đủ điều kiện kế tiếp.
+                bxh["Đủ ĐK (≥80%)"] = np.where(bxh[col_now] >= 80, "Đạt", "Chưa")
+                THUONG = {1: 1_000_000, 2: 500_000, 3: 300_000}
 
-            du_dk = bxh[bxh[col_now] >= 80].sort_values("Xếp Hạng Tổng")
-            ma_thuong = {ma: pos for pos, ma in enumerate(du_dk["MaNV"].head(3), start=1)}
+                du_dk = bxh[bxh[col_now] >= 80].sort_values("Xếp Hạng Tổng")
+                ma_thuong = {ma: pos for pos, ma in enumerate(du_dk["MaNV"].head(3), start=1)}
 
-            bxh["Hạng Thưởng"] = bxh["MaNV"].map(ma_thuong)
-            bxh["Thưởng"] = [
-                fmt_money(THUONG[int(h)]) if pd.notna(h) else
-                ("Không đủ ĐK" if r <= 3 else "—")
-                for h, r in zip(bxh["Hạng Thưởng"], bxh["Xếp Hạng Tổng"])
-            ]
+                bxh["Hạng Thưởng"] = bxh["MaNV"].map(ma_thuong)
+                bxh["Thưởng"] = [
+                    fmt_money(THUONG[int(h)]) if pd.notna(h) else
+                    ("Không đủ ĐK" if r <= 3 else "—")
+                    for h, r in zip(bxh["Hạng Thưởng"], bxh["Xếp Hạng Tổng"])
+                ]
 
-            # ── Bục vinh danh ──────────────────────────────────────────────
-            section("Vinh danh top 3")
-            top3 = bxh[bxh["Hạng Thưởng"].notna()].sort_values("Hạng Thưởng")
-            medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-            pcols = st.columns(3)
-            if top3.empty:
-                with pcols[0]:
-                    st.markdown(f"""
+                # ── Bục vinh danh ──────────────────────────────────────────────
+                section("Vinh danh top 3")
+                top3 = bxh[bxh["Hạng Thưởng"].notna()].sort_values("Hạng Thưởng")
+                medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+                pcols = st.columns(3)
+                if top3.empty:
+                    with pcols[0]:
+                        st.markdown(f"""
                 <div class="metric-card" style="border-left-color:{DANGER};text-align:center;">
                     <div class="m-title">Chưa có ai đủ điều kiện</div>
                     <div class="m-value" style="color:{DANGER};">0</div>
                     <div class="m-delta down">Không ai đạt mốc %GTC 80% tháng {thang_n}</div>
                 </div>""", unsafe_allow_html=True)
-            for i, (_, row) in enumerate(top3.iterrows()):
-                with pcols[i]:
-                    hang_thuong = int(row["Hạng Thưởng"])
-                    hang_tong = int(row["Xếp Hạng Tổng"])
-                    # Nếu hạng thưởng khác hạng tổng thì nói rõ, tránh người xem thắc mắc
-                    # vì sao người xếp hạng 4 lại lên bục.
-                    ghi_chu = (f"hạng tổng {hang_tong}" if hang_thuong != hang_tong
-                               else "dẫn đầu bảng xếp hạng")
-                    st.markdown(f"""
+                for i, (_, row) in enumerate(top3.iterrows()):
+                    with pcols[i]:
+                        hang_thuong = int(row["Hạng Thưởng"])
+                        hang_tong = int(row["Xếp Hạng Tổng"])
+                        # Nếu hạng thưởng khác hạng tổng thì nói rõ, tránh người xem thắc mắc
+                        # vì sao người xếp hạng 4 lại lên bục.
+                        ghi_chu = (f"hạng tổng {hang_tong}" if hang_thuong != hang_tong
+                                   else "dẫn đầu bảng xếp hạng")
+                        st.markdown(f"""
                 <div class="metric-card" style="border-left-color:{SUCCESS};text-align:center;">
                     <div style="font-size:42px;line-height:1;">{medals[hang_thuong]}</div>
                     <div class="m-title" style="margin-top:6px;">{esc(staff_label(row['Nhân Viên']))}</div>
@@ -2697,75 +2707,75 @@ if tab7.open:
                     </div>
                 </div>""", unsafe_allow_html=True)
 
-            n_dat = int((bxh[col_now] >= 80).sum())
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.markdown(metric_card("Số nhân viên dự thi", f"{len(bxh):,}", None,
-                                        sub=f"tháng {thang_n}"), unsafe_allow_html=True)
-            with m2:
-                st.markdown(metric_card("Đạt điều kiện ≥80%", f"{n_dat:,}", None,
-                                        sub=f"trên tổng {len(bxh)} người",
-                                        accent=True), unsafe_allow_html=True)
-            with m3:
-                # Tổng thưởng = cộng đúng các suất đã trao (theo Hạng Thưởng), không
-                # cộng theo hạng tổng vì hạng tổng có thể rơi vào người chưa đủ điều kiện.
-                tong_thuong = sum(THUONG[int(h)] for h in bxh["Hạng Thưởng"].dropna())
-                st.markdown(metric_card("Tổng tiền thưởng phải chi", fmt_money(tong_thuong), None,
-                                        sub="theo kết quả hiện tại"), unsafe_allow_html=True)
+                n_dat = int((bxh[col_now] >= 80).sum())
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.markdown(metric_card("Số nhân viên dự thi", f"{len(bxh):,}", None,
+                                            sub=f"tháng {thang_n}"), unsafe_allow_html=True)
+                with m2:
+                    st.markdown(metric_card("Đạt điều kiện ≥80%", f"{n_dat:,}", None,
+                                            sub=f"trên tổng {len(bxh)} người",
+                                            accent=True), unsafe_allow_html=True)
+                with m3:
+                    # Tổng thưởng = cộng đúng các suất đã trao (theo Hạng Thưởng), không
+                    # cộng theo hạng tổng vì hạng tổng có thể rơi vào người chưa đủ điều kiện.
+                    tong_thuong = sum(THUONG[int(h)] for h in bxh["Hạng Thưởng"].dropna())
+                    st.markdown(metric_card("Tổng tiền thưởng phải chi", fmt_money(tong_thuong), None,
+                                            sub="theo kết quả hiện tại"), unsafe_allow_html=True)
 
-            # ── Bảng xếp hạng đầy đủ ───────────────────────────────────────
-            section("Bảng xếp hạng chi tiết")
-            show = bxh.copy()
-            show["Nhân Viên"] = show["Nhân Viên"].map(staff_label)
-            show["Hạng Thưởng"] = show["Hạng Thưởng"].map(
-                lambda h: f"{medals[int(h)]} {int(h)}" if pd.notna(h) else "—")
-            cols_order = ["Xếp Hạng Tổng", "Nhân Viên", "Bưu Cục", "Gán", "GTC",
-                          col_now, col_prev, "Tỷ Lệ Cải Thiện",
-                          "Xếp Hạng Gán", "Xếp Hạng %GTC", "Xếp Hạng Cải Thiện",
-                          "Tổng Điểm", "Đủ ĐK (≥80%)", "Hạng Thưởng", "Thưởng"]
-            show = show[cols_order]
-            st.dataframe(
-                show, width="stretch", hide_index=True, height=560,
-                column_config={
-                    "Xếp Hạng Tổng": st.column_config.NumberColumn("Hạng", format="%d", width="small"),
-                    "Gán": st.column_config.NumberColumn("Tổng Đơn Gán", format="%,d"),
-                    "GTC": st.column_config.NumberColumn("Tổng Đơn GTC", format="%,d"),
-                    col_now: st.column_config.NumberColumn(col_now, format="%.2f%%"),
-                    col_prev: st.column_config.NumberColumn(col_prev, format="%.2f%%"),
-                    "Tỷ Lệ Cải Thiện": st.column_config.NumberColumn("Cải Thiện (pp)", format="%+.2f"),
-                    "Tổng Điểm": st.column_config.NumberColumn("Tổng Điểm", format="%.2f"),
-                })
-            st.download_button("TẢI CSV BẢNG XẾP HẠNG",
-                               show.to_csv(index=False).encode("utf-8-sig"),
-                               f"thi_dua_thang_{thang_n.replace('/', '_')}.csv", "text/csv",
-                               key="dl_td")
+                # ── Bảng xếp hạng đầy đủ ───────────────────────────────────────
+                section("Bảng xếp hạng chi tiết")
+                show = bxh.copy()
+                show["Nhân Viên"] = show["Nhân Viên"].map(staff_label)
+                show["Hạng Thưởng"] = show["Hạng Thưởng"].map(
+                    lambda h: f"{medals[int(h)]} {int(h)}" if pd.notna(h) else "—")
+                cols_order = ["Xếp Hạng Tổng", "Nhân Viên", "Bưu Cục", "Gán", "GTC",
+                              col_now, col_prev, "Tỷ Lệ Cải Thiện",
+                              "Xếp Hạng Gán", "Xếp Hạng %GTC", "Xếp Hạng Cải Thiện",
+                              "Tổng Điểm", "Đủ ĐK (≥80%)", "Hạng Thưởng", "Thưởng"]
+                show = show[cols_order]
+                st.dataframe(
+                    show, width="stretch", hide_index=True, height=560,
+                    column_config={
+                        "Xếp Hạng Tổng": st.column_config.NumberColumn("Hạng", format="%d", width="small"),
+                        "Gán": st.column_config.NumberColumn("Tổng Đơn Gán", format="%,d"),
+                        "GTC": st.column_config.NumberColumn("Tổng Đơn GTC", format="%,d"),
+                        col_now: st.column_config.NumberColumn(col_now, format="%.2f%%"),
+                        col_prev: st.column_config.NumberColumn(col_prev, format="%.2f%%"),
+                        "Tỷ Lệ Cải Thiện": st.column_config.NumberColumn("Cải Thiện (pp)", format="%+.2f"),
+                        "Tổng Điểm": st.column_config.NumberColumn("Tổng Điểm", format="%.2f"),
+                    })
+                st.download_button("TẢI CSV BẢNG XẾP HẠNG",
+                                   show.to_csv(index=False).encode("utf-8-sig"),
+                                   f"thi_dua_thang_{thang_n.replace('/', '_')}.csv", "text/csv",
+                                   key="dl_td")
 
-            # ── Biểu đồ cải thiện ──────────────────────────────────────────
-            section("Mức cải thiện %GTC so với tháng trước")
-            chart_td = bxh.sort_values("Tỷ Lệ Cải Thiện")
-            fig_td = go.Figure(go.Bar(
-                x=chart_td["Tỷ Lệ Cải Thiện"],
-                y=chart_td["Nhân Viên"].map(staff_label),
-                orientation="h",
-                marker=dict(color=[SUCCESS if v >= 0 else DANGER
-                                   for v in chart_td["Tỷ Lệ Cải Thiện"]]),
-                text=[f"{v:+.2f}" for v in chart_td["Tỷ Lệ Cải Thiện"]],
-                textposition="outside", textfont=dict(size=18), cliponaxis=False,
-                hovertemplate="%{y}<br>Cải thiện %{x:+.2f} điểm phần trăm<extra></extra>"))
-            fig_td.add_vline(x=0, line_color=MUTED, line_width=1)
-            lim = float(max(abs(chart_td["Tỷ Lệ Cải Thiện"].min()),
-                            abs(chart_td["Tỷ Lệ Cải Thiện"].max()), 1)) * 1.35
-            fig_td.update_xaxes(range=[-lim, lim], title_text="Điểm phần trăm")
-            fig_td.update_yaxes(automargin=True, tickfont=dict(size=18))
-            fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
-                                 margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
-            st.plotly_chart(fig_td, width="stretch")
+                # ── Biểu đồ cải thiện ──────────────────────────────────────────
+                section("Mức cải thiện %GTC so với tháng trước")
+                chart_td = bxh.sort_values("Tỷ Lệ Cải Thiện")
+                fig_td = go.Figure(go.Bar(
+                    x=chart_td["Tỷ Lệ Cải Thiện"],
+                    y=chart_td["Nhân Viên"].map(staff_label),
+                    orientation="h",
+                    marker=dict(color=[SUCCESS if v >= 0 else DANGER
+                                       for v in chart_td["Tỷ Lệ Cải Thiện"]]),
+                    text=[f"{v:+.2f}" for v in chart_td["Tỷ Lệ Cải Thiện"]],
+                    textposition="outside", textfont=dict(size=18), cliponaxis=False,
+                    hovertemplate="%{y}<br>Cải thiện %{x:+.2f} điểm phần trăm<extra></extra>"))
+                fig_td.add_vline(x=0, line_color=MUTED, line_width=1)
+                lim = float(max(abs(chart_td["Tỷ Lệ Cải Thiện"].min()),
+                                abs(chart_td["Tỷ Lệ Cải Thiện"].max()), 1)) * 1.35
+                fig_td.update_xaxes(range=[-lim, lim], title_text="Điểm phần trăm")
+                fig_td.update_yaxes(automargin=True, tickfont=dict(size=18))
+                fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
+                                     margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
+                st.plotly_chart(fig_td, width="stretch")
 
-            # ── Thể lệ ─────────────────────────────────────────────────────
-            section("Thể lệ chương trình")
-            c_left, c_right = st.columns(2)
-            with c_left:
-                st.markdown(f"""
+                # ── Thể lệ ─────────────────────────────────────────────────────
+                section("Thể lệ chương trình")
+                c_left, c_right = st.columns(2)
+                with c_left:
+                    st.markdown(f"""
             <div class="ghn-alert">
             <b>CƠ CẤU THƯỞNG HÀNG THÁNG</b><br><br>
             🥇 Hạng 1 — <b>{fmt_money(1_000_000)}</b><br>
@@ -2776,8 +2786,8 @@ if tab7.open:
             Giải trao cho <b>3 người đủ điều kiện xếp cao nhất</b>. Nếu người dẫn đầu bảng
             không đạt mốc 80% thì suất thưởng chuyển xuống người đủ điều kiện kế tiếp.
             </div>""", unsafe_allow_html=True)
-            with c_right:
-                st.markdown(f"""
+                with c_right:
+                    st.markdown(f"""
             <div class="ghn-alert">
             <b>CÁCH TÍNH XẾP HẠNG</b><br><br>
             Xếp hạng riêng theo 3 tiêu chí, người tốt nhất mỗi tiêu chí được hạng 1:<br>
@@ -2789,22 +2799,22 @@ if tab7.open:
             Nếu tổng điểm bằng nhau, ai có <b>%GTC cao hơn</b> xếp trước.
             </div>""", unsafe_allow_html=True)
 
-            # ── Cố vấn AI ──────────────────────────────────────────────────
-            top_txt = "\n".join(
-                f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
-                f"({r['Bưu Cục']}) — gán {r['Gán']:,.0f}, GTC {r['GTC']:,.0f}, "
-                f"%GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} pp, "
-                f"tổng điểm {r['Tổng Điểm']:.2f}, "
-                f"{'ĐƯỢC THƯỞNG hạng ' + str(int(r['Hạng Thưởng'])) if pd.notna(r['Hạng Thưởng']) else ('đủ điều kiện nhưng ngoài top 3' if r[col_now] >= 80 else 'CHƯA đủ điều kiện 80%')}"
-                for _, r in bxh.head(10).iterrows())
-            cuoi_txt = "\n".join(
-                f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
-                f"— %GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} pp"
-                for _, r in bxh.tail(5).iterrows())
+                # ── Cố vấn AI ──────────────────────────────────────────────────
+                top_txt = "\n".join(
+                    f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
+                    f"({r['Bưu Cục']}) — gán {r['Gán']:,.0f}, GTC {r['GTC']:,.0f}, "
+                    f"%GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} pp, "
+                    f"tổng điểm {r['Tổng Điểm']:.2f}, "
+                    f"{'ĐƯỢC THƯỞNG hạng ' + str(int(r['Hạng Thưởng'])) if pd.notna(r['Hạng Thưởng']) else ('đủ điều kiện nhưng ngoài top 3' if r[col_now] >= 80 else 'CHƯA đủ điều kiện 80%')}"
+                    for _, r in bxh.head(10).iterrows())
+                cuoi_txt = "\n".join(
+                    f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
+                    f"— %GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} pp"
+                    for _, r in bxh.tail(5).iterrows())
 
-            ai_advisor(
-                "td", "Thi đua",
-                f"""Bảng xếp hạng thi đua giao thành công tháng {thang_n}, so với tháng {thang_n1}.
+                ai_advisor(
+                    "td", "Thi đua",
+                    f"""Bảng xếp hạng thi đua giao thành công tháng {thang_n}, so với tháng {thang_n1}.
 Phạm vi: {bc_td}. Tổng {len(bxh)} nhân viên dự thi, {n_dat} người đạt mốc %GTC từ 80%.
 
 TOP 10:
@@ -2814,13 +2824,13 @@ NHÓM CUỐI BẢNG:
 {cuoi_txt}
 
 Tổng tiền thưởng phải chi theo kết quả hiện tại: {fmt_money(tong_thuong)}.""",
-                extra_note="Cơ cấu thưởng: 1.000.000 đ, 500.000 đ và 300.000 đ trao cho BA NGƯỜI "
-                           "ĐỦ ĐIỀU KIỆN (%GTC tháng từ 80% trở lên) xếp cao nhất. Nếu người dẫn đầu "
-                           "bảng không đạt mốc 80% thì suất thưởng chuyển xuống người kế tiếp đủ điều kiện. "
-                           "Xếp hạng dựa trên trung bình thứ hạng của 3 tiêu chí: số đơn gán, "
-                           "tỷ lệ GTC, và mức cải thiện so với tháng trước. Tổng điểm càng nhỏ càng tốt. "
-                           "Hãy nêu rõ ai xứng đáng tuyên dương, ai đang tụt hạng cần kèm cặp, "
-                           "và có trường hợp nào xếp hạng cao nhưng trượt điều kiện 80% không.")
+                    extra_note="Cơ cấu thưởng: 1.000.000 đ, 500.000 đ và 300.000 đ trao cho BA NGƯỜI "
+                               "ĐỦ ĐIỀU KIỆN (%GTC tháng từ 80% trở lên) xếp cao nhất. Nếu người dẫn đầu "
+                               "bảng không đạt mốc 80% thì suất thưởng chuyển xuống người kế tiếp đủ điều kiện. "
+                               "Xếp hạng dựa trên trung bình thứ hạng của 3 tiêu chí: số đơn gán, "
+                               "tỷ lệ GTC, và mức cải thiện so với tháng trước. Tổng điểm càng nhỏ càng tốt. "
+                               "Hãy nêu rõ ai xứng đáng tuyên dương, ai đang tụt hạng cần kèm cặp, "
+                               "và có trường hợp nào xếp hạng cao nhưng trượt điều kiện 80% không.")
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 6 — AI CỐ VẤN
