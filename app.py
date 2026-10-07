@@ -2544,10 +2544,12 @@ if tab4.open:
                                    f"xep_hang_gtc_{b_ns:%Y%m%d}.png", "image/png",
                                    key="dl_rank_img", width="stretch")
             with bt3:
-                st.download_button("TẢI CSV XẾP HẠNG", rank.to_csv(index=False).encode("utf-8-sig"),
-                                   "xep_hang_nhan_vien.csv", "text/csv", key="dl_rank",
-                                   width="stretch")
-            with st.expander("Xem trước ảnh"):
+                dang_xem = st.session_state.get("show_rank_preview", False)
+                st.button("ẨN ẢNH XEM TRƯỚC" if dang_xem else "XEM TRƯỚC ẢNH BẢNG XẾP HẠNG",
+                          key="btn_rank_preview", width="stretch",
+                          on_click=lambda: st.session_state.update(
+                              show_rank_preview=not st.session_state.get("show_rank_preview", False)))
+            if st.session_state.get("show_rank_preview", False):
                 st.image(png, width="stretch")
 
         ai_advisor(
