@@ -15,6 +15,9 @@ Lệnh:
     python sync.py --dry-run          # lấy dữ liệu, in thử, KHÔNG ghi Sheet
     python sync.py login --headed     # mở trình duyệt có giao diện để đăng nhập tay
                                       # (khi có OTP/captcha), lưu phiên vào state/
+    python sync.py inspect URL --name gtc_tong
+                                      # (trên máy cá nhân) tự tìm nút Xuất / bảng và viết
+                                      # sẵn đoạn config vào state/goi_y_gtc_tong.yaml
 
 Biến môi trường:
     GOOGLE_CREDENTIALS  — đường dẫn file JSON service account (mặc định: credentials.json)
@@ -238,9 +241,13 @@ def _table_to_df(page, selector: str, index: int) -> pd.DataFrame:
         raise RuntimeError(f"Trang chỉ có {count} bảng khớp '{selector}', không có bảng số {index + 1}")
     data = tables.nth(index).evaluate("""t => {
         const cells = tr => Array.from(tr.querySelectorAll('th,td')).map(c => c.innerText.trim());
-        const head = Array.from(t.querySelectorAll('thead tr'));
+        let head = Array.from(t.querySelectorAll('thead tr'));
+        // Ant Design / Element UI... tách tiêu đề và thân bảng ra 2 <table> riêng.
+        const box = t.parentElement && t.parentElement.closest('.ant-table, .el-table, .vxe-table, .k-grid');
+        if (!head.length && box) head = Array.from(box.querySelectorAll('thead tr'));
         let header = head.length ? cells(head[head.length - 1]) : null;
-        let body = Array.from(t.querySelectorAll('tbody tr')).map(cells);
+        let body = Array.from(t.querySelectorAll('tbody tr'))
+            .filter(tr => !tr.matches('.ant-table-measure-row, [aria-hidden="true"]')).map(cells);
         if (!body.length) body = Array.from(t.querySelectorAll('tr')).map(cells);
         if (!header) header = body.shift() || [];
         return {header, body};
@@ -265,7 +272,8 @@ def fetch_table(page, job: dict) -> pd.DataFrame:
         if not nxt:
             break
         btn = page.locator(nxt).first
-        if btn.count() == 0 or not btn.is_enabled() or btn.get_attribute("aria-disabled") == "true":
+        if btn.count() == 0 or not btn.is_enabled() or btn.get_attribute("aria-disabled") == "true" \
+                or "disabled" in (btn.get_attribute("class") or ""):
             break
         btn.click()
         page.wait_for_timeout(int(tcfg.get("page_wait_ms", 1500)))
@@ -488,7 +496,10 @@ def cleanup_downloads(keep_days: int = 7) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Đồng bộ báo cáo công ty → Google Sheets")
-    ap.add_argument("command", nargs="?", default="sync", choices=["sync", "login"])
+    ap.add_argument("command", nargs="?", default="sync", choices=["sync", "login", "inspect"])
+    ap.add_argument("url", nargs="?", help="(inspect) địa chỉ trang đăng nhập hoặc trang báo cáo")
+    ap.add_argument("--name", default="bao_cao_moi", help="(inspect) tên job sẽ tạo")
+    ap.add_argument("--headless", action="store_true", help="(inspect) không mở cửa sổ, không hỏi")
     ap.add_argument("--config", default=str(BASE_DIR / "config.yaml"))
     ap.add_argument("--job", help="chỉ chạy job có tên này")
     ap.add_argument("--dry-run", action="store_true", help="không ghi Google Sheets")
@@ -498,6 +509,12 @@ def main() -> None:
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    if args.command == "inspect":
+        if not args.url:
+            ap.error("inspect cần địa chỉ trang, VD: python sync.py inspect https://baocao.congty.vn/login")
+        from inspect_page import cmd_inspect
+        cmd_inspect(args.url, args.name, headless=args.headless)
+        return
     cfg = load_config(Path(args.config))
     if args.command == "login":
         cmd_login(cfg, args.headed)

@@ -61,18 +61,47 @@ GOOGLE_CREDENTIALS=/home/ubuntu/DASHBOARD-VAN-HANH-THONG-MINH/vps_sync/credentia
 | `add_timestamp_column` | Thêm cột ghi thời điểm lấy dữ liệu |
 | `target.sheet_url` | Link tab Google Sheet đích (có `gid=`), copy từ `app.py` |
 
-### Tìm "selector" cho nút bấm / bảng
+### Tự tìm nút Xuất / bảng và viết sẵn config (làm trên máy tính cá nhân)
 
-Trên **máy tính cá nhân** (có màn hình):
+Máy tính của bạn đăng nhập được trang báo cáo, nên làm bước này **trên máy tính** (Windows/Mac đều được):
 
 ```bash
-pip install playwright && playwright install chromium
-playwright codegen https://dia-chi-trang-bao-cao
+git clone https://github.com/phanvanchanh246-NA/DASHBOARD-VAN-HANH-THONG-MINH.git
+cd DASHBOARD-VAN-HANH-THONG-MINH/vps_sync
+pip install -r requirements.txt
+python -m playwright install chromium
+
+python sync.py inspect https://dia-chi-trang-dang-nhap --name gtc_tong
 ```
 
-Đăng nhập và bấm thử như bình thường — cửa sổ bên cạnh sẽ hiện code như
-`page.get_by_role("button", name="Xuất Excel").click()` hoặc `page.locator("#btnExport").click()`.
-Trong config dùng dạng chữ tương ứng: `"button:has-text('Xuất Excel')"` hoặc `"#btnExport"`.
+1. Cửa sổ Chromium mở ra → **đăng nhập**, vào trang báo cáo, chọn bộ lọc (VD "Hôm nay"), bấm **Tìm kiếm**
+   cho bảng hiện kết quả — làm như mọi khi.
+2. Quay lại cửa sổ dòng lệnh, bấm **Enter**. Công cụ sẽ:
+   - liệt kê **nút Xuất** (Excel/CSV), các **bảng** (số dòng, tên cột), **nút trang sau**;
+   - ghi lại các thao tác lọc bạn vừa bấm để đưa vào `steps`;
+   - hỏi có **bấm thử nút Xuất** không → nếu có, đọc file tải về và tự tìm dòng tiêu đề (`header_row`);
+   - nhận ra form đăng nhập và viết sẵn phần `login` (mật khẩu để dạng `${BAO_CAO_PASS}`).
+3. Kết quả in ra màn hình và lưu ở `state/goi_y_gtc_tong.yaml`. Dán vào `config.yaml`, sửa
+   `target.sheet_url` (link tab Google Sheet có `gid=`, copy từ `app.py`), xem lại `key_columns`.
+4. Lặp lại với từng báo cáo (`--name tra_hang`, `--name kpi`…), mỗi lần thêm 1 job vào `jobs:`.
+
+Kiểm tra ngay trên máy tính trước khi đưa lên VPS:
+
+```bash
+# Windows PowerShell:  $env:BAO_CAO_USER="..."; $env:BAO_CAO_PASS="..."
+export BAO_CAO_USER=... BAO_CAO_PASS=...
+python sync.py --dry-run
+```
+
+Trường hợp đặc biệt: bộ lọc là ô chọn ngày kiểu lịch bật lên, hoặc nút Xuất mở thêm hộp thoại → các thao tác
+này có thể ghi chưa đúng; dùng `playwright codegen https://dia-chi-trang` để xem selector chính xác rồi sửa `steps`.
+
+### Chạy thử với trang giả lập (không cần trang thật)
+
+```bash
+python tests/mock_site.py &                       # http://127.0.0.1:8765, tài khoản demo / demo123
+BAO_CAO_USER=demo BAO_CAO_PASS=demo123 python sync.py --config tests/config.mock.yaml --dry-run
+```
 
 ## 4. Chạy thử
 

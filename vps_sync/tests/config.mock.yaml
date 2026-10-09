@@ -1,0 +1,53 @@
+# Config chạy thử với trang giả lập tests/mock_site.py (tài khoản demo / demo123)
+login:
+  url: http://127.0.0.1:8765/login
+  check_url: http://127.0.0.1:8765/dashboard
+  logged_in_selector: "text=Đăng xuất"
+  steps:
+    - goto: http://127.0.0.1:8765/login
+    - fill: { selector: "input[name='username']", value: "${BAO_CAO_USER}" }
+    - fill: { selector: "input[type='password']", value: "${BAO_CAO_PASS}" }
+    - click: "button[type='submit']"
+    - wait_for: "text=Đăng xuất"
+
+jobs:
+  - name: gtc_tong
+    kind: download
+    steps:
+      - goto: http://127.0.0.1:8765/van-hanh/giao-thanh-cong
+      - click: "#today"
+      - click: "button:has-text('Tìm kiếm')"
+      - wait_for: "table tbody tr"
+    download_click: "button:has-text('Xuất Excel')"
+    read: { sheet: 0, header_row: 3 }
+    key_columns: ["Ngày", "Bưu cục"]
+    add_timestamp_column: "Thời điểm cập nhật"
+    target:
+      sheet_url: https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=1806026577
+
+  - name: tra_hang
+    kind: table
+    steps:
+      - goto: http://127.0.0.1:8765/van-hanh/tra-hang
+      - wait_for: "table tbody tr.ant-table-row"
+    table:
+      selector: "table:has(tbody tr td)"
+      index: 0
+      next_selector: "li.ant-pagination-next"
+      max_pages: 20
+    key_columns: ["Mã đơn"]
+    target:
+      sheet_url: https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=452321599
+
+  - name: kpi
+    kind: table
+    steps:
+      - goto: http://127.0.0.1:8765/kpi
+      - wait_for: "[role=gridcell]"
+    table:
+      grid:
+        row_selector: "[role=row]:has([role=gridcell])"
+        cell_selector: "[role=gridcell]"
+        header_selector: "[role=columnheader]"
+    target:
+      sheet_url: https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=1344197558
