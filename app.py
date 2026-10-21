@@ -14,6 +14,9 @@ Biến môi trường (KHÔNG fix cứng key vào code):
     TELEGRAM_TOKEN      — token bot Telegram (tùy chọn)
     TELEGRAM_CHAT_ID    — id nhóm nhận báo cáo (tùy chọn)
     TELEGRAM_API_BASE   — máy chủ Telegram API (mặc định https://api.telegram.org; chỉ đổi khi test)
+    GTALK_OA_TOKEN      — "username:password" của OA GTalk (tùy chọn)
+    GTALK_CHANNELS      — các nhóm GTalk nhận tin, JSON {"Tên nhóm": "channelId"} hoặc "Tên=channelId;Tên2=id2"
+    GTALK_API_BASE      — mặc định https://mbff.ghn.vn (thật); thử trước ở https://test-api.mbff.ghn.tech
     ADMIN_PASS          — mật khẩu tài khoản ADMIN (mặc định: ghn@admin)
     USER_PASS           — mật khẩu tài khoản USER  (mặc định: ghn@user)
 """
@@ -23,9 +26,11 @@ from __future__ import annotations
 import base64
 import html as html_lib
 import io
+import json
 import os
 import re
 import threading
+import time
 import unicodedata
 from collections import Counter
 import warnings
@@ -78,6 +83,9 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 TELEGRAM_API_BASE = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org").strip().rstrip("/")
+GTALK_OA_TOKEN = os.environ.get("GTALK_OA_TOKEN", "").strip()
+GTALK_API_BASE = os.environ.get("GTALK_API_BASE", "https://mbff.ghn.vn").strip().rstrip("/")
+GTALK_CHANNELS_RAW = os.environ.get("GTALK_CHANNELS", "").strip()
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "ghn@admin").strip()
 USER_PASS = os.environ.get("USER_PASS", "ghn@user").strip()
 
@@ -1582,6 +1590,161 @@ def send_telegram_photo(png: bytes, text: str, filename: str = "xep_hang.png") -
     return True, f"Đã gửi ảnh kèm thông báo{note_}."
 
 
+# ── GTalk (nhắn tin nội bộ GHN) ────────────────────────────────────────
+def parse_gtalk_channels(raw: str) -> tuple[dict, str | None]:
+    """Đọc danh sách nhóm nhận tin từ biến môi trường GTALK_CHANNELS.
+    Chấp nhận JSON {"Tên nhóm": "channelId"} hoặc dạng "Tên nhóm=channelId" cách nhau bằng ; hoặc xuống dòng.
+    Trả (từ điển tên -> channelId, thông báo lỗi nếu cấu hình sai)."""
+    if not raw:
+        return {}, None
+    try:
+        obj = json.loads(raw)
+        if not isinstance(obj, dict):
+            return {}, 'GTALK_CHANNELS phải là JSON dạng {"Tên nhóm": "channelId"}.'
+        items = list(obj.items())
+    except ValueError:
+        items = []
+        for part in re.split(r"[;\n]+", raw):
+            if not part.strip():
+                continue
+            if "=" not in part:
+                return {}, f"GTALK_CHANNELS: mục '{part.strip()[:30]}' thiếu dấu '='."
+            k, v = part.split("=", 1)
+            items.append((k.strip(), v.strip()))
+    out: dict[str, str] = {}
+    for k, v in items:
+        name, cid = str(k).strip(), str(v).strip()
+        if not name or not cid.isdigit():
+            return {}, f"GTALK_CHANNELS: nhóm '{name}' có channelId không phải dãy số."
+        out[name] = cid
+    return out, None
+
+
+GTALK_CHANNELS, GTALK_CFG_ERR = parse_gtalk_channels(GTALK_CHANNELS_RAW)
+GTALK_CAPTION_MAX = 1024   # tài liệu GTalk không nêu giới hạn chú thích; dùng mức an toàn như Telegram
+
+
+def _gtalk_enabled() -> bool:
+    return bool(GTALK_OA_TOKEN and GTALK_CHANNELS)
+
+
+def _gt_safe(msg) -> str:
+    """Che token OA và chữ ký trong link S3 khỏi thông báo lỗi hiển thị lên giao diện."""
+    out = str(msg)
+    if GTALK_OA_TOKEN:
+        out = out.replace(GTALK_OA_TOKEN, "***")
+    return re.sub(r"\?[^\s'\")]*", "?…", out)
+
+
+_gt_lock = threading.Lock()
+_gt_last_id = [0]
+
+
+def _gt_msg_id() -> str:
+    """clientMsgId duy nhất cho mỗi tin: mili giây hiện tại, tăng dần nếu trùng."""
+    with _gt_lock:
+        t = time.time_ns() // 1_000_000
+        if t <= _gt_last_id[0]:
+            t = _gt_last_id[0] + 1
+        _gt_last_id[0] = t
+        return str(t)
+
+
+def _gt_post(path: str, body: dict) -> tuple[bool, dict | str]:
+    """Gọi API GTalk. Thành công khi HTTP 200 VÀ errorCode == 'success' (GTalk báo lỗi trong thân)."""
+    try:
+        r = requests.post(f"{GTALK_API_BASE}{path}", json={**body, "oaToken": GTALK_OA_TOKEN}, timeout=30)
+    except requests.RequestException as exc:
+        return False, f"Lỗi mạng: {_gt_safe(exc)}"
+    try:
+        js = r.json()
+    except ValueError:
+        return False, f"GTalk trả về mã {r.status_code} (không phải JSON)."
+    if not isinstance(js, dict):
+        return False, f"GTalk trả về dữ liệu lạ (mã {r.status_code})."
+    if r.status_code == 200 and js.get("errorCode") == "success":
+        return True, js.get("data") or {}
+    err = (js.get("error") or {}).get("errorMessage") or js.get("errorCode") or f"mã {r.status_code}"
+    return False, f"GTalk báo lỗi: {_gt_safe(err)}"
+
+
+def gtalk_upload_image(channel_id: str, png: bytes, filename: str) -> tuple[bool, tuple | str]:
+    """Tải ảnh lên GTalk (3 bước: initiate -> PUT S3 ảnh gốc + ảnh thu nhỏ -> complete).
+    Trả (True, (fileId, rộng, cao)) hoặc (False, lý do). Mỗi kênh phải tải riêng vì file gắn với kênh."""
+    im = Image.open(io.BytesIO(png))
+    w, h = im.size
+    thumb = im.copy()
+    thumb.thumbnail((600, 600), Image.LANCZOS)          # vừa khung 600x600, giữ tỷ lệ, không phóng to
+    tb = io.BytesIO()
+    thumb.save(tb, format="PNG", optimize=True)
+    ok, data = _gt_post("/api/gtalk/initiate-upload", {
+        "ChannelId": channel_id, "FileName": filename, "FileSize": str(len(png)),
+        "MimeType": "image/png", "Metadata": json.dumps({"width": w, "height": h})})
+    if not ok:
+        return False, data
+    for url, payload in ((data.get("PresignedURL"), png), (data.get("PresignedThumbURL"), tb.getvalue())):
+        if not url:
+            return False, "GTalk không trả về link tải ảnh lên."
+        try:
+            r = requests.put(url, data=payload, headers={"Content-Type": "image/png"}, timeout=120)
+        except requests.RequestException as exc:
+            return False, f"Lỗi tải ảnh lên: {_gt_safe(exc)}"
+        if r.status_code != 200:
+            return False, (f"Tải ảnh lên kho lưu trữ thất bại (mã {r.status_code}"
+                           + (", link đã hết hạn" if r.status_code == 403 else "") + ").")
+    ok, done = _gt_post("/api/gtalk/complete-upload", {"UploadId": data.get("UploadId")})
+    if not ok:
+        return False, done
+    return True, (str(done.get("Id")), w, h)
+
+
+def gtalk_send_rank(channel_id: str, png: bytes, text: str, filename: str) -> tuple[bool, str]:
+    """Gửi ảnh xếp hạng kèm thông báo vào MỘT nhóm GTalk.
+    Thông báo <= 1024 ký tự làm chú thích của ảnh; dài hơn thì gửi ảnh rồi gửi tin nhắn riêng."""
+    text = clean_tele_text(text)
+    caption = text if len(text) <= GTALK_CAPTION_MAX else ""
+    ok, up = gtalk_upload_image(channel_id, png, filename)
+    if not ok:
+        return False, str(up)
+    file_id, w, h = up
+    attachment: dict = {"items": [{"image": {"fileId": file_id, "width": w, "height": h}}]}
+    if caption:
+        attachment["caption"] = caption
+    ok, err = _gt_post("/api/gtalk/send-message", {
+        "channelId": channel_id, "clientMsgId": _gt_msg_id(), "content": {"attachment": attachment}})
+    if not ok:
+        return False, str(err)
+    if text and not caption:
+        ok, err = _gt_post("/api/gtalk/send-message", {
+            "channelId": channel_id, "clientMsgId": _gt_msg_id(),
+            "content": {"text": text, "parseMode": "PLAIN_TEXT"}})
+        if not ok:
+            return False, f"Đã gửi ảnh nhưng chưa gửi được thông báo: {err}"
+        return True, "Đã gửi ảnh và thông báo (thông báo dài nên gửi thành tin riêng)."
+    return True, "Đã gửi ảnh kèm thông báo."
+
+
+def send_rank_everywhere(png: bytes, text: str, filename: str, use_telegram: bool,
+                         groups: list[str]) -> list[tuple[str, bool, str]]:
+    """Gửi cùng một ảnh + thông báo tới Telegram và/hoặc nhiều nhóm GTalk.
+    Một nơi lỗi không làm dừng các nơi còn lại. Trả danh sách (nơi nhận, thành công, thông điệp)."""
+    results: list[tuple[str, bool, str]] = []
+    if use_telegram:
+        ok, msg = send_telegram_photo(png, text, filename)
+        results.append(("Telegram", ok, msg))
+    for g in groups:
+        cid = GTALK_CHANNELS.get(g)
+        if not cid:
+            results.append((f"GTalk · {g}", False, "Nhóm không còn trong cấu hình GTALK_CHANNELS."))
+            continue
+        try:
+            ok, msg = gtalk_send_rank(cid, png, text, filename)
+        except Exception as exc:  # noqa: BLE001  (một nhóm lỗi không làm hỏng cả loạt)
+            ok, msg = False, f"Lỗi không xác định: {_gt_safe(exc)}"
+        results.append((f"GTalk · {g}", ok, msg))
+    return results
+
+
 RANK_TONES = {
     "Vui vẻ, khích lệ": "Giọng thân thiện, tích cực, truyền năng lượng như một quản lý đang cổ vũ đội.",
     "Trang trọng": "Giọng nghiêm túc, lịch sự, như một thông báo chính thức của khu vực.",
@@ -2652,7 +2815,7 @@ if tab4.open:
                 st.image(png, width="stretch")
 
             # ── AI soạn thông báo + gửi ảnh qua Telegram ───────────────────────
-            st.markdown("**Thông báo xếp hạng gửi nhân viên (Telegram)**")
+            st.markdown("**Thông báo xếp hạng gửi nhân viên (Telegram / GTalk)**")
             st.session_state.setdefault("rank_msg", "")
             ky_txt = f"{a_ns:%d/%m/%Y} – {b_ns:%d/%m/%Y}"
             ctx_sig = f"{ky_txt}|{bc_ns}|{nv_ns}|{len(rank)}"
@@ -2688,13 +2851,42 @@ if tab4.open:
             st.caption(f"{len(clean_tele_text(msg_txt))} ký tự · "
                        + ("dài hơn 1.024 ký tự nên sẽ gửi ảnh trước, thông báo thành tin nhắn riêng."
                           if dai else "gửi kèm làm lời chú thích dưới ảnh."))
-            if not _tele_enabled():
-                st.info("Chưa cấu hình TELEGRAM_TOKEN và TELEGRAM_CHAT_ID trên máy chủ nên chưa gửi được.")
-            if st.button("GỬI ẢNH + THÔNG BÁO LÊN TELEGRAM", key="btn_send_rank_tg",
-                         disabled=not (_tele_enabled() and msg_txt.strip()), width="stretch"):
-                with st.spinner("Đang gửi lên Telegram..."):
-                    ok_t, msg_t = send_telegram_photo(png, msg_txt, f"xep_hang_gtc_{b_ns:%Y%m%d}.png")
-                (st.success if ok_t else st.error)(msg_t)
+            # ── Chọn nơi gửi: Telegram và/hoặc một hay nhiều nhóm GTalk ─────────
+            kenh_co = [k for k, on in (("Telegram", _tele_enabled()), ("GTalk", _gtalk_enabled())) if on]
+            if GTALK_CFG_ERR:
+                st.error(GTALK_CFG_ERR)
+            if not kenh_co:
+                st.info("Chưa cấu hình nơi gửi. Cần TELEGRAM_TOKEN + TELEGRAM_CHAT_ID (Telegram) "
+                        "và/hoặc GTALK_OA_TOKEN + GTALK_CHANNELS (GTalk) trên máy chủ.")
+            kenh = st.multiselect("Gửi qua", kenh_co, default=kenh_co, key="rank_channels")
+            nhom: list[str] = []
+            if "GTalk" in kenh:
+                # Gợi ý sẵn nhóm có tên khớp bưu cục đang lọc; đổi bưu cục thì gợi ý lại.
+                if st.session_state.get("rank_gt_for") != bc_ns:
+                    bk = norm(bc_ns)
+                    st.session_state["rank_gt_groups"] = [
+                        g for g in GTALK_CHANNELS if norm(g) and (norm(g) in bk or bk in norm(g))]
+                    st.session_state["rank_gt_for"] = bc_ns
+                st.session_state["rank_gt_groups"] = [
+                    g for g in st.session_state.get("rank_gt_groups", []) if g in GTALK_CHANNELS]
+                nhom = st.multiselect("Nhóm GTalk nhận (chọn được nhiều nhóm)", list(GTALK_CHANNELS),
+                                      key="rank_gt_groups")
+                if not nhom:
+                    st.caption("Chưa chọn nhóm GTalk nào. Tên nhóm khớp bưu cục đang lọc sẽ được chọn sẵn.")
+            dich = ([] if "Telegram" not in kenh else ["Telegram"]) + [f"GTalk · {g}" for g in nhom]
+            if dich:
+                st.caption(f"Sẽ gửi tới {len(dich)} nơi: " + "; ".join(dich))
+            co_noi_nhan = ("Telegram" in kenh) or bool(nhom)
+            if st.button("GỬI ẢNH + THÔNG BÁO", key="btn_send_rank_all",
+                         disabled=not (co_noi_nhan and msg_txt.strip()), width="stretch"):
+                with st.spinner(f"Đang gửi tới {len(dich)} nơi..."):
+                    kq = send_rank_everywhere(png, msg_txt, f"xep_hang_gtc_{b_ns:%Y%m%d}.png",
+                                              "Telegram" in kenh, nhom)
+                n_ok = sum(1 for _, ok_, _ in kq if ok_)
+                (st.success if n_ok == len(kq) else st.warning if n_ok else st.error)(
+                    f"Đã gửi thành công {n_ok}/{len(kq)} nơi.")
+                for ten, ok_, msg_ in kq:
+                    st.markdown(f"{'✅' if ok_ else '❌'} **{ten}** — {msg_}")
 
         ai_advisor(
             "ns", "Năng suất & Lương",
