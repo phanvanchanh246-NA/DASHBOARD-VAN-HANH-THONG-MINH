@@ -316,13 +316,15 @@ table.ghn-table td span.down {{ color: {DANGER}; font-weight: 800; }}
 .stButton > button {{
     background: {ACCENT}; color: #FFFFFF; border: none; border-radius: 6px;
     font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 16.5px;
-    text-transform: uppercase; letter-spacing: 0.4px; padding: 0.55rem 1.4rem;
+    text-transform: uppercase; letter-spacing: 0.4px; padding: 0.4rem 1.4rem;
+    min-height: 48px;   /* bằng chiều cao ô chọn/ô nhập để đứng cạnh nhau thì thẳng hàng */
     box-shadow: 0 2px 6px rgba(255,140,0,0.35);
 }}
 .stButton > button:hover {{ background: #E67E00; color: #FFFFFF; }}
 .stDownloadButton > button {{
     background: {BG}; color: {PRIMARY}; border: 2px solid {PRIMARY}; border-radius: 6px;
     font-weight: 800; font-size: 15.25px; text-transform: uppercase;
+    padding: 0.4rem 1.4rem; min-height: 48px;
 }}
 .stDownloadButton > button:hover {{ background: {PRIMARY}; color: #FFFFFF; }}
 
@@ -1465,11 +1467,10 @@ def ai_advisor(key: str, tab_label: str, data_text: str, extra_note: str = ""):
     """Khối cố vấn AI đặt ở cuối mỗi tab: đọc đúng số liệu đang hiển thị trên tab đó
     rồi đưa ra nhận định và đề xuất hành động theo góc nhìn Giám đốc hoặc AM."""
     section("Cố vấn AI — nhận định và đề xuất hành động")
-    c1, c2 = st.columns([1.2, 2.4])
+    c1, c2 = st.columns([1.2, 2.4], vertical_alignment="bottom")
     with c1:
         role = st.selectbox("Góc nhìn", list(ADVISOR_ROLES), key=f"role_{key}")
     with c2:
-        st.markdown("<div style='height:34px'></div>", unsafe_allow_html=True)
         run = st.button(f"PHÂN TÍCH {tab_label.upper()}", key=f"btn_adv_{key}",
                         width="stretch")
 
@@ -2784,7 +2785,7 @@ if tab4.open:
                              col_gtc: st.column_config.NumberColumn("Đơn GTC", format="%,d"),
                              "%GTC": st.column_config.ProgressColumn("%GTC", format="%.2f%%",
                                                                      min_value=0, max_value=100)})
-            bt1, bt2, bt3 = st.columns([1.3, 1, 1])
+            bt1, bt2, bt3 = st.columns([1.3, 1, 1], vertical_alignment="bottom")
             with bt1:
                 n_pick = st.selectbox("Số nhân viên trong ảnh",
                                       ["Tất cả", "Top 10", "Top 20", "Top 50"], key="rank_img_n")
@@ -2821,11 +2822,10 @@ if tab4.open:
             ctx_sig = f"{ky_txt}|{bc_ns}|{nv_ns}|{len(rank)}"
             n_dat_rank = int((rank["%GTC"] >= 80).sum())
 
-            tn1, tn2 = st.columns([1.3, 2])
+            tn1, tn2 = st.columns([1.3, 2], vertical_alignment="bottom")
             with tn1:
                 tone = st.selectbox("Giọng văn thông báo", list(RANK_TONES), key="rank_tone")
             with tn2:
-                st.markdown("<div style='height:34px'></div>", unsafe_allow_html=True)
                 viet = st.button("AI VIẾT THÔNG BÁO XẾP HẠNG", key="btn_ai_rank_notice", width="stretch")
             if viet:
                 top_txt = "\n".join(
@@ -3323,7 +3323,7 @@ if tab7.open:
                         "Tỷ Lệ Cải Thiện": st.column_config.NumberColumn("Cải Thiện (pp)", format="%+.2f"),
                         "Tổng Điểm": st.column_config.NumberColumn("Tổng Điểm", format="%.2f"),
                     })
-                ti1, ti2, ti3 = st.columns([1.3, 1, 1])
+                ti1, ti2, ti3 = st.columns([1.3, 1, 1], vertical_alignment="bottom")
                 with ti1:
                     td_n = st.selectbox("Số nhân viên trong ảnh",
                                         ["Tất cả", "Top 10", "Top 20", "Top 50"], key="td_img_n")
