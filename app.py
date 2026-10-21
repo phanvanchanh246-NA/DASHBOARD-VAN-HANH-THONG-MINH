@@ -13,6 +13,7 @@ Biến môi trường (KHÔNG fix cứng key vào code):
     GEMINI_API_KEY      — khóa Google Gemini
     TELEGRAM_TOKEN      — token bot Telegram (tùy chọn)
     TELEGRAM_CHAT_ID    — id nhóm nhận báo cáo (tùy chọn)
+    TELEGRAM_API_BASE   — máy chủ Telegram API (mặc định https://api.telegram.org; chỉ đổi khi test)
     ADMIN_PASS          — mật khẩu tài khoản ADMIN (mặc định: ghn@admin)
     USER_PASS           — mật khẩu tài khoản USER  (mặc định: ghn@user)
 """
@@ -76,6 +77,7 @@ PRIMARY_SOFT = "#CFE8F5"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_API_BASE = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org").strip().rstrip("/")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "ghn@admin").strip()
 USER_PASS = os.environ.get("USER_PASS", "ghn@user").strip()
 
@@ -1391,21 +1393,28 @@ def genai_client():
         return None
 
 
-def ask_ai(prompt: str) -> str:
+def ask_ai_checked(prompt: str) -> tuple[bool, str]:
+    """Gọi Gemini. Trả (True, nội dung) nếu thành công, (False, lý do lỗi) nếu không —
+    để chỗ nào cần gửi đi ngoài (Telegram) không nhầm câu báo lỗi với nội dung AI viết."""
     if not GENAI_AVAILABLE:
-        return "Thiếu thư viện. Chạy: pip install google-genai"
+        return False, "Thiếu thư viện. Chạy: pip install google-genai"
     client = genai_client()
     if client is None:
-        return "Chưa cấu hình GEMINI_API_KEY. Thêm biến môi trường rồi khởi động lại dịch vụ."
+        return False, "Chưa cấu hình GEMINI_API_KEY. Thêm biến môi trường rồi khởi động lại dịch vụ."
     try:
         resp = client.models.generate_content(
             model=GEMINI_MODEL, contents=prompt,
             config=genai_types.GenerateContentConfig(max_output_tokens=8192))
         if not getattr(resp, "candidates", None):
-            return "AI không trả về nội dung. Thử rút gọn câu hỏi."
-        return (resp.text or "").strip() or "AI trả về nội dung rỗng."
+            return False, "AI không trả về nội dung. Thử lại."
+        text = (resp.text or "").strip()
+        return (True, text) if text else (False, "AI trả về nội dung rỗng.")
     except Exception as exc:  # noqa: BLE001
-        return f"Lỗi Google AI: {exc}"
+        return False, f"Lỗi Google AI: {exc}"
+
+
+def ask_ai(prompt: str) -> str:
+    return ask_ai_checked(prompt)[1]
 
 
 def staff_id(name) -> str:
@@ -1493,21 +1502,111 @@ tuyệt đối không suy đoán hay bịa số. Viết ngắn gọn. Kết thú
              "và đưa ra nhận định kèm đề xuất hành động.")
 
 
+def _tele_enabled() -> bool:
+    return bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID)
+
+
+def _tele_safe(msg) -> str:
+    """Che token bot khỏi thông báo lỗi (lỗi của requests thường kèm nguyên URL có token)."""
+    out = str(msg)
+    return out.replace(TELEGRAM_TOKEN, "***") if TELEGRAM_TOKEN else out
+
+
+def _tele_call(method: str, data: dict, files: dict | None = None) -> tuple[bool, str]:
+    """Gọi 1 phương thức Telegram Bot API. Trả (thành công, mô tả lỗi nếu có)."""
+    url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/{method}"
+    try:
+        r = requests.post(url, data=data, files=files, timeout=60)
+    except requests.RequestException as exc:
+        return False, f"Lỗi mạng: {_tele_safe(exc)}"
+    if r.status_code == 200:
+        return True, ""
+    try:
+        desc = r.json().get("description", "")
+    except ValueError:
+        desc = ""
+    return False, f"Telegram trả về mã {r.status_code}" + (f": {_tele_safe(desc)}" if desc else ".")
+
+
 def send_telegram(text: str):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    if not _tele_enabled():
         return False, "Chưa cấu hình TELEGRAM_TOKEN / TELEGRAM_CHAT_ID."
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     chunks = [text[i:i + 3800] for i in range(0, len(text), 3800)] or [""]
     for i, chunk in enumerate(chunks):
         prefix = "" if i == 0 else f"(phần {i+1}/{len(chunks)})\n"
-        try:
-            r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": prefix + chunk},
-                              timeout=20)
-        except requests.RequestException as exc:
-            return False, f"Lỗi mạng: {exc}"
-        if r.status_code != 200:
-            return False, f"Telegram trả về mã {r.status_code}."
+        ok, err = _tele_call("sendMessage", {"chat_id": TELEGRAM_CHAT_ID, "text": prefix + chunk})
+        if not ok:
+            return False, err
     return True, f"Đã gửi {len(chunks)} tin nhắn."
+
+
+TELE_CAPTION_MAX = 1024     # giới hạn lời chú thích của ảnh trên Telegram
+
+
+def clean_tele_text(text: str) -> str:
+    """Telegram gửi văn bản thuần nên bỏ ký hiệu markdown AI hay thêm vào."""
+    lines = []
+    for ln in str(text).replace("**", "").replace("__", "").splitlines():
+        ln = ln.rstrip()
+        if ln.lstrip().startswith(("* ", "- ")):
+            ln = "• " + ln.lstrip()[2:]
+        lines.append(ln.lstrip("#").strip() if ln.lstrip().startswith("#") else ln)
+    return "\n".join(lines).strip()
+
+
+def send_telegram_photo(png: bytes, text: str, filename: str = "xep_hang.png") -> tuple[bool, str]:
+    """Gửi ảnh kèm thông báo.
+    - Thông báo <= 1024 ký tự: làm chú thích của ảnh (một tin duy nhất).
+    - Dài hơn: gửi ảnh trước rồi gửi thông báo thành tin nhắn riêng.
+    - Telegram từ chối ảnh (quá cao/rộng): tự gửi lại dạng file đính kèm."""
+    if not _tele_enabled():
+        return False, "Chưa cấu hình TELEGRAM_TOKEN / TELEGRAM_CHAT_ID."
+    text = clean_tele_text(text)
+    caption = text if len(text) <= TELE_CAPTION_MAX else ""
+    data = {"chat_id": TELEGRAM_CHAT_ID}
+    if caption:
+        data["caption"] = caption
+    as_file = False
+    ok, err = _tele_call("sendPhoto", data, {"photo": (filename, png, "image/png")})
+    if not ok:
+        ok2, err2 = _tele_call("sendDocument", data, {"document": (filename, png, "image/png")})
+        if not ok2:
+            return False, f"Không gửi được ảnh. {err}"
+        ok, as_file = True, True
+    note_ = " (Telegram không nhận ảnh này ở dạng ảnh nên đã gửi dạng file)" if as_file else ""
+    if text and not caption:
+        ok3, err3 = send_telegram(text)
+        if not ok3:
+            return False, f"Đã gửi ảnh{note_} nhưng chưa gửi được thông báo: {err3}"
+        return True, f"Đã gửi ảnh{note_} và thông báo (thông báo dài hơn {TELE_CAPTION_MAX} ký tự nên gửi thành tin riêng)."
+    return True, f"Đã gửi ảnh kèm thông báo{note_}."
+
+
+RANK_TONES = {
+    "Vui vẻ, khích lệ": "Giọng thân thiện, tích cực, truyền năng lượng như một quản lý đang cổ vũ đội.",
+    "Trang trọng": "Giọng nghiêm túc, lịch sự, như một thông báo chính thức của khu vực.",
+}
+
+
+def rank_notice_prompt(tone: str, ky: str, pham_vi: str, top_txt: str, n_total: int, n_dat: int) -> str:
+    return f"""Bạn là Quản lý khu vực của GHN, soạn thông báo gửi vào nhóm Telegram của nhân viên giao hàng
+về bảng xếp hạng tỷ lệ giao thành công (%GTC). {RANK_TONES.get(tone, '')}
+
+SỐ LIỆU THẬT (chỉ dùng đúng những số này):
+- Kỳ: {ky}. Phạm vi: {pham_vi}.
+- Có {n_total} nhân viên xếp hạng, {n_dat} người đạt mốc thưởng %GTC từ 80%.
+- Top đầu bảng (xếp theo %GTC cao nhất):
+{top_txt}
+
+YÊU CẦU:
+- Tiếng Việt, tối đa 900 ký tự, VĂN BẢN THUẦN: không dùng markdown, không dấu * hay #.
+- Có thể dùng tối đa 6 emoji, đặt tự nhiên.
+- Thứ tự: lời chào ngắn kèm kỳ xếp hạng; vinh danh 3 người đứng đầu (ghi đúng tên và %GTC);
+  nhắc mốc thưởng 80% và số người đã đạt; động viên chung các bạn chưa đạt mốc;
+  một câu kêu gọi hành động cho kỳ tới; nhắc mọi người xem ảnh bảng xếp hạng đính kèm.
+- TUYỆT ĐỐI không nêu tên hay số liệu của người xếp thấp, không chê trách ai cụ thể.
+- Giữ nguyên cách viết tên như trong số liệu. Không bịa thêm số liệu hay chính sách thưởng.
+- Chỉ trả về nội dung thông báo, không giải thích, không tiêu đề."""
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2551,6 +2650,51 @@ if tab4.open:
                               show_rank_preview=not st.session_state.get("show_rank_preview", False)))
             if st.session_state.get("show_rank_preview", False):
                 st.image(png, width="stretch")
+
+            # ── AI soạn thông báo + gửi ảnh qua Telegram ───────────────────────
+            st.markdown("**Thông báo xếp hạng gửi nhân viên (Telegram)**")
+            st.session_state.setdefault("rank_msg", "")
+            ky_txt = f"{a_ns:%d/%m/%Y} – {b_ns:%d/%m/%Y}"
+            ctx_sig = f"{ky_txt}|{bc_ns}|{nv_ns}|{len(rank)}"
+            n_dat_rank = int((rank["%GTC"] >= 80).sum())
+
+            tn1, tn2 = st.columns([1.3, 2])
+            with tn1:
+                tone = st.selectbox("Giọng văn thông báo", list(RANK_TONES), key="rank_tone")
+            with tn2:
+                st.markdown("<div style='height:34px'></div>", unsafe_allow_html=True)
+                viet = st.button("AI VIẾT THÔNG BÁO XẾP HẠNG", key="btn_ai_rank_notice", width="stretch")
+            if viet:
+                top_txt = "\n".join(
+                    f"  {i}. {staff_label(r[nv_col_gtc])} — %GTC {r['%GTC']:.2f}% "
+                    f"({int(r[col_gtc]):,} GTC / {int(r[col_gan]):,} gán)"
+                    for i, (_, r) in enumerate(rank.head(10).iterrows(), start=1))
+                with st.spinner("AI đang soạn thông báo..."):
+                    ok_ai, ai_text = ask_ai_checked(rank_notice_prompt(
+                        tone, ky_txt, "toàn bộ các bưu cục" if bc_ns == "Tất cả" else f"bưu cục {bc_ns}",
+                        top_txt, len(rank), n_dat_rank))
+                if ok_ai:
+                    st.session_state["rank_msg"] = clean_tele_text(ai_text)
+                    st.session_state["rank_msg_ctx"] = ctx_sig
+                else:
+                    st.error(ai_text)
+
+            if st.session_state.get("rank_msg") and st.session_state.get("rank_msg_ctx") != ctx_sig:
+                st.warning("Bộ lọc hoặc số liệu đã đổi sau khi AI viết thông báo. "
+                           "Bấm 'AI VIẾT THÔNG BÁO XẾP HẠNG' để viết lại cho đúng.", icon="⚠️")
+            msg_txt = st.text_area("Nội dung thông báo (đọc lại và sửa nếu cần trước khi gửi)",
+                                   key="rank_msg", height=230)
+            dai = len(clean_tele_text(msg_txt)) > TELE_CAPTION_MAX
+            st.caption(f"{len(clean_tele_text(msg_txt))} ký tự · "
+                       + ("dài hơn 1.024 ký tự nên sẽ gửi ảnh trước, thông báo thành tin nhắn riêng."
+                          if dai else "gửi kèm làm lời chú thích dưới ảnh."))
+            if not _tele_enabled():
+                st.info("Chưa cấu hình TELEGRAM_TOKEN và TELEGRAM_CHAT_ID trên máy chủ nên chưa gửi được.")
+            if st.button("GỬI ẢNH + THÔNG BÁO LÊN TELEGRAM", key="btn_send_rank_tg",
+                         disabled=not (_tele_enabled() and msg_txt.strip()), width="stretch"):
+                with st.spinner("Đang gửi lên Telegram..."):
+                    ok_t, msg_t = send_telegram_photo(png, msg_txt, f"xep_hang_gtc_{b_ns:%Y%m%d}.png")
+                (st.success if ok_t else st.error)(msg_t)
 
         ai_advisor(
             "ns", "Năng suất & Lương",
