@@ -1255,7 +1255,7 @@ def render_rank_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str
     d.text((r_gan, mid), "ĐƠN GÁN", font=f_th, fill=c_primary, anchor="rm")
     d.text((r_gtc, mid), "ĐƠN GTC", font=f_th, fill=c_primary, anchor="rm")
     d.text((x_bar, mid), "%GTC", font=f_th, fill=c_primary, anchor="lm")
-    d.text((W - PAD - 14 * S, mid), "THƯỞNG", font=f_th, fill=c_primary, anchor="rm")
+    d.text((W - PAD - 14 * S, mid), "MỤC TIÊU", font=f_th, fill=c_primary, anchor="rm")
     y += TH_H
 
     # ── Dòng dữ liệu ──
@@ -1923,24 +1923,39 @@ RANK_TONES = {
 }
 
 
-def rank_notice_prompt(tone: str, ky: str, pham_vi: str, top_txt: str, n_total: int, n_dat: int) -> str:
+def describe_period(a: pd.Timestamp, b: pd.Timestamp) -> tuple[str, str]:
+    """Gọi đúng tên khoảng thời gian đang xem: 'ngày', 'tuần', 'tháng' hoặc 'từ … đến …'.
+    Trả (mô tả, cách nói về lần tiếp theo). Dùng cho thông báo AI viết, tránh chữ 'kỳ' chung chung."""
+    if a == b:
+        return f"ngày {a:%d/%m/%Y}", "ngày mai"
+    if a.weekday() == 0 and (b - a).days == 6:
+        return f"tuần {a:%d/%m}–{b:%d/%m/%Y}", "tuần sau"
+    if a.day == 1 and b == month_end(a):
+        return f"tháng {a:%m/%Y}", "tháng sau"
+    return f"từ ngày {a:%d/%m/%Y} đến ngày {b:%d/%m/%Y}", "thời gian tới"
+
+
+def rank_notice_prompt(tone: str, thoi_gian: str, tiep_theo: str, pham_vi: str, top_txt: str,
+                       n_total: int, n_dat: int) -> str:
     return f"""Bạn là Quản lý khu vực của GHN, soạn thông báo gửi vào nhóm Telegram của nhân viên giao hàng
 về bảng xếp hạng tỷ lệ giao thành công (%GTC). {RANK_TONES.get(tone, '')}
 
 SỐ LIỆU THẬT (chỉ dùng đúng những số này):
-- Kỳ: {ky}. Phạm vi: {pham_vi}.
-- Có {n_total} nhân viên xếp hạng, {n_dat} người đạt mốc thưởng %GTC từ 80%.
+- Thời gian xếp hạng: {thoi_gian}. Phạm vi: {pham_vi}.
+- Có {n_total} nhân viên xếp hạng, {n_dat} người đạt mục tiêu %GTC từ 80%.
 - Top đầu bảng (xếp theo %GTC cao nhất):
 {top_txt}
 
 YÊU CẦU:
 - Tiếng Việt, tối đa 900 ký tự, VĂN BẢN THUẦN: không dùng markdown, không dấu * hay #.
 - Có thể dùng tối đa 6 emoji, đặt tự nhiên.
-- Thứ tự: lời chào ngắn kèm kỳ xếp hạng; vinh danh 3 người đứng đầu (ghi đúng tên và %GTC);
-  nhắc mốc thưởng 80% và số người đã đạt; động viên chung các bạn chưa đạt mốc;
-  một câu kêu gọi hành động cho kỳ tới; nhắc mọi người xem ảnh bảng xếp hạng đính kèm.
+- Gọi thời gian đúng như ghi ở "Thời gian xếp hạng" (ví dụ "ngày 21/10/2026", "tuần 20/10–26/10/2026",
+  "tháng 10/2026"). TUYỆT ĐỐI không dùng từ "kỳ"; khi nói về lần sau thì dùng "{tiep_theo}".
+- Thứ tự: lời chào ngắn kèm thời gian xếp hạng; vinh danh 3 người đứng đầu (ghi đúng tên và %GTC);
+  nhắc mục tiêu %GTC từ 80% và số người đã đạt; động viên chung các bạn chưa đạt mục tiêu;
+  một câu kêu gọi hành động cho {tiep_theo}; nhắc mọi người xem ảnh bảng xếp hạng đính kèm.
 - TUYỆT ĐỐI không nêu tên hay số liệu của người xếp thấp, không chê trách ai cụ thể.
-- Giữ nguyên cách viết tên như trong số liệu. Không bịa thêm số liệu hay chính sách thưởng.
+- Giữ nguyên cách viết tên như trong số liệu. Không bịa thêm số liệu hay chính sách thưởng phạt.
 - Chỉ trả về nội dung thông báo, không giải thích, không tiêu đề."""
 
 
@@ -2949,7 +2964,7 @@ if tab4.open:
             medals = ["🥇", "🥈", "🥉"]
             rank.insert(0, "Hạng", [f"{medals[i]} {i+1}" if i < 3 else str(i + 1)
                                     for i in range(len(rank))])
-            rank["Thưởng (≥80%)"] = np.where(rank["%GTC"] >= 80, "Đạt", "Chưa")
+            rank["Mục tiêu (≥80%)"] = np.where(rank["%GTC"] >= 80, "Đạt", "Chưa")
             st.dataframe(rank, width="stretch", hide_index=True,
                          column_config={
                              col_gan: st.column_config.NumberColumn("Đơn gán", format="%,d"),
@@ -2973,7 +2988,7 @@ if tab4.open:
                 return render_rank_image(
                     img_rows, "BẢNG XẾP HẠNG NHÂN VIÊN THEO %GTC",
                     f"{a_ns:%d/%m/%Y} – {b_ns:%d/%m/%Y}  ·  Bưu cục: {bc_ns}",
-                    f"Mốc thưởng: %GTC ≥ 80%  ·  {len(img_rows)}/{len(rank)} nhân viên  ·  "
+                    f"Mục tiêu: %GTC ≥ 80%  ·  {len(img_rows)}/{len(rank)} nhân viên  ·  "
                     f"Dữ liệu đến {REF_DATE:%d/%m/%Y}")
             with bt2:
                 st.download_button("TẢI ẢNH BẢNG XẾP HẠNG", png,
@@ -3007,8 +3022,9 @@ if tab4.open:
                     f"({int(r[col_gtc]):,} GTC / {int(r[col_gan]):,} gán)"
                     for i, (_, r) in enumerate(rank.head(10).iterrows(), start=1))
                 with st.spinner("AI đang soạn thông báo..."):
+                    tg_mo_ta, tg_tiep = describe_period(a_ns, b_ns)
                     ok_ai, ai_text = ask_ai_checked(rank_notice_prompt(
-                        tone, ky_txt, "toàn bộ các bưu cục" if bc_ns == "Tất cả" else f"bưu cục {bc_ns}",
+                        tone, tg_mo_ta, tg_tiep, "toàn bộ các bưu cục" if bc_ns == "Tất cả" else f"bưu cục {bc_ns}",
                         top_txt, len(rank), n_dat_rank))
                 if ok_ai:
                     st.session_state["rank_msg"] = clean_tele_text(ai_text)
