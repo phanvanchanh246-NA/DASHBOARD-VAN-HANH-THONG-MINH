@@ -27,6 +27,7 @@ Biến môi trường (KHÔNG fix cứng key vào code):
 from __future__ import annotations
 
 import base64
+import hashlib
 import html as html_lib
 import io
 import json
@@ -1134,6 +1135,30 @@ def _font(bold: bool, size: int):
         return ImageFont.load_default()
 
 
+_IMG_CACHE: dict[str, bytes] = {}
+
+
+def img_cache(fn):
+    """Nhớ ảnh PNG đã vẽ theo nội dung tham số (tối đa 12 ảnh). Dùng cho các hàm vẽ ảnh vì chúng được gọi
+    theo yêu cầu (bấm tải/xem trước/gửi), kể cả từ luồng riêng của nút tải mà st.cache_data không hợp."""
+    def wrapper(*args, **kw):
+        h = hashlib.sha1(fn.__name__.encode())
+        for a in list(args) + [kw[k] for k in sorted(kw)]:
+            if isinstance(a, pd.DataFrame):
+                h.update(pd.util.hash_pandas_object(a, index=True).values.tobytes())
+                h.update("|".join(map(str, a.columns)).encode())
+            else:
+                h.update(repr(a).encode())
+        key = h.hexdigest()
+        if key not in _IMG_CACHE:
+            if len(_IMG_CACHE) >= 12:
+                _IMG_CACHE.pop(next(iter(_IMG_CACHE)))
+            _IMG_CACHE[key] = fn(*args, **kw)
+        return _IMG_CACHE[key]
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
 MEDAL_RGB = {1: (255, 193, 7), 2: (173, 181, 189), 3: (205, 127, 50)}
 MEDAL_BG = {1: (255, 248, 225), 2: (245, 246, 247), 3: (252, 240, 230)}
 
@@ -1179,11 +1204,11 @@ def _draw_header(img, d, W: int, title: str, subtitle: str, S: int, head_h: int)
 
 def _png_bytes(img) -> bytes:
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    img.save(buf, format="PNG", compress_level=6)   # optimize=True chậm gấp ~3 lần mà chỉ nhẹ hơn ~2%
     return buf.getvalue()
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
+@img_cache
 def render_rank_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str,
                       threshold: float = 80.0) -> bytes:
     """Vẽ bảng xếp hạng thành ảnh PNG để gửi nhân viên.
@@ -1274,12 +1299,12 @@ def render_rank_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str
     d.rectangle([PAD, y + FOOT_H - 4 * S, W - PAD, y + FOOT_H - 1 * S], fill=c_primary)
 
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    img.save(buf, format="PNG", compress_level=6)   # optimize=True chậm gấp ~3 lần mà chỉ nhẹ hơn ~2%
     return buf.getvalue()
 
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
+@img_cache
 def render_podium_image(cards: list, title: str, subtitle: str, footer: str) -> bytes:
     """Ảnh vinh danh top 3. Mỗi phần tử `cards`: dict(rank, name, pct, prize, detail)."""
     S = 2
@@ -1330,7 +1355,7 @@ def render_podium_image(cards: list, title: str, subtitle: str, footer: str) -> 
     return _png_bytes(img)
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
+@img_cache
 def render_td_table_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str,
                           now_label: str, prev_label: str, prize_header: str = "THƯỞNG") -> bytes:
     """Ảnh bảng xếp hạng thi đua chi tiết.
@@ -2301,7 +2326,7 @@ if tab1.open:
             st.dataframe(diag, width="stretch", hide_index=True, height=460)
             st.download_button("TẢI CSV CHẨN ĐOÁN",
                                diag.to_csv(index=False).encode("utf-8-sig"),
-                               "chan_doan_du_lieu.csv", "text/csv", key="dl_diag")
+                               "chan_doan_du_lieu.csv", "text/csv", key="dl_diag", on_click="ignore")
             st.markdown(
                 "**Cách đọc bảng này**\n\n"
                 "- *Không nhận ra cột đơn vị*: sheet đặt tên cột khác thường. Khi đó mọi dòng bị gán "
@@ -2497,7 +2522,7 @@ if tab2.open:
                              "Sản lượng": st.column_config.NumberColumn(format="%,d"),
                              "%GTC": st.column_config.NumberColumn(format="%.2f%%")})
             st.download_button("TẢI CSV", detail_vh.to_csv(index=False).encode("utf-8-sig"),
-                               "van_hanh_chi_tiet.csv", "text/csv", key="dl_vh")
+                               "van_hanh_chi_tiet.csv", "text/csv", key="dl_vh", on_click="ignore")
         else:
             note("Không có dữ liệu chi tiết trong khoảng đã chọn.")
 
@@ -2673,7 +2698,7 @@ if tab3.open:
                 st.dataframe(tn_show, width="stretch", hide_index=True, height=340)
                 st.download_button("TẢI CSV DANH SÁCH",
                                    tn_show.to_csv(index=False).encode("utf-8-sig"),
-                                   "khach_hang_tiem_nang.csv", "text/csv", key="dl_tn")
+                                   "khach_hang_tiem_nang.csv", "text/csv", key="dl_tn", on_click="ignore")
             else:
                 note("Không có dòng nào ở trạng thái 'Khách hàng tiềm năng'.")
         else:
@@ -2943,15 +2968,17 @@ if tab4.open:
                 "Đơn GTC": pd.to_numeric(rank[col_gtc], errors="coerce").fillna(0),
                 "%GTC": rank["%GTC"],
             }).head(top_n)
-            png = render_rank_image(
-                img_rows, "BẢNG XẾP HẠNG NHÂN VIÊN THEO %GTC",
-                f"{a_ns:%d/%m/%Y} – {b_ns:%d/%m/%Y}  ·  Bưu cục: {bc_ns}",
-                f"Mốc thưởng: %GTC ≥ 80%  ·  {len(img_rows)}/{len(rank)} nhân viên  ·  "
-                f"Dữ liệu đến {REF_DATE:%d/%m/%Y}")
+            def png() -> bytes:
+                """Vẽ ảnh bảng xếp hạng — chỉ chạy khi cần (bấm tải, xem trước hoặc gửi), không vẽ mỗi lần mở tab."""
+                return render_rank_image(
+                    img_rows, "BẢNG XẾP HẠNG NHÂN VIÊN THEO %GTC",
+                    f"{a_ns:%d/%m/%Y} – {b_ns:%d/%m/%Y}  ·  Bưu cục: {bc_ns}",
+                    f"Mốc thưởng: %GTC ≥ 80%  ·  {len(img_rows)}/{len(rank)} nhân viên  ·  "
+                    f"Dữ liệu đến {REF_DATE:%d/%m/%Y}")
             with bt2:
                 st.download_button("TẢI ẢNH BẢNG XẾP HẠNG", png,
                                    f"xep_hang_gtc_{b_ns:%Y%m%d}.png", "image/png",
-                                   key="dl_rank_img", width="stretch")
+                                   key="dl_rank_img", width="stretch", on_click="ignore")
             with bt3:
                 dang_xem = st.session_state.get("show_rank_preview", False)
                 st.button("ẨN ẢNH XEM TRƯỚC" if dang_xem else "XEM TRƯỚC ẢNH BẢNG XẾP HẠNG",
@@ -2959,7 +2986,8 @@ if tab4.open:
                           on_click=lambda: st.session_state.update(
                               show_rank_preview=not st.session_state.get("show_rank_preview", False)))
             if st.session_state.get("show_rank_preview", False):
-                st.image(png, width="stretch")
+                with st.spinner("Đang vẽ ảnh..."):
+                    st.image(png(), width="stretch")
 
             # ── AI soạn thông báo + gửi ảnh qua Telegram ───────────────────────
             st.markdown("**Thông báo xếp hạng gửi nhân viên (Telegram / GTalk)**")
@@ -3026,7 +3054,7 @@ if tab4.open:
             if st.button("GỬI ẢNH + THÔNG BÁO", key="btn_send_rank_all",
                          disabled=not (co_noi_nhan and msg_txt.strip()), width="stretch"):
                 with st.spinner(f"Đang gửi tới {len(dich)} nơi..."):
-                    kq = send_rank_everywhere(png, msg_txt, f"xep_hang_gtc_{b_ns:%Y%m%d}.png",
+                    kq = send_rank_everywhere(png(), msg_txt, f"xep_hang_gtc_{b_ns:%Y%m%d}.png",
                                               "Telegram" in kenh, nhom)
                 n_ok = sum(1 for _, ok_, _ in kq if ok_)
                 (st.success if n_ok == len(kq) else st.warning if n_ok else st.error)(
@@ -3149,7 +3177,7 @@ if tab5.open:
                              "%GTC TTS": st.column_config.NumberColumn(format="%.2f%%"),
                              "%Trả hàng": st.column_config.NumberColumn(format="%.2f%%")})
             st.download_button("TẢI CSV", tbl_kpi.to_csv(index=False).encode("utf-8-sig"),
-                               "kpi_theo_ngay.csv", "text/csv", key="dl_kpi")
+                               "kpi_theo_ngay.csv", "text/csv", key="dl_kpi", on_click="ignore")
         else:
             note("Chưa có dữ liệu KPI trong khoảng đã chọn.")
 
@@ -3429,23 +3457,33 @@ if tab7.open:
 
                 pham_vi = f"Bưu cục: {bc_td}"
                 if not top3.empty:
-                    podium_png = render_podium_image(
-                        [dict(rank=int(r["Hạng Thưởng"]), name=staff_label(r["Nhân Viên"]),
-                              pct=float(r[col_now]), prize=thuong_txt(r["Hạng Thưởng"]),
-                              detail=f"{r['Gán']:,.0f} đơn gán · {r['GTC']:,.0f} đơn GTC")
-                         for _, r in top3.iterrows()],
-                        f"VINH DANH TOP 3 THI ĐUA — {ten_n.upper()}",
-                        f"{pham_vi}  ·  Điều kiện: %GTC ≥ 80%",
-                        f"{len(bxh)} nhân viên dự thi  ·  {n_dat} người đạt điều kiện  ·  "
-                        f"Dữ liệu đến {kho['Ngày'].max():%d/%m/%Y}")
-                    pv1, pv2 = st.columns([1, 2])
+                    podium_cards = [
+                        dict(rank=int(r["Hạng Thưởng"]), name=staff_label(r["Nhân Viên"]),
+                             pct=float(r[col_now]), prize=thuong_txt(r["Hạng Thưởng"]),
+                             detail=f"{r['Gán']:,.0f} đơn gán · {r['GTC']:,.0f} đơn GTC")
+                        for _, r in top3.iterrows()]
+                    podium_foot = (f"{len(bxh)} nhân viên dự thi  ·  {n_dat} người đạt điều kiện  ·  "
+                                   f"Dữ liệu đến {kho['Ngày'].max():%d/%m/%Y}")
+
+                    def podium_png() -> bytes:
+                        return render_podium_image(
+                            podium_cards, f"VINH DANH TOP 3 THI ĐUA — {ten_n.upper()}",
+                            f"{pham_vi}  ·  Điều kiện: %GTC ≥ 80%", podium_foot)
+
+                    pv1, pv2 = st.columns([1, 1], vertical_alignment="bottom")
                     with pv1:
                         st.download_button("TẢI ẢNH VINH DANH TOP 3", podium_png,
                                            f"vinh_danh_top3_{ky_slug}.png", "image/png",
-                                           key="dl_td_podium", width="stretch")
+                                           key="dl_td_podium", width="stretch", on_click="ignore")
                     with pv2:
-                        with st.expander("Xem trước ảnh vinh danh"):
-                            st.image(podium_png, width="stretch")
+                        show_pod = st.session_state.get("show_td_podium", False)
+                        st.button("ẨN ẢNH XEM TRƯỚC" if show_pod else "XEM TRƯỚC ẢNH VINH DANH",
+                                  key="btn_td_prev_podium", width="stretch",
+                                  on_click=lambda: st.session_state.update(
+                                      show_td_podium=not st.session_state.get("show_td_podium", False)))
+                    if st.session_state.get("show_td_podium", False):
+                        with st.spinner("Đang vẽ ảnh..."):
+                            st.image(podium_png(), width="stretch")
 
                 # ── Bảng xếp hạng đầy đủ ───────────────────────────────────────
                 section("Bảng xếp hạng chi tiết")
@@ -3484,25 +3522,32 @@ if tab7.open:
                     "ĐK": bxh["Đủ ĐK (≥80%)"], "Thưởng": bxh["Thưởng"],
                     "Hạng thưởng": bxh["Hạng Thưởng"],
                 }).head(top_n_td)
-                table_png = render_td_table_image(
-                    img_td, f"BẢNG XẾP HẠNG THI ĐUA — {ten_n.upper()}",
-                    f"{pham_vi}  ·  So với {ten_n1_th}  ·  Xếp theo tổng điểm 3 tiêu chí",
-                    f"{len(img_td)}/{len(bxh)} nhân viên  ·  Tổng điểm càng nhỏ càng tốt  ·  "
-                    f"Dữ liệu đến {kho['Ngày'].max():%d/%m/%Y}",
-                    f"%GTC {ten_n}" if theo_thang else "%GTC kỳ này",
-                    f"%GTC {ten_n1}" if theo_thang else "%GTC kỳ trước",
-                    "THƯỞNG" if theo_thang else "VINH DANH")
+                def table_png() -> bytes:
+                    return render_td_table_image(
+                        img_td, f"BẢNG XẾP HẠNG THI ĐUA — {ten_n.upper()}",
+                        f"{pham_vi}  ·  So với {ten_n1_th}  ·  Xếp theo tổng điểm 3 tiêu chí",
+                        f"{len(img_td)}/{len(bxh)} nhân viên  ·  Tổng điểm càng nhỏ càng tốt  ·  "
+                        f"Dữ liệu đến {kho['Ngày'].max():%d/%m/%Y}",
+                        f"%GTC {ten_n}" if theo_thang else "%GTC kỳ này",
+                        f"%GTC {ten_n1}" if theo_thang else "%GTC kỳ trước",
+                        "THƯỞNG" if theo_thang else "VINH DANH")
                 with ti2:
                     st.download_button("TẢI ẢNH BẢNG XẾP HẠNG", table_png,
                                        f"bang_xep_hang_thi_dua_{ky_slug}.png", "image/png",
-                                       key="dl_td_img", width="stretch")
+                                       key="dl_td_img", width="stretch", on_click="ignore")
                 with ti3:
                     st.download_button("TẢI CSV BẢNG XẾP HẠNG",
                                        show.to_csv(index=False).encode("utf-8-sig"),
                                        f"thi_dua_{ky_slug}.csv", "text/csv",
-                                       key="dl_td", width="stretch")
-                with st.expander("Xem trước ảnh bảng xếp hạng"):
-                    st.image(table_png, width="stretch")
+                                       key="dl_td", width="stretch", on_click="ignore")
+                show_tbl = st.session_state.get("show_td_table", False)
+                st.button("ẨN ẢNH XEM TRƯỚC" if show_tbl else "XEM TRƯỚC ẢNH BẢNG XẾP HẠNG",
+                          key="btn_td_prev_table", width="stretch",
+                          on_click=lambda: st.session_state.update(
+                              show_td_table=not st.session_state.get("show_td_table", False)))
+                if show_tbl:
+                    with st.spinner("Đang vẽ ảnh..."):
+                        st.image(table_png(), width="stretch")
 
                 # ── Biểu đồ cải thiện ──────────────────────────────────────────
                 section(f"Mức cải thiện %GTC so với {ten_n1_th}")
