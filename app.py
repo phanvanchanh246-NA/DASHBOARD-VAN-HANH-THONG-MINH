@@ -10,7 +10,10 @@ Chạy trên Render:
     streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
 
 Biến môi trường (KHÔNG fix cứng key vào code):
-    GEMINI_API_KEY      — khóa Google Gemini
+    ANTHROPIC_API_KEY   — khóa Claude (Anthropic). Có khóa này thì app ưu tiên dùng Claude
+    ANTHROPIC_MODEL     — mô hình Claude (mặc định claude-opus-5-5; đổi sang claude-sonnet-5-5 để rẻ hơn)
+    AI_PROVIDER         — auto (mặc định) | claude | gemini: AI nào được ưu tiên; lỗi thì tự chuyển sang AI còn lại
+    GEMINI_API_KEY      — khóa Google Gemini (dự phòng hoặc dùng riêng)
     TELEGRAM_TOKEN      — token bot Telegram (tùy chọn)
     TELEGRAM_CHAT_ID    — id nhóm nhận báo cáo (tùy chọn)
     TELEGRAM_API_BASE   — máy chủ Telegram API (mặc định https://api.telegram.org; chỉ đổi khi test)
@@ -50,6 +53,12 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
+try:
     from google import genai
     from google.genai import types as genai_types
     GENAI_AVAILABLE = True
@@ -80,6 +89,12 @@ PRIMARY_SOFT = "#CFE8F5"
 
 # ── Khóa API lấy từ biến môi trường ────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+CLAUDE_MODEL = os.environ.get("ANTHROPIC_MODEL", "").strip() or "claude-opus-5-5"
+CLAUDE_EFFORT = (os.environ.get("ANTHROPIC_EFFORT", "").strip().lower()
+                 if os.environ.get("ANTHROPIC_EFFORT", "").strip().lower() in ("low", "medium", "high", "xhigh", "max")
+                 else "medium")
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto").strip().lower()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 TELEGRAM_API_BASE = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org").strip().rstrip("/")
@@ -90,6 +105,8 @@ ADMIN_PASS = os.environ.get("ADMIN_PASS", "ghn@admin").strip()
 USER_PASS = os.environ.get("USER_PASS", "ghn@user").strip()
 
 GEMINI_MODEL = "gemini-3.6-flash"
+# Mô hình dự phòng khi mô hình chính quá tải/hết quota (để trống để tắt). Có thể đổi bằng biến môi trường.
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash").strip()
 CACHE_TTL = 300
 
 # ── 12 nguồn dữ liệu Google Sheets ─────────────────────────────────────
@@ -1403,24 +1420,148 @@ def genai_client():
         return None
 
 
-def ask_ai_checked(prompt: str) -> tuple[bool, str]:
-    """Gọi Gemini. Trả (True, nội dung) nếu thành công, (False, lý do lỗi) nếu không —
-    để chỗ nào cần gửi đi ngoài (Telegram) không nhầm câu báo lỗi với nội dung AI viết."""
+_AI_RETRY_CODES = {429, 500, 502, 503, 504}      # lỗi tạm thời: đáng thử lại
+_AI_NEXT_MODEL_CODES = _AI_RETRY_CODES | {404}     # thử mô hình dự phòng nếu vẫn lỗi
+
+
+def _ai_err_code(exc: Exception) -> int | None:
+    code = getattr(exc, "code", None)
+    if isinstance(code, int):
+        return code
+    m = re.match(r"\s*(\d{3})\b", str(exc))        # lỗi google-genai có dạng "503 UNAVAILABLE. {...}"
+    return int(m.group(1)) if m else None
+
+
+def _ai_err_text(code: int | None, exc: Exception, model: str) -> str:
+    if code in (500, 502, 503, 504):
+        return (f"Máy chủ Google AI đang quá tải hoặc tạm gián đoạn (mã {code}). "
+                "Đây là lỗi tạm thời từ phía Google, bạn thử lại sau ít phút.")
+    if code == 429:
+        return "Đã vượt giới hạn lượt dùng Google AI (gọi quá nhanh hoặc hết hạn mức). Đợi một lúc rồi thử lại."
+    if code in (401, 403):
+        return f"Google AI từ chối khóa GEMINI_API_KEY (mã {code}): sai, hết hạn hoặc chưa được cấp quyền."
+    if code == 404:
+        return f"Không tìm thấy mô hình AI '{model}'. Kiểm tra lại tên mô hình."
+    return "Lỗi Google AI" + (f" (mã {code})" if code else "") + f": {str(exc)[:200]}"
+
+
+def _ask_gemini(prompt: str) -> tuple[bool, str]:
+    """Gọi Gemini. Trả (True, nội dung) nếu thành công, (False, lý do lỗi) nếu không.
+
+    Lỗi tạm thời của Google (503 quá tải, 429, 5xx) được thử lại tự động với thời gian chờ tăng dần,
+    sau đó chuyển sang mô hình dự phòng. Lỗi khóa API (400/401/403) thì dừng ngay, không thử lại."""
     if not GENAI_AVAILABLE:
         return False, "Thiếu thư viện. Chạy: pip install google-genai"
     client = genai_client()
     if client is None:
-        return False, "Chưa cấu hình GEMINI_API_KEY. Thêm biến môi trường rồi khởi động lại dịch vụ."
+        return False, "Chưa cấu hình GEMINI_API_KEY."
+    plan = [(GEMINI_MODEL, 3)]
+    if GEMINI_FALLBACK_MODEL and GEMINI_FALLBACK_MODEL != GEMINI_MODEL:
+        plan.append((GEMINI_FALLBACK_MODEL, 2))
+    first_err = ""
+    for model, tries in plan:
+        for attempt in range(tries):
+            try:
+                resp = client.models.generate_content(
+                    model=model, contents=prompt,
+                    config=genai_types.GenerateContentConfig(max_output_tokens=8192))
+            except Exception as exc:  # noqa: BLE001
+                code = _ai_err_code(exc)
+                first_err = first_err or _ai_err_text(code, exc, model)
+                if code in _AI_RETRY_CODES and attempt < tries - 1:
+                    time.sleep(2 * (attempt + 1))          # chờ 2s, 4s rồi thử lại
+                    continue
+                if code in _AI_NEXT_MODEL_CODES:
+                    break                                   # sang mô hình dự phòng
+                return False, first_err                     # lỗi khóa/yêu cầu: thử lại cũng vô ích
+            if not getattr(resp, "candidates", None):
+                return False, "AI không trả về nội dung. Thử lại."
+            text = (resp.text or "").strip()
+            return (True, text) if text else (False, "AI trả về nội dung rỗng.")
+    return False, first_err + " Hệ thống đã tự thử lại nhưng chưa được."
+
+
+@st.cache_resource
+def claude_client():
+    if not ANTHROPIC_AVAILABLE or not ANTHROPIC_API_KEY:
+        return None
     try:
-        resp = client.models.generate_content(
-            model=GEMINI_MODEL, contents=prompt,
-            config=genai_types.GenerateContentConfig(max_output_tokens=8192))
-        if not getattr(resp, "candidates", None):
-            return False, "AI không trả về nội dung. Thử lại."
-        text = (resp.text or "").strip()
-        return (True, text) if text else (False, "AI trả về nội dung rỗng.")
+        # SDK tự thử lại 3 lần với lỗi tạm thời (429, 5xx, mất kết nối) nên không cần vòng thử lại riêng.
+        return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, max_retries=3, timeout=180.0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ask_claude(prompt: str) -> tuple[bool, str]:
+    """Gọi Claude (Anthropic). Trả (True, nội dung) hoặc (False, lý do lỗi bằng tiếng Việt)."""
+    if not ANTHROPIC_AVAILABLE:
+        return False, "Thiếu thư viện. Chạy: pip install anthropic"
+    client = claude_client()
+    if client is None:
+        return False, "Chưa cấu hình ANTHROPIC_API_KEY."
+    # Không gửi `thinking`: các mô hình Claude mới tự suy luận; độ sâu điều khiển bằng effort.
+    kwargs = dict(model=CLAUDE_MODEL, max_tokens=16000, output_config={"effort": CLAUDE_EFFORT},
+                  messages=[{"role": "user", "content": prompt}])
+    try:
+        if CLAUDE_MODEL.startswith(("claude-opus-5", "claude-sonnet-5-5", "claude-fable")):
+            # Nếu bộ lọc an toàn từ chối nhầm, máy chủ tự chạy lại trên mô hình dự phòng.
+            try:
+                resp = client.beta.messages.create(
+                    betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs)
+            except anthropic.BadRequestError as exc:
+                if "fallback" not in str(exc).lower() and "beta" not in str(exc).lower():
+                    raise
+                resp = client.messages.create(**kwargs)       # tài khoản/nền tảng chưa hỗ trợ fallbacks
+        else:
+            resp = client.messages.create(**kwargs)
+    except anthropic.AuthenticationError:
+        return False, "Anthropic từ chối khóa ANTHROPIC_API_KEY (sai hoặc đã bị thu hồi)."
+    except anthropic.PermissionDeniedError:
+        return False, f"Khóa ANTHROPIC_API_KEY không có quyền dùng mô hình {CLAUDE_MODEL}."
+    except anthropic.NotFoundError:
+        return False, f"Không tìm thấy mô hình Claude '{CLAUDE_MODEL}'. Kiểm tra biến ANTHROPIC_MODEL."
+    except anthropic.RateLimitError:
+        return False, "Đã vượt giới hạn lượt dùng Claude (mã 429). Thử lại sau ít phút."
+    except anthropic.APIConnectionError:
+        return False, "Không kết nối được tới máy chủ Claude. Kiểm tra mạng rồi thử lại."
+    except anthropic.APIStatusError as exc:
+        if exc.status_code >= 500:
+            return False, (f"Máy chủ Claude đang quá tải hoặc tạm gián đoạn (mã {exc.status_code}). "
+                           "Thử lại sau ít phút.")
+        body = exc.body if isinstance(exc.body, dict) else {}
+        detail = str((body.get("error") or {}).get("message") or exc.message)[:200]
+        if "credit balance" in detail.lower():
+            return False, ("Tài khoản Anthropic đã hết tín dụng. Nạp thêm tại console.anthropic.com "
+                           "(mục Plans & Billing) rồi thử lại.")
+        return False, f"Claude từ chối yêu cầu (mã {exc.status_code}): {detail}"
     except Exception as exc:  # noqa: BLE001
-        return False, f"Lỗi Google AI: {exc}"
+        return False, f"Lỗi Claude: {str(exc)[:200]}"
+    if resp.stop_reason == "refusal":
+        return False, "Claude từ chối trả lời yêu cầu này (bộ lọc an toàn)."
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    return (True, text) if text else (False, "AI trả về nội dung rỗng.")
+
+
+def ask_ai_checked(prompt: str) -> tuple[bool, str]:
+    """Hỏi AI. Trả (True, nội dung) nếu thành công, (False, lý do lỗi) nếu không — để chỗ nào cần gửi
+    ra ngoài (Telegram, GTalk) không nhầm câu báo lỗi với nội dung AI viết.
+
+    Dùng AI nào có khóa: Claude được ưu tiên (đổi bằng AI_PROVIDER). Nếu AI ưu tiên lỗi thì tự thử AI còn lại."""
+    available = {"claude": (ANTHROPIC_API_KEY, _ask_claude, "Claude"),
+                 "gemini": (GEMINI_API_KEY, _ask_gemini, "Gemini")}
+    prefer = AI_PROVIDER if AI_PROVIDER in available else "claude"
+    order = [prefer] + [k for k in available if k != prefer]
+    order = [k for k in order if available[k][0]]
+    if not order:
+        return False, ("Chưa cấu hình AI. Thêm ANTHROPIC_API_KEY (Claude) hoặc GEMINI_API_KEY (Gemini) "
+                       "trên máy chủ rồi khởi động lại dịch vụ.")
+    errors: list[str] = []
+    for k in order:
+        ok, out = available[k][1](prompt)
+        if ok:
+            return True, out
+        errors.append(f"{available[k][2]}: {out}")
+    return False, " | ".join(errors) if len(errors) > 1 else errors[0].split(": ", 1)[1]
 
 
 def ask_ai(prompt: str) -> str:
@@ -1498,7 +1639,12 @@ Trình bày đúng 3 phần, mỗi phần có tiêu đề in đậm:
 
 Chỉ dùng số liệu được cung cấp. Nếu thiếu dữ liệu cho phần nào thì ghi rõ "chưa đủ dữ liệu",
 tuyệt đối không suy đoán hay bịa số. Viết ngắn gọn. Kết thúc bằng dòng [HẾT]."""
-            st.session_state.ai_cache[key] = ask_ai(prompt)
+            ok_ai, ai_out = ask_ai_checked(prompt)
+            if ok_ai:
+                st.session_state.ai_cache[key] = ai_out
+            else:
+                # Không lưu câu báo lỗi như thể là nhận định (sẽ hiện kèm nút gửi Telegram).
+                st.error(ai_out)
 
     result = st.session_state.ai_cache.get(key)
     if result:
