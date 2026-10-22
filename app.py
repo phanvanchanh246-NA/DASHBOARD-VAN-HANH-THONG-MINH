@@ -1255,7 +1255,7 @@ def render_rank_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str
     d.text((r_gan, mid), "ĐƠN GÁN", font=f_th, fill=c_primary, anchor="rm")
     d.text((r_gtc, mid), "ĐƠN GTC", font=f_th, fill=c_primary, anchor="rm")
     d.text((x_bar, mid), "%GTC", font=f_th, fill=c_primary, anchor="lm")
-    d.text((W - PAD - 14 * S, mid), "MỤC TIÊU", font=f_th, fill=c_primary, anchor="rm")
+    d.text((W - PAD - 14 * S, mid), "MỤC TIÊU ≥ 80%", font=f_th, fill=c_primary, anchor="rm")
     y += TH_H
 
     # ── Dòng dữ liệu ──
