@@ -2915,6 +2915,24 @@ if tab4.open:
             fig_ns.add_trace(go.Scatter(x=g_ns["Ngày"], y=g_ns["r"], name="% GTC",
                                         mode="lines+markers", line=dict(color=ACCENT, width=3),
                                         marker=dict(size=7)), secondary_y=True)
+            # Đường xu hướng %GTC: hồi quy tuyến tính theo ngày thực tế (ngày thiếu dữ liệu không bị kéo lệch),
+            # bỏ các ngày không có đơn gán vì %GTC của ngày đó không có nghĩa.
+            xs_all = (g_ns["Ngày"] - g_ns["Ngày"].min()).dt.days.to_numpy(dtype=float)
+            co_don = (g_ns[col_gan] > 0).to_numpy()
+            if co_don.sum() >= 3 and len(set(xs_all[co_don])) >= 3:
+                slope, icpt = np.polyfit(xs_all[co_don], g_ns["r"].to_numpy()[co_don], 1)
+                xa, xb = xs_all[co_don].min(), xs_all[co_don].max()
+                d0 = g_ns["Ngày"].min()
+                fig_ns.add_trace(go.Scatter(
+                    x=[d0 + timedelta(days=float(xa)), d0 + timedelta(days=float(xb))],
+                    y=[float(np.clip(icpt + slope * xa, 0, 100)), float(np.clip(icpt + slope * xb, 0, 100))],
+                    name=("Xu hướng %GTC (đi ngang)" if abs(slope) < 0.005
+                          else f"Xu hướng %GTC ({slope:+.2f} điểm/ngày)"), mode="lines",
+                    line=dict(color=TEXT, width=3, dash="dash"),
+                    hovertemplate="Xu hướng %{y:.1f}%<extra></extra>"), secondary_y=True)
+                xu_huong_ok = True
+            else:
+                xu_huong_ok = False
             fig_ns.update_layout(barmode="overlay", height=470,
                                  title="Sản lượng gán · GTC · tỷ lệ")
             fig_ns.update_yaxes(title_text="Số đơn", secondary_y=False)
@@ -2922,6 +2940,8 @@ if tab4.open:
                                 showgrid=False, range=[0, 100])
             fig_ns.update_xaxes(tickformat="%d/%m")
             st.plotly_chart(fig_ns, width="stretch")
+            if not xu_huong_ok:
+                st.caption("Cần ít nhất 3 ngày có dữ liệu để vẽ đường xu hướng %GTC.")
         else:
             note("Chưa đủ dữ liệu gán và giao để vẽ biểu đồ.")
 
