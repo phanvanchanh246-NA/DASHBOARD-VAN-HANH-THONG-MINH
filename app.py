@@ -657,7 +657,7 @@ def safe_load(key: str) -> pd.DataFrame:
     """Đọc sheet, nuốt lỗi thành bảng rỗng nhưng GHI LẠI lý do thật.
 
     Trước đây lỗi bị nuốt hoàn toàn nên một nguồn khai báo thiếu link vẫn chỉ hiện
-    'không đọc được', rất khó tìm ra. Nay lý do được lưu để bảng chẩn đoán hiển thị.
+    'không đọc được', rất khó tìm ra. Nay lý do được lưu để hiển thị ở thanh bên.
     """
     errors = st.session_state.setdefault("load_errors", {})
     if key not in SHEET_LINKS:
@@ -2097,50 +2097,6 @@ SHEET_LABELS = {
 }
 
 
-def sheet_diagnostics() -> pd.DataFrame:
-    """Soi từng sheet: đọc được bao nhiêu dòng, khoảng ngày nào, nhận ra cột nào.
-    Đây là cách nhanh nhất để phát hiện vì sao một con số hiện ra sai hoặc bằng 0."""
-    rows = []
-    for key, label in SHEET_LABELS.items():
-        raw = safe_load(key)
-        if raw.empty:
-            ly_do = st.session_state.get("load_errors", {}).get(key, "sheet rỗng hoặc chưa chia sẻ")
-            rows.append({
-                "Sheet": label, "Số dòng": 0, "Từ ngày": "—", "Đến ngày": "—",
-                "Cột đơn vị": "—", "Giá trị đơn vị": "—",
-                "Tình trạng": f"Không đọc được — {ly_do}",
-                "Các cột trong sheet": "—"})
-            continue
-
-        has_date = "Ngày" in raw.columns and raw["Ngày"].notna().any()
-        d_min = raw["Ngày"].min() if has_date else None
-        d_max = raw["Ngày"].max() if has_date else None
-        units = ([u for u in raw["Bưu Cục"].dropna().astype(str).unique()][:4]
-                 if "Bưu Cục" in raw.columns else [])
-        original_cols = [c for c in raw.columns if c not in ("Ngày", "Bưu Cục")]
-
-        if not has_date:
-            status = "Thiếu cột Ngày"
-        elif units and all(u == "Chưa phân loại" for u in units):
-            status = "Không nhận ra cột đơn vị"
-        elif d_max is not None and (REF_DATE - d_max).days > 3:
-            status = f"Cũ hơn {(REF_DATE - d_max).days} ngày so với ngày mới nhất"
-        else:
-            status = "Bình thường"
-
-        rows.append({
-            "Sheet": label,
-            "Số dòng": len(raw),
-            "Từ ngày": f"{d_min:%d/%m/%Y}" if d_min is not None and pd.notna(d_min) else "—",
-            "Đến ngày": f"{d_max:%d/%m/%Y}" if d_max is not None and pd.notna(d_max) else "—",
-            "Cột đơn vị": "Bưu Cục" if units and units[0] != "Chưa phân loại" else "không nhận ra",
-            "Giá trị đơn vị": ", ".join(units) if units else "—",
-            "Tình trạng": status,
-            "Các cột trong sheet": " | ".join(str(c) for c in original_cols),
-        })
-    return pd.DataFrame(rows)
-
-
 def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả") -> float:
     """Đọc mốc KPI từ sheet KPI (Tháng | Bưu cục | %GTC Tổng | %GTC TTS | %Trả hàng | Doanh thu).
     Sheet có thể còn trống — khi bạn điền số vào là dashboard tự nhận, không phải sửa code."""
@@ -2326,29 +2282,6 @@ if tab1.open:
                 st.caption("Mới có 1 ngày dữ liệu — biểu đồ sẽ đầy đủ khi sheet tích lũy thêm ngày.")
         else:
             note("Chưa có dữ liệu vận hành trong 30 ngày gần nhất.")
-
-        section("Chẩn đoán nguồn dữ liệu")
-        st.caption("Mở bảng này khi thấy một con số bị sai hoặc bằng 0. Nó cho biết từng sheet "
-                   "đọc được bao nhiêu dòng, dữ liệu đến ngày nào, và có nhận ra cột đơn vị không.")
-        with st.expander("Xem tình trạng 12 nguồn dữ liệu", expanded=False):
-            diag = sheet_diagnostics()
-            bad = diag[diag["Tình trạng"] != "Bình thường"]
-            if not bad.empty:
-                st.warning(
-                    f"{len(bad)}/{len(diag)} nguồn đang có vấn đề: "
-                    + ", ".join(f"**{r['Sheet']}** ({r['Tình trạng']})" for _, r in bad.iterrows()),
-                    icon="⚠️")
-            st.dataframe(diag, width="stretch", hide_index=True, height=460)
-            st.download_button("TẢI CSV CHẨN ĐOÁN",
-                               diag.to_csv(index=False).encode("utf-8-sig"),
-                               "chan_doan_du_lieu.csv", "text/csv", key="dl_diag", on_click="ignore")
-            st.markdown(
-                "**Cách đọc bảng này**\n\n"
-                "- *Không nhận ra cột đơn vị*: sheet đặt tên cột khác thường. Khi đó mọi dòng bị gán "
-                "\"Chưa phân loại\" và bộ lọc bưu cục sẽ trả về 0.\n"
-                "- *Cũ hơn N ngày*: sheet chưa được cập nhật cùng nhịp với các sheet khác. Chỉ số "
-                "theo tháng của sheet đó sẽ bằng 0 nếu tháng hiện tại chưa có dòng nào.\n"
-                "- *Thiếu cột Ngày*: không so sánh được theo thời gian.")
 
         ai_advisor(
             "ov", "Tổng quan",
@@ -2595,8 +2528,8 @@ if tab3.open:
                 "Chọn phạm vi *Tất cả* để xem đúng số, hoặc bổ sung cột Bưu cục vào sheet.",
                 icon="⚠️")
         elif M_DT.empty:
-            st.warning("Chưa đọc được sheet doanh thu. Mở mục Chẩn đoán nguồn dữ liệu ở tab "
-                       "Tổng quan để xem lý do.", icon="⚠️")
+            st.warning("Chưa đọc được sheet doanh thu. Kiểm tra lại link và quyền chia sẻ của sheet "
+                       "doanh thu.", icon="⚠️")
         else:
             dt_max = dt_scope["Ngày"].max()
             if pd.notna(dt_max) and dt_max.to_period("M") != REF_DATE.to_period("M"):
@@ -3310,6 +3243,12 @@ if tab7.open:
         raw_now, log_now = chuan_hoa(DF_NSGTC, "Năng suất nhân viên (tháng này)")
         raw_prev, log_prev = chuan_hoa(DF_NS_PREV, "Năng suất tháng trước")
 
+        def nguon_loi_td() -> str:
+            """Lý do ngắn gọn của nguồn nào đang không đọc được (thay cho bảng chẩn đoán đã bỏ)."""
+            ly_do = [f"{lg['Nguồn']}: {lg['Tình trạng']}" for lg in (log_now, log_prev)
+                     if lg["Tình trạng"] != "Bình thường"]
+            return ("Nguyên nhân: " + "; ".join(ly_do) + ".") if ly_do else ""
+
         # Gộp CẢ HAI nguồn rồi mới tách theo tháng. Nhờ vậy nếu một sheet chứa sẵn dữ liệu
         # của cả hai tháng, hoặc một sheet hỏng, phần còn lại vẫn dùng được.
         # Ngày nào của một nhân viên đã có ở sheet tháng này thì bỏ dòng trùng ở sheet tháng trước.
@@ -3333,21 +3272,11 @@ if tab7.open:
             kho = kho[kho["Bưu Cục"].map(norm) == norm(bc_td)]
         chi_thieu_buu_cuc = co_du_lieu_goc and kho.empty
 
-        with st.expander("Chẩn đoán nguồn dữ liệu thi đua", expanded=kho.empty and not chi_thieu_buu_cuc):
-            st.dataframe(pd.DataFrame([log_now, log_prev]), width="stretch", hide_index=True)
-            if not kho.empty:
-                ky_co = sorted(kho["Kỳ"].dropna().unique())
-                st.markdown("**Các tháng gộp được:** "
-                            + " · ".join(f"{k}: {kho[kho['Kỳ'] == k]['MaNV'].nunique()} nhân viên"
-                                         for k in ky_co))
-            st.caption("Nếu cột nhân viên/gán/GTC báo KHÔNG TÌM THẤY thì sheet đó đặt tên cột khác "
-                       "thường. Gửi mình tên cột thật để bổ sung từ khóa nhận diện.")
-
         if chi_thieu_buu_cuc:
             note(f"Bưu cục {bc_td} không có nhân viên nào trong dữ liệu năng suất. "
                  "Chọn bưu cục khác hoặc 'Tất cả'.")
         elif kho.empty:
-            note("Chưa gộp được dữ liệu thi đua. Xem bảng chẩn đoán phía trên để biết nguồn nào lỗi.")
+            note("Chưa gộp được dữ liệu thi đua. " + nguon_loi_td())
         else:
             # Không dùng st.stop(): lệnh đó dừng CẢ TRANG (mất chân trang, các phần sau),
             # chứ không chỉ riêng tab này.
@@ -3385,7 +3314,7 @@ if tab7.open:
                 st.warning(
                     f"Không có dữ liệu **{ten_n1_th}** trong cả hai sheet, nên cột %GTC kỳ trước "
                     f"đang bằng 0 và mức cải thiện bị thổi phồng đúng bằng %GTC {ten_n_th}. "
-                    "Xem bảng chẩn đoán phía trên để biết nguồn nào chưa đọc được.", icon="⚠️")
+                    + nguon_loi_td(), icon="⚠️")
             else:
                 khop = cur_td["MaNV"].isin(prev_td["MaNV"]).sum()
                 st.caption(f"Đối chiếu {ten_n_th} với {ten_n1_th} · "
@@ -3393,8 +3322,7 @@ if tab7.open:
                            f"{khop} người khớp mã ở cả hai kỳ.")
 
             if cur_td.empty:
-                note("Chưa đọc được dữ liệu năng suất kỳ này. Mở mục Chẩn đoán nguồn dữ liệu "
-                     "ở tab Tổng quan để xem lý do.")
+                note("Chưa đọc được dữ liệu năng suất kỳ này. " + nguon_loi_td())
             else:
                 # ── Ghép hai tháng theo MÃ nhân viên ───────────────────────────
                 bxh = cur_td.merge(
