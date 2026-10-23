@@ -1959,6 +1959,293 @@ YÊU CẦU:
 - Chỉ trả về nội dung thông báo, không giải thích, không tiêu đề."""
 
 
+# ── Cảnh báo nhân sự ────────────────────────────────────────────────────
+HR_DEFAULTS = {"low": 70.0, "streak": 3, "drop": 10.0, "absent": 3, "ratio": 50}
+HR_FLAG_COLORS = {"low": DANGER, "drop": ACCENT, "absent": "#6C757D", "gan": "#00B4D8"}
+
+
+@st.cache_data(show_spinner=False)
+def hr_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Gom sheet Năng suất nhân viên về mỗi người một dòng mỗi ngày (MaNV, Nhân viên, Bưu cục, Ngày, Gán, GTC)."""
+    cols = ["MaNV", "Nhân viên", "Bưu cục", "Ngày", "Gán", "GTC"]
+    if df is None or df.empty or "Ngày" not in df.columns or "Bưu Cục" not in df.columns:
+        return pd.DataFrame(columns=cols)
+    c_nv = pick_col(df, [["nhan vien"]])
+    c_gan = pick_col(df, [["gan giao"], ["so don gan"], ["gan"]])
+    c_gtc = pick_col(df, [["giao tinh luong"], ["don gtc"], ["giao thanh cong"], ["gtc"]], exclude=["%"])
+    if not (c_nv and c_gan and c_gtc):
+        return pd.DataFrame(columns=cols)
+    d = df[df["Ngày"].notna() & df[c_nv].notna()].copy()
+    d = d[~d[c_nv].map(is_total_row)]
+    d["Tên"] = d[c_nv].astype(str).str.strip()
+    d = d[(d["Tên"] != "") & (d["Tên"] != "nan")]
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    d["MaNV"] = d["Tên"].map(staff_id)
+    d["Gán"] = pd.to_numeric(_as_series(d[c_gan]), errors="coerce").fillna(0)
+    d["GTC"] = pd.to_numeric(_as_series(d[c_gtc]), errors="coerce").fillna(0)
+    d = d.sort_values("Ngày")
+    out = d.groupby(["MaNV", "Ngày"], as_index=False).agg(
+        Gán=("Gán", "sum"), GTC=("GTC", "sum"), **{"Bưu cục": ("Bưu Cục", "last")})
+    # Tên hiển thị: giữ bản ghi dài nhất (thường đầy đủ nhất) của mỗi mã
+    names = d.assign(_l=d["Tên"].str.len()).sort_values("_l").groupby("MaNV")["Tên"].last()
+    out["Nhân viên"] = out["MaNV"].map(names).map(staff_label)
+    return out[cols]
+
+
+@st.cache_data(show_spinner=False)
+def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, streak: int = 3,
+                drop: float = 10.0, absent: int = 3, ratio: float = 50) -> pd.DataFrame:
+    """Dò 4 loại cảnh báo nhân sự trên dữ liệu theo ngày (từ hr_daily), tính tới ngày `ref`:
+      low    — %GTC dưới `low`% trong `streak` ngày làm việc liền gần nhất
+      drop   — %GTC 7 ngày gần nhất giảm từ `drop` điểm so với 7 ngày trước đó (mỗi bên ≥ 30 đơn gán)
+      absent — có làm trong 30 ngày qua nhưng đã `absent` ngày trở lên không có đơn
+      gan    — đơn gán bình quân/ngày trong 7 ngày dưới `ratio`% trung vị của bưu cục (làm ≥ 2 ngày)
+    Mỗi nhân viên một dòng, chỉ giữ người có ít nhất một cảnh báo."""
+    cols = ["Mức", "Nhân viên", "Bưu cục", "Cảnh báo", "%GTC 7 ngày", "%GTC 7 ngày trước",
+            "Gán TB/ngày", "Ngày làm cuối", "_tags", "_flags", "_score"]
+    if daily is None or daily.empty:
+        return pd.DataFrame(columns=cols)
+    ref = pd.Timestamp(ref).normalize()
+    d = daily[(daily["Ngày"] <= ref) & (daily["Ngày"] >= ref - pd.Timedelta(days=29))]
+    d = d[d["Gán"] > 0]
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    r_a, p_a, p_b = ref - pd.Timedelta(days=6), ref - pd.Timedelta(days=13), ref - pd.Timedelta(days=7)
+
+    def pct(x):
+        g = float(x["Gán"].sum())
+        return float(x["GTC"].sum()) / g * 100 if g > 0 else None
+
+    recent_all = d[d["Ngày"] >= r_a]
+    per_staff = recent_all.groupby("MaNV").agg(n=("Ngày", "nunique"), gan=("Gán", "sum"),
+                                              bc=("Bưu cục", "last"))
+    per_staff = per_staff[per_staff["n"] >= 2]
+    per_staff["avg"] = per_staff["gan"] / per_staff["n"]
+    med_bc = per_staff.groupby("bc")["avg"].median()
+
+    rows = []
+    for ma, x in d.groupby("MaNV"):
+        x = x.sort_values("Ngày")
+        last = x["Ngày"].iloc[-1]
+        bc = x["Bưu cục"].iloc[-1]
+        rec, prev = x[x["Ngày"] >= r_a], x[(x["Ngày"] >= p_a) & (x["Ngày"] <= p_b)]
+        p_rec, p_prev = pct(rec), pct(prev)
+        avg_gan = float(rec["Gán"].sum()) / rec["Ngày"].nunique() if not rec.empty else None
+        flags, tags, desc, score = [], [], [], 0.0
+
+        days_off = (ref - last).days
+        if days_off >= absent:
+            flags.append("absent")
+            tags.append(f"Vắng {days_off} ngày")
+            desc.append(f"{days_off} ngày không có đơn (làm cuối {last:%d/%m})")
+            score += 2 if days_off >= 7 else 1
+        else:
+            day_pct = (x["GTC"] / x["Gán"] * 100).iloc[::-1]
+            run = 0
+            for v in day_pct:
+                if v < low:
+                    run += 1
+                else:
+                    break
+            if run >= streak:
+                flags.append("low")
+                tags.append(f"%GTC < {low:g}% · {run} ngày")
+                desc.append(f"%GTC dưới {low:g}% {run} ngày làm liền gần nhất")
+                score += 2 if run >= max(5, streak + 2) else 1
+        if (p_rec is not None and p_prev is not None and rec["Gán"].sum() >= 30
+                and prev["Gán"].sum() >= 30 and p_prev - p_rec >= drop):
+            flags.append("drop")
+            tags.append(f"Giảm {p_prev - p_rec:.1f} điểm")
+            desc.append(f"%GTC giảm {p_prev - p_rec:.1f} điểm ({p_prev:.1f}% → {p_rec:.1f}%)")
+            score += 2 if p_prev - p_rec >= 2 * drop else 1
+        med = med_bc.get(bc)
+        if ma in per_staff.index and med and avg_gan is not None and avg_gan < med * ratio / 100:
+            flags.append("gan")
+            tags.append(f"Gán thấp {avg_gan / med * 100:.0f}%")
+            desc.append(f"gán TB {avg_gan:,.0f} đơn/ngày, bằng {avg_gan / med * 100:.0f}% "
+                        f"trung vị bưu cục ({med:,.0f})")
+            score += 1
+        if not flags:
+            continue
+        score += len(flags) - 1
+        rows.append({
+            "Mức": "Cao" if score >= 2 else "Trung bình",
+            "Nhân viên": x["Nhân viên"].iloc[-1], "Bưu cục": bc,
+            "Cảnh báo": (lambda s: s[:1].upper() + s[1:])("; ".join(desc)),
+            "%GTC 7 ngày": p_rec, "%GTC 7 ngày trước": p_prev,
+            "Gán TB/ngày": avg_gan, "Ngày làm cuối": last,
+            "_tags": "|".join(tags), "_flags": "|".join(flags), "_score": score,
+        })
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    out = pd.DataFrame(rows, columns=cols)
+    out["_p"] = out["%GTC 7 ngày"].fillna(999)
+    out = out.sort_values(["_score", "_p"], ascending=[False, True]).drop(columns="_p")
+    return out.reset_index(drop=True)
+
+
+@img_cache
+def render_hr_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str, legend: str) -> bytes:
+    """Vẽ danh sách cảnh báo nhân sự thành ảnh PNG.
+    `rows` gồm: Mức, Nhân viên, Bưu cục, %GTC 7 ngày, _tags (chữ ngắn), _flags (mã loại) — nối bằng '|'."""
+    S = 2
+    W, PAD = 1400 * S, 40 * S
+    HEAD_H, TH_H, FOOT_H = 170 * S, 62 * S, 104 * S
+    x_no, x_name, x_tags = PAD + 22 * S, PAD + 64 * S, 590 * S
+    tags_max, r_pct = 1040 * S, 1195 * S
+    pill_h, pill_gap = 38 * S, 10 * S
+
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    f_tag = _font(True, 19 * S)
+
+    def layout(tags):
+        """Xếp các thẻ cảnh báo thành nhiều dòng nếu không vừa một dòng."""
+        lines, cur, w = [], [], 0
+        for t in tags:
+            tw = probe.textlength(t, font=f_tag) + 28 * S
+            if cur and x_tags + w + tw > tags_max:
+                lines.append(cur)
+                cur, w = [], 0
+            cur.append((t, tw))
+            w += tw + pill_gap
+        if cur:
+            lines.append(cur)
+        return lines
+
+    plans = [layout(str(r[4]).split("|")) for r in rows.itertuples(index=False)]
+    heights = [max(80 * S, len(p) * (pill_h + 8 * S) + 26 * S) for p in plans]
+    H = HEAD_H + 24 * S + TH_H + sum(heights) + FOOT_H
+
+    c_primary, c_text, c_muted, c_line = _rgb(PRIMARY), _rgb(TEXT), _rgb(MUTED), _rgb(LINE)
+    img = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    f_th, f_td, f_tdb = _font(True, 22 * S), _font(False, 24 * S), _font(True, 25 * S)
+    f_small = _font(False, 20 * S)
+    _draw_header(img, d, W, title, subtitle, S, HEAD_H)
+
+    y = HEAD_H + 24 * S
+    d.rectangle([PAD, y, W - PAD, y + TH_H], fill=(232, 243, 250))
+    mid = y + TH_H // 2
+    d.text((x_no, mid), "#", font=f_th, fill=c_primary, anchor="mm")
+    d.text((x_name, mid), "NHÂN VIÊN · BƯU CỤC", font=f_th, fill=c_primary, anchor="lm")
+    d.text((x_tags, mid), "CẢNH BÁO", font=f_th, fill=c_primary, anchor="lm")
+    d.text((r_pct, mid), "%GTC 7 NGÀY", font=f_th, fill=c_primary, anchor="rm")
+    d.text((W - PAD - 14 * S, mid), "MỨC", font=f_th, fill=c_primary, anchor="rm")
+    y += TH_H
+
+    for i, (r, plan, rh) in enumerate(zip(rows.itertuples(index=False), plans, heights)):
+        high = r[0] == "Cao"
+        d.rectangle([PAD, y, W - PAD, y + rh], fill=(253, 240, 240) if high else
+                    ((247, 250, 252) if i % 2 else (255, 255, 255)))
+        d.line([PAD, y + rh, W - PAD, y + rh], fill=c_line, width=S)
+        cy = y + rh // 2
+        d.text((x_no, cy), str(i + 1), font=f_td, fill=c_muted, anchor="mm")
+        d.text((x_name, cy - 15 * S), _fit_text(d, str(r[1]), f_tdb, x_tags - x_name - 24 * S),
+               font=f_tdb, fill=c_text, anchor="lm")
+        d.text((x_name, cy + 17 * S), _fit_text(d, str(r[2]), f_small, x_tags - x_name - 24 * S),
+               font=f_small, fill=c_muted, anchor="lm")
+        ty = cy - (len(plan) * (pill_h + 8 * S) - 8 * S) // 2
+        flags = str(r[5]).split("|")
+        k = 0
+        for line in plan:
+            tx = x_tags
+            for t, tw in line:
+                col = _rgb(HR_FLAG_COLORS.get(flags[k], MUTED))
+                d.rounded_rectangle([tx, ty, tx + tw, ty + pill_h], radius=pill_h // 2, fill=col)
+                d.text((tx + tw / 2, ty + pill_h // 2), t, font=f_tag, fill=(255, 255, 255), anchor="mm")
+                tx += tw + pill_gap
+                k += 1
+            ty += pill_h + 8 * S
+        p7 = r[3]
+        d.text((r_pct, cy), "—" if p7 is None or pd.isna(p7) else f"{float(p7):.2f}%", font=f_tdb,
+               fill=c_text, anchor="rm")
+        pw, ph = 110 * S, 38 * S
+        px1 = W - PAD - 14 * S
+        d.rounded_rectangle([px1 - pw, cy - ph // 2, px1, cy + ph // 2], radius=ph // 2,
+                            fill=_rgb(DANGER) if high else (255, 236, 204))
+        d.text((px1 - pw // 2, cy), "CAO" if high else "TB", font=_font(True, 21 * S),
+               fill=(255, 255, 255) if high else (156, 92, 0), anchor="mm")
+        y += rh
+
+    d.text((PAD, y + 30 * S), _fit_text(d, legend, f_small, W - 2 * PAD), font=f_small, fill=c_muted,
+           anchor="lm")
+    d.text((PAD, y + 66 * S), _fit_text(d, footer, f_small, W - 2 * PAD), font=f_small, fill=c_muted,
+           anchor="lm")
+    d.rectangle([PAD, y + FOOT_H - 4 * S, W - PAD, y + FOOT_H - 1 * S], fill=c_primary)
+    return _png_bytes(img)
+
+
+def hr_notice_prompt(thoi_gian: str, ngay_du_lieu: str, pham_vi: str, nguong: str, ds_txt: str,
+                     n_total: int, n_cao: int) -> str:
+    return f"""Bạn là Quản lý khu vực của GHN, soạn tin nhắn gửi vào nhóm QUẢN LÝ bưu cục (trưởng bưu cục,
+điều phối) để cảnh báo các nhân viên giao hàng cần quan tâm. Giọng nghiêm túc, xây dựng, hướng giải pháp.
+
+SỐ LIỆU THẬT (chỉ dùng đúng những số này):
+- Dữ liệu năng suất đến ngày {ngay_du_lieu}; so sánh 7 ngày gần nhất ({thoi_gian}) với 7 ngày trước đó.
+- Phạm vi: {pham_vi}. Ngưỡng cảnh báo: {nguong}.
+- Có {n_total} nhân viên bị cảnh báo, trong đó {n_cao} người mức Cao. Danh sách (mức cao xếp trước):
+{ds_txt}
+
+YÊU CẦU:
+- Tiếng Việt, tối đa 1.000 ký tự, VĂN BẢN THUẦN: không dùng markdown, không dấu * hay #. Tối đa 4 emoji.
+- Gọi thời gian đúng như ghi ở trên (ví dụ "7 ngày từ 16/10 đến 22/10/2026"). TUYỆT ĐỐI không dùng từ "kỳ".
+- Thứ tự: một câu mở đầu nêu ngày dữ liệu và số người cần chú ý; liệt kê ngắn gọn những người mức Cao
+  (tên + vấn đề chính, đúng số liệu); gộp những người còn lại thành một câu; đề xuất 2-3 việc cụ thể cho
+  quản lý bưu cục (hỏi thăm người vắng, kèm tuyến/kèm cặp người %GTC thấp, xem lại cách phân đơn cho người
+  gán thấp); nhắc xem ảnh danh sách đính kèm.
+- Không quy kết, không chê trách nặng nề; không bịa nguyên nhân, số liệu hay hình thức kỷ luật.
+- Giữ nguyên cách viết tên như trong số liệu. Chỉ trả về nội dung tin nhắn, không giải thích, không tiêu đề."""
+
+
+def notice_send_panel(p: str, ctx_sig: str, rewrite_label: str, bc: str, png_fn, filename: str) -> None:
+    """Ô nội dung thông báo + chọn nơi gửi (Telegram và/hoặc nhiều nhóm GTalk) + nút gửi ảnh kèm thông báo.
+    Dùng chung cho các mục có nút gửi; mọi khóa trạng thái bắt đầu bằng `p` (vd. 'rank', 'hr')."""
+    if st.session_state.get(f"{p}_msg") and st.session_state.get(f"{p}_msg_ctx") != ctx_sig:
+        st.warning("Bộ lọc hoặc số liệu đã đổi sau khi AI viết thông báo. "
+                   f"Bấm '{rewrite_label}' để viết lại cho đúng.", icon="⚠️")
+    msg_txt = st.text_area("Nội dung thông báo (đọc lại và sửa nếu cần trước khi gửi)",
+                           key=f"{p}_msg", height=230)
+    dai = len(clean_tele_text(msg_txt)) > TELE_CAPTION_MAX
+    st.caption(f"{len(clean_tele_text(msg_txt))} ký tự · "
+               + ("dài hơn 1.024 ký tự nên sẽ gửi ảnh trước, thông báo thành tin nhắn riêng."
+                  if dai else "gửi kèm làm lời chú thích dưới ảnh."))
+    # ── Chọn nơi gửi: Telegram và/hoặc một hay nhiều nhóm GTalk ─────────
+    kenh_co = [k for k, on in (("Telegram", _tele_enabled()), ("GTalk", _gtalk_enabled())) if on]
+    if GTALK_CFG_ERR:
+        st.error(GTALK_CFG_ERR)
+    if not kenh_co:
+        st.info("Chưa cấu hình nơi gửi. Cần TELEGRAM_TOKEN + TELEGRAM_CHAT_ID (Telegram) "
+                "và/hoặc GTALK_OA_TOKEN + GTALK_CHANNELS (GTalk) trên máy chủ.")
+    kenh = st.multiselect("Gửi qua", kenh_co, default=kenh_co, key=f"{p}_channels")
+    nhom: list[str] = []
+    if "GTalk" in kenh:
+        # Gợi ý sẵn nhóm có tên khớp bưu cục đang lọc; đổi bưu cục thì gợi ý lại.
+        k_groups, k_for = f"{p}_gt_groups", f"{p}_gt_for"
+        if st.session_state.get(k_for) != bc:
+            bk = norm(bc)
+            st.session_state[k_groups] = [
+                g for g in GTALK_CHANNELS if norm(g) and (norm(g) in bk or bk in norm(g))]
+            st.session_state[k_for] = bc
+        st.session_state[k_groups] = [g for g in st.session_state.get(k_groups, []) if g in GTALK_CHANNELS]
+        nhom = st.multiselect("Nhóm GTalk nhận (chọn được nhiều nhóm)", list(GTALK_CHANNELS), key=k_groups)
+        if not nhom:
+            st.caption("Chưa chọn nhóm GTalk nào. Tên nhóm khớp bưu cục đang lọc sẽ được chọn sẵn.")
+    dich = ([] if "Telegram" not in kenh else ["Telegram"]) + [f"GTalk · {g}" for g in nhom]
+    if dich:
+        st.caption(f"Sẽ gửi tới {len(dich)} nơi: " + "; ".join(dich))
+    co_noi_nhan = ("Telegram" in kenh) or bool(nhom)
+    if st.button("GỬI ẢNH + THÔNG BÁO", key=f"btn_send_{p}_all",
+                 disabled=not (co_noi_nhan and msg_txt.strip()), width="stretch"):
+        with st.spinner(f"Đang gửi tới {len(dich)} nơi..."):
+            kq = send_rank_everywhere(png_fn(), msg_txt, filename, "Telegram" in kenh, nhom)
+        n_ok = sum(1 for _, ok_, _ in kq if ok_)
+        (st.success if n_ok == len(kq) else st.warning if n_ok else st.error)(
+            f"Đã gửi thành công {n_ok}/{len(kq)} nơi.")
+        for ten, ok_, msg_ in kq:
+            st.markdown(f"{'✅' if ok_ else '❌'} **{ten}** — {msg_}")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 7. ĐĂNG NHẬP & PHÂN QUYỀN
 # ═══════════════════════════════════════════════════════════════════════
@@ -2162,7 +2449,7 @@ with st.sidebar:
 # Tab đang ẩn không vẽ widget nên Streamlit sẽ xóa giá trị bộ lọc của tab đó.
 # Ghi lại giá trị ở đầu mỗi lượt chạy để bộ lọc còn nguyên khi quay lại tab.
 _FILTER_KEY_PREFIXES = ("bc_", "quick_", "lh_", "nv_", "role_", "date_", "kpi_", "num_dt_", "rank_",
-                        "td_")
+                        "td_", "hr_")
 for _k in list(st.session_state.keys()):
     if isinstance(_k, str) and _k.startswith(_FILTER_KEY_PREFIXES):
         st.session_state[_k] = st.session_state[_k]
@@ -2258,6 +2545,123 @@ if tab1.open:
                 "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ĐẠT MỐC</span>"
                 "Toàn bộ chỉ số đang bám sát hoặc vượt mục tiêu đề ra.</div>",
                 unsafe_allow_html=True)
+
+        # ── Cảnh báo nhân sự ───────────────────────────────────────────────
+        section("Cảnh báo nhân sự")
+        with st.expander("Chỉnh ngưỡng cảnh báo nhân sự"):
+            h1, h2, h3, h4, h5 = st.columns(5)
+            with h1:
+                hr_low = st.number_input("%GTC thấp dưới (%)", 0.0, 100.0, HR_DEFAULTS["low"], 1.0,
+                                         key="hr_low")
+            with h2:
+                hr_streak = st.number_input("…số ngày liền", 2, 14, HR_DEFAULTS["streak"], 1, key="hr_streak")
+            with h3:
+                hr_drop = st.number_input("%GTC giảm từ (điểm)", 1.0, 50.0, HR_DEFAULTS["drop"], 1.0,
+                                          key="hr_drop")
+            with h4:
+                hr_absent = st.number_input("Vắng từ (ngày)", 1, 29, HR_DEFAULTS["absent"], 1, key="hr_absent")
+            with h5:
+                hr_ratio = st.number_input("Gán dưới (% trung vị BC)", 5, 100, HR_DEFAULTS["ratio"], 5,
+                                           key="hr_ratio")
+            st.caption("So 7 ngày gần nhất với 7 ngày trước đó. %GTC giảm chỉ xét người có từ 30 đơn gán mỗi bên; "
+                       "gán thấp so với trung vị đơn gán/ngày của nhân viên cùng bưu cục (làm từ 2 ngày). "
+                       "Vắng: có làm trong 30 ngày qua nhưng không có đơn từ số ngày trên.")
+
+        hr_day = hr_daily(DF_NSGTC)
+        if bc_ov != "Tất cả" and not hr_day.empty:
+            hr_day = hr_day[hr_day["Bưu cục"].map(norm) == norm(bc_ov)]
+        if hr_day.empty:
+            note("Chưa có dữ liệu Năng suất nhân viên cho phạm vi này.")
+        else:
+            hr_ref = hr_day["Ngày"].max()
+            hr_a = hr_ref - timedelta(days=6)
+            hr = hr_warnings(hr_day, hr_ref, hr_low, int(hr_streak), hr_drop, int(hr_absent), hr_ratio)
+            st.caption(f"Dữ liệu năng suất đến **{hr_ref:%d/%m/%Y}** · 7 ngày gần nhất "
+                       f"{hr_a:%d/%m}–{hr_ref:%d/%m/%Y} so với 7 ngày trước đó.")
+            n_flag = {k: int(hr["_flags"].map(lambda f, k=k: k in f.split("|")).sum()) if not hr.empty else 0
+                      for k in HR_FLAG_COLORS}
+            k1, k2, k3, k4 = st.columns(4)
+            for col_, k, ttl, sub in (
+                    (k1, "low", "%GTC thấp liên tiếp", f"dưới {hr_low:g}% từ {int(hr_streak)} ngày liền"),
+                    (k2, "drop", "%GTC giảm mạnh", f"giảm từ {hr_drop:g} điểm so 7 ngày trước"),
+                    (k3, "absent", "Vắng / không có đơn", f"từ {int(hr_absent)} ngày trở lên"),
+                    (k4, "gan", "Sản lượng gán thấp", f"dưới {hr_ratio}% trung vị bưu cục")):
+                with col_:
+                    st.markdown(metric_card(ttl, f"{n_flag[k]} người", None, sub=sub,
+                                            accent=n_flag[k] > 0), unsafe_allow_html=True)
+            if hr.empty:
+                st.markdown(
+                    "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ỔN ĐỊNH</span>"
+                    "Không có nhân viên nào chạm ngưỡng cảnh báo.</div>", unsafe_allow_html=True)
+            else:
+                n_cao = int((hr["Mức"] == "Cao").sum())
+                st.markdown(
+                    f"<div class='ghn-alert {'danger' if n_cao else ''}'>"
+                    f"<span class='a-tag {'tag-danger' if n_cao else 'tag-warn'}'>"
+                    f"{'CẦN XỬ LÝ' if n_cao else 'THEO DÕI'}</span>"
+                    f"<b>{len(hr)}</b> nhân viên cần chú ý, trong đó <b>{n_cao}</b> người mức Cao "
+                    f"(nhiều cảnh báo cùng lúc hoặc lệch nặng).</div>", unsafe_allow_html=True)
+                st.dataframe(
+                    hr.drop(columns=["_tags", "_flags", "_score"]), width="stretch", hide_index=True,
+                    column_config={
+                        "%GTC 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
+                        "%GTC 7 ngày trước": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Gán TB/ngày": st.column_config.NumberColumn(format="%.0f"),
+                        "Ngày làm cuối": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                        "Cảnh báo": st.column_config.TextColumn(width="large")})
+
+                hr_nguong = (f"%GTC dưới {hr_low:g}% từ {int(hr_streak)} ngày liền; giảm từ {hr_drop:g} điểm; "
+                             f"vắng từ {int(hr_absent)} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
+
+                def hr_png() -> bytes:
+                    """Vẽ ảnh danh sách cảnh báo — chỉ chạy khi bấm tải, xem trước hoặc gửi."""
+                    return render_hr_image(
+                        hr[["Mức", "Nhân viên", "Bưu cục", "%GTC 7 ngày", "_tags", "_flags"]],
+                        "CẢNH BÁO NHÂN SỰ",
+                        f"7 ngày {hr_a:%d/%m} – {hr_ref:%d/%m/%Y}  ·  Bưu cục: {bc_ov}",
+                        f"{len(hr)} nhân viên cần chú ý ({n_cao} mức Cao)  ·  "
+                        f"Dữ liệu năng suất đến {hr_ref:%d/%m/%Y}",
+                        "Ngưỡng: " + hr_nguong)
+
+                hb1, hb2 = st.columns(2, vertical_alignment="bottom")
+                with hb1:
+                    st.download_button("TẢI ẢNH CẢNH BÁO NHÂN SỰ", hr_png,
+                                       f"canh_bao_nhan_su_{hr_ref:%Y%m%d}.png", "image/png",
+                                       key="dl_hr_img", width="stretch", on_click="ignore")
+                with hb2:
+                    dang_xem = st.session_state.get("show_hr_preview", False)
+                    st.button("ẨN ẢNH XEM TRƯỚC" if dang_xem else "XEM TRƯỚC ẢNH CẢNH BÁO",
+                              key="btn_hr_preview", width="stretch",
+                              on_click=lambda: st.session_state.update(
+                                  show_hr_preview=not st.session_state.get("show_hr_preview", False)))
+                if st.session_state.get("show_hr_preview", False):
+                    with st.spinner("Đang vẽ ảnh..."):
+                        st.image(hr_png(), width="stretch")
+
+                st.markdown("**Thông báo cảnh báo gửi quản lý bưu cục (Telegram / GTalk)**")
+                st.caption("Danh sách có tên từng nhân viên — nên gửi vào nhóm quản lý / trưởng bưu cục, "
+                           "không gửi vào nhóm chung của toàn bộ nhân viên.")
+                st.session_state.setdefault("hr_msg", "")
+                hr_ctx = f"{hr_ref:%Y%m%d}|{bc_ov}|{hr_nguong}|{len(hr)}|{n_cao}"
+                if st.button("AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", key="btn_ai_hr_notice", width="stretch"):
+                    ds_txt = "\n".join(
+                        f"  {i}. [{r['Mức']}] {r['Nhân viên']} ({r['Bưu cục']}) — {r['Cảnh báo']}"
+                        for i, (_, r) in enumerate(hr.head(25).iterrows(), start=1))
+                    if len(hr) > 25:
+                        ds_txt += f"\n  … và {len(hr) - 25} người khác (xem ảnh)."
+                    tg_mo_ta, _ = describe_period(hr_a, hr_ref)
+                    with st.spinner("AI đang soạn thông báo..."):
+                        ok_ai, ai_text = ask_ai_checked(hr_notice_prompt(
+                            tg_mo_ta, f"{hr_ref:%d/%m/%Y}",
+                            "toàn bộ các bưu cục" if bc_ov == "Tất cả" else f"bưu cục {bc_ov}",
+                            hr_nguong, ds_txt, len(hr), n_cao))
+                    if ok_ai:
+                        st.session_state["hr_msg"] = clean_tele_text(ai_text)
+                        st.session_state["hr_msg_ctx"] = hr_ctx
+                    else:
+                        st.error(ai_text)
+                notice_send_panel("hr", hr_ctx, "AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", bc_ov, hr_png,
+                                  f"canh_bao_nhan_su_{hr_ref:%Y%m%d}.png")
 
         section("Diễn biến các chỉ số vận hành — 30 ngày gần nhất")
         w30 = REF_DATE - timedelta(days=29)
@@ -2985,51 +3389,8 @@ if tab4.open:
                 else:
                     st.error(ai_text)
 
-            if st.session_state.get("rank_msg") and st.session_state.get("rank_msg_ctx") != ctx_sig:
-                st.warning("Bộ lọc hoặc số liệu đã đổi sau khi AI viết thông báo. "
-                           "Bấm 'AI VIẾT THÔNG BÁO XẾP HẠNG' để viết lại cho đúng.", icon="⚠️")
-            msg_txt = st.text_area("Nội dung thông báo (đọc lại và sửa nếu cần trước khi gửi)",
-                                   key="rank_msg", height=230)
-            dai = len(clean_tele_text(msg_txt)) > TELE_CAPTION_MAX
-            st.caption(f"{len(clean_tele_text(msg_txt))} ký tự · "
-                       + ("dài hơn 1.024 ký tự nên sẽ gửi ảnh trước, thông báo thành tin nhắn riêng."
-                          if dai else "gửi kèm làm lời chú thích dưới ảnh."))
-            # ── Chọn nơi gửi: Telegram và/hoặc một hay nhiều nhóm GTalk ─────────
-            kenh_co = [k for k, on in (("Telegram", _tele_enabled()), ("GTalk", _gtalk_enabled())) if on]
-            if GTALK_CFG_ERR:
-                st.error(GTALK_CFG_ERR)
-            if not kenh_co:
-                st.info("Chưa cấu hình nơi gửi. Cần TELEGRAM_TOKEN + TELEGRAM_CHAT_ID (Telegram) "
-                        "và/hoặc GTALK_OA_TOKEN + GTALK_CHANNELS (GTalk) trên máy chủ.")
-            kenh = st.multiselect("Gửi qua", kenh_co, default=kenh_co, key="rank_channels")
-            nhom: list[str] = []
-            if "GTalk" in kenh:
-                # Gợi ý sẵn nhóm có tên khớp bưu cục đang lọc; đổi bưu cục thì gợi ý lại.
-                if st.session_state.get("rank_gt_for") != bc_ns:
-                    bk = norm(bc_ns)
-                    st.session_state["rank_gt_groups"] = [
-                        g for g in GTALK_CHANNELS if norm(g) and (norm(g) in bk or bk in norm(g))]
-                    st.session_state["rank_gt_for"] = bc_ns
-                st.session_state["rank_gt_groups"] = [
-                    g for g in st.session_state.get("rank_gt_groups", []) if g in GTALK_CHANNELS]
-                nhom = st.multiselect("Nhóm GTalk nhận (chọn được nhiều nhóm)", list(GTALK_CHANNELS),
-                                      key="rank_gt_groups")
-                if not nhom:
-                    st.caption("Chưa chọn nhóm GTalk nào. Tên nhóm khớp bưu cục đang lọc sẽ được chọn sẵn.")
-            dich = ([] if "Telegram" not in kenh else ["Telegram"]) + [f"GTalk · {g}" for g in nhom]
-            if dich:
-                st.caption(f"Sẽ gửi tới {len(dich)} nơi: " + "; ".join(dich))
-            co_noi_nhan = ("Telegram" in kenh) or bool(nhom)
-            if st.button("GỬI ẢNH + THÔNG BÁO", key="btn_send_rank_all",
-                         disabled=not (co_noi_nhan and msg_txt.strip()), width="stretch"):
-                with st.spinner(f"Đang gửi tới {len(dich)} nơi..."):
-                    kq = send_rank_everywhere(png(), msg_txt, f"xep_hang_gtc_{b_ns:%Y%m%d}.png",
-                                              "Telegram" in kenh, nhom)
-                n_ok = sum(1 for _, ok_, _ in kq if ok_)
-                (st.success if n_ok == len(kq) else st.warning if n_ok else st.error)(
-                    f"Đã gửi thành công {n_ok}/{len(kq)} nơi.")
-                for ten, ok_, msg_ in kq:
-                    st.markdown(f"{'✅' if ok_ else '❌'} **{ten}** — {msg_}")
+            notice_send_panel("rank", ctx_sig, "AI VIẾT THÔNG BÁO XẾP HẠNG", bc_ns, png,
+                              f"xep_hang_gtc_{b_ns:%Y%m%d}.png")
 
         ai_advisor(
             "ns", "Năng suất & Lương",
