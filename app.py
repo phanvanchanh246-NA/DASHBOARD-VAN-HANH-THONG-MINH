@@ -2454,9 +2454,11 @@ for _k in list(st.session_state.keys()):
     if isinstance(_k, str) and _k.startswith(_FILTER_KEY_PREFIXES):
         st.session_state[_k] = st.session_state[_k]
 
-tab1, tab2, tab3, tab4, tab5, tab7, tab6 = st.tabs([
-    "TỔNG QUAN", "VẬN HÀNH", "KINH DOANH",
-    "NĂNG SUẤT & LƯƠNG", "TIẾN ĐỘ KPI", "THI ĐUA", "AI CỐ VẤN",
+# Thứ tự tab: tổng quan → kết quả vận hành, kinh doanh → tiến độ KPI (tổng hợp cả hai)
+# → nhóm nhân viên (năng suất, cảnh báo, thi đua) → AI.
+tab1, tab2, tab3, tab5, tab4, tab8, tab7, tab6 = st.tabs([
+    "TỔNG QUAN", "VẬN HÀNH", "KINH DOANH", "TIẾN ĐỘ KPI",
+    "NĂNG SUẤT & LƯƠNG", "CẢNH BÁO NHÂN SỰ", "THI ĐUA", "AI CỐ VẤN",
 ], on_change="rerun")   # chỉ chạy nội dung tab đang mở (nhanh hơn nhiều)
 
 
@@ -2465,7 +2467,8 @@ tab1, tab2, tab3, tab4, tab5, tab7, tab6 = st.tabs([
 # ═══════════════════════════════════════════════════════════════════════
 if tab1.open:
     with tab1:
-        bc_ov = st.selectbox("Phạm vi báo cáo", ALL_BC, key="bc_ov")
+        with st.columns([1.1, 2.9])[0]:
+            bc_ov = st.selectbox("Phạm vi báo cáo", ALL_BC, key="bc_ov")
 
         g_gtc = scope(M_GTC, bc_ov)
         g_tra = scope(M_TRA, bc_ov)
@@ -2546,122 +2549,24 @@ if tab1.open:
                 "Toàn bộ chỉ số đang bám sát hoặc vượt mục tiêu đề ra.</div>",
                 unsafe_allow_html=True)
 
-        # ── Cảnh báo nhân sự ───────────────────────────────────────────────
-        section("Cảnh báo nhân sự")
-        with st.expander("Chỉnh ngưỡng cảnh báo nhân sự"):
-            h1, h2, h3, h4, h5 = st.columns(5)
-            with h1:
-                hr_low = st.number_input("%GTC thấp dưới (%)", 0.0, 100.0, HR_DEFAULTS["low"], 1.0,
-                                         key="hr_low")
-            with h2:
-                hr_streak = st.number_input("…số ngày liền", 2, 14, HR_DEFAULTS["streak"], 1, key="hr_streak")
-            with h3:
-                hr_drop = st.number_input("%GTC giảm từ (điểm)", 1.0, 50.0, HR_DEFAULTS["drop"], 1.0,
-                                          key="hr_drop")
-            with h4:
-                hr_absent = st.number_input("Vắng từ (ngày)", 1, 29, HR_DEFAULTS["absent"], 1, key="hr_absent")
-            with h5:
-                hr_ratio = st.number_input("Gán dưới (% trung vị BC)", 5, 100, HR_DEFAULTS["ratio"], 5,
-                                           key="hr_ratio")
-            st.caption("So 7 ngày gần nhất với 7 ngày trước đó. %GTC giảm chỉ xét người có từ 30 đơn gán mỗi bên; "
-                       "gán thấp so với trung vị đơn gán/ngày của nhân viên cùng bưu cục (làm từ 2 ngày). "
-                       "Vắng: có làm trong 30 ngày qua nhưng không có đơn từ số ngày trên.")
-
-        hr_day = hr_daily(DF_NSGTC)
-        if bc_ov != "Tất cả" and not hr_day.empty:
-            hr_day = hr_day[hr_day["Bưu cục"].map(norm) == norm(bc_ov)]
-        if hr_day.empty:
-            note("Chưa có dữ liệu Năng suất nhân viên cho phạm vi này.")
-        else:
-            hr_ref = hr_day["Ngày"].max()
-            hr_a = hr_ref - timedelta(days=6)
-            hr = hr_warnings(hr_day, hr_ref, hr_low, int(hr_streak), hr_drop, int(hr_absent), hr_ratio)
-            st.caption(f"Dữ liệu năng suất đến **{hr_ref:%d/%m/%Y}** · 7 ngày gần nhất "
-                       f"{hr_a:%d/%m}–{hr_ref:%d/%m/%Y} so với 7 ngày trước đó.")
-            n_flag = {k: int(hr["_flags"].map(lambda f, k=k: k in f.split("|")).sum()) if not hr.empty else 0
-                      for k in HR_FLAG_COLORS}
-            k1, k2, k3, k4 = st.columns(4)
-            for col_, k, ttl, sub in (
-                    (k1, "low", "%GTC thấp liên tiếp", f"dưới {hr_low:g}% từ {int(hr_streak)} ngày liền"),
-                    (k2, "drop", "%GTC giảm mạnh", f"giảm từ {hr_drop:g} điểm so 7 ngày trước"),
-                    (k3, "absent", "Vắng / không có đơn", f"từ {int(hr_absent)} ngày trở lên"),
-                    (k4, "gan", "Sản lượng gán thấp", f"dưới {hr_ratio}% trung vị bưu cục")):
-                with col_:
-                    st.markdown(metric_card(ttl, f"{n_flag[k]} người", None, sub=sub,
-                                            accent=n_flag[k] > 0), unsafe_allow_html=True)
-            if hr.empty:
+        # Tóm tắt cảnh báo nhân sự (chi tiết ở tab riêng), dùng ngưỡng đang chỉnh bên tab đó
+        hr_day_ov = hr_daily(DF_NSGTC)
+        if bc_ov != "Tất cả" and not hr_day_ov.empty:
+            hr_day_ov = hr_day_ov[hr_day_ov["Bưu cục"].map(norm) == norm(bc_ov)]
+        if not hr_day_ov.empty:
+            ss = st.session_state
+            hr_ov = hr_warnings(hr_day_ov, hr_day_ov["Ngày"].max(),
+                                ss.get("hr_low", HR_DEFAULTS["low"]), int(ss.get("hr_streak", HR_DEFAULTS["streak"])),
+                                ss.get("hr_drop", HR_DEFAULTS["drop"]), int(ss.get("hr_absent", HR_DEFAULTS["absent"])),
+                                ss.get("hr_ratio", HR_DEFAULTS["ratio"]))
+            if not hr_ov.empty:
+                n_cao_ov = int((hr_ov["Mức"] == "Cao").sum())
                 st.markdown(
-                    "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ỔN ĐỊNH</span>"
-                    "Không có nhân viên nào chạm ngưỡng cảnh báo.</div>", unsafe_allow_html=True)
-            else:
-                n_cao = int((hr["Mức"] == "Cao").sum())
-                st.markdown(
-                    f"<div class='ghn-alert {'danger' if n_cao else ''}'>"
-                    f"<span class='a-tag {'tag-danger' if n_cao else 'tag-warn'}'>"
-                    f"{'CẦN XỬ LÝ' if n_cao else 'THEO DÕI'}</span>"
-                    f"<b>{len(hr)}</b> nhân viên cần chú ý, trong đó <b>{n_cao}</b> người mức Cao "
-                    f"(nhiều cảnh báo cùng lúc hoặc lệch nặng).</div>", unsafe_allow_html=True)
-                st.dataframe(
-                    hr.drop(columns=["_tags", "_flags", "_score"]), width="stretch", hide_index=True,
-                    column_config={
-                        "%GTC 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
-                        "%GTC 7 ngày trước": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Gán TB/ngày": st.column_config.NumberColumn(format="%.0f"),
-                        "Ngày làm cuối": st.column_config.DateColumn(format="DD/MM/YYYY"),
-                        "Cảnh báo": st.column_config.TextColumn(width="large")})
-
-                hr_nguong = (f"%GTC dưới {hr_low:g}% từ {int(hr_streak)} ngày liền; giảm từ {hr_drop:g} điểm; "
-                             f"vắng từ {int(hr_absent)} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
-
-                def hr_png() -> bytes:
-                    """Vẽ ảnh danh sách cảnh báo — chỉ chạy khi bấm tải, xem trước hoặc gửi."""
-                    return render_hr_image(
-                        hr[["Mức", "Nhân viên", "Bưu cục", "%GTC 7 ngày", "_tags", "_flags"]],
-                        "CẢNH BÁO NHÂN SỰ",
-                        f"7 ngày {hr_a:%d/%m} – {hr_ref:%d/%m/%Y}  ·  Bưu cục: {bc_ov}",
-                        f"{len(hr)} nhân viên cần chú ý ({n_cao} mức Cao)  ·  "
-                        f"Dữ liệu năng suất đến {hr_ref:%d/%m/%Y}",
-                        "Ngưỡng: " + hr_nguong)
-
-                hb1, hb2 = st.columns(2, vertical_alignment="bottom")
-                with hb1:
-                    st.download_button("TẢI ẢNH CẢNH BÁO NHÂN SỰ", hr_png,
-                                       f"canh_bao_nhan_su_{hr_ref:%Y%m%d}.png", "image/png",
-                                       key="dl_hr_img", width="stretch", on_click="ignore")
-                with hb2:
-                    dang_xem = st.session_state.get("show_hr_preview", False)
-                    st.button("ẨN ẢNH XEM TRƯỚC" if dang_xem else "XEM TRƯỚC ẢNH CẢNH BÁO",
-                              key="btn_hr_preview", width="stretch",
-                              on_click=lambda: st.session_state.update(
-                                  show_hr_preview=not st.session_state.get("show_hr_preview", False)))
-                if st.session_state.get("show_hr_preview", False):
-                    with st.spinner("Đang vẽ ảnh..."):
-                        st.image(hr_png(), width="stretch")
-
-                st.markdown("**Thông báo cảnh báo gửi quản lý bưu cục (Telegram / GTalk)**")
-                st.caption("Danh sách có tên từng nhân viên — nên gửi vào nhóm quản lý / trưởng bưu cục, "
-                           "không gửi vào nhóm chung của toàn bộ nhân viên.")
-                st.session_state.setdefault("hr_msg", "")
-                hr_ctx = f"{hr_ref:%Y%m%d}|{bc_ov}|{hr_nguong}|{len(hr)}|{n_cao}"
-                if st.button("AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", key="btn_ai_hr_notice", width="stretch"):
-                    ds_txt = "\n".join(
-                        f"  {i}. [{r['Mức']}] {r['Nhân viên']} ({r['Bưu cục']}) — {r['Cảnh báo']}"
-                        for i, (_, r) in enumerate(hr.head(25).iterrows(), start=1))
-                    if len(hr) > 25:
-                        ds_txt += f"\n  … và {len(hr) - 25} người khác (xem ảnh)."
-                    tg_mo_ta, _ = describe_period(hr_a, hr_ref)
-                    with st.spinner("AI đang soạn thông báo..."):
-                        ok_ai, ai_text = ask_ai_checked(hr_notice_prompt(
-                            tg_mo_ta, f"{hr_ref:%d/%m/%Y}",
-                            "toàn bộ các bưu cục" if bc_ov == "Tất cả" else f"bưu cục {bc_ov}",
-                            hr_nguong, ds_txt, len(hr), n_cao))
-                    if ok_ai:
-                        st.session_state["hr_msg"] = clean_tele_text(ai_text)
-                        st.session_state["hr_msg_ctx"] = hr_ctx
-                    else:
-                        st.error(ai_text)
-                notice_send_panel("hr", hr_ctx, "AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", bc_ov, hr_png,
-                                  f"canh_bao_nhan_su_{hr_ref:%Y%m%d}.png")
+                    f"<div class='ghn-alert {'danger' if n_cao_ov else ''}'>"
+                    f"<span class='a-tag {'tag-danger' if n_cao_ov else 'tag-warn'}'>NHÂN SỰ</span>"
+                    f"<b>{len(hr_ov)}</b> nhân viên cần chú ý, <b>{n_cao_ov}</b> người mức Cao. "
+                    f"Xem chi tiết, tải ảnh và gửi thông báo ở tab <b>Cảnh báo nhân sự</b>.</div>",
+                    unsafe_allow_html=True)
 
         section("Diễn biến các chỉ số vận hành — 30 ngày gần nhất")
         w30 = REF_DATE - timedelta(days=29)
@@ -2733,11 +2638,6 @@ if tab2.open:
             a_vh, b_vh = synced_range_picker("Khoảng ngày", a_vh, b_vh, "date_vh",
                                              sync_token=quick_vh)
 
-        lh_options = (sorted({x for x in M_CA["Chiều"].dropna().astype(str).str.strip().unique()
-                              if x and x.lower() != "nan"})
-                      if "Chiều" in M_CA.columns else [])
-        lh_pick = st.multiselect("Loại hàng / ca làm việc", lh_options, default=lh_options, key="lh_vh")
-
         st.caption(f"Đang xem {a_vh:%d/%m/%Y} – {b_vh:%d/%m/%Y} · Bưu cục: {bc_vh}. "
                    "Mọi tỷ lệ % tính bằng trung bình có trọng số theo sản lượng.")
 
@@ -2754,8 +2654,6 @@ if tab2.open:
         s_gan = sl(scope(M_GAN, bc_vh), a_vh, b_vh)
         s_lead = sl(scope(M_LEAD, bc_vh), a_vh, b_vh)
         s_ca = sl(scope(M_CA, bc_vh), a_vh, b_vh)
-        if lh_pick and "Chiều" in s_ca.columns:
-            s_ca = s_ca[s_ca["Chiều"].isin(lh_pick)]
 
         # 2.1 GTC tổng
         section("1. Báo cáo GTC tổng")
@@ -2768,6 +2666,12 @@ if tab2.open:
 
         # 2.2 Sản lượng và %GTC theo ca
         section("2. Sản lượng và %GTC theo ca làm việc")
+        lh_options = (sorted({x for x in M_CA["Chiều"].dropna().astype(str).str.strip().unique()
+                              if x and x.lower() != "nan"})
+                      if "Chiều" in M_CA.columns else [])
+        lh_pick = st.multiselect("Loại hàng / ca làm việc", lh_options, default=lh_options, key="lh_vh")
+        if lh_pick and "Chiều" in s_ca.columns:
+            s_ca = s_ca[s_ca["Chiều"].isin(lh_pick)]
         if not s_ca.empty and "Chiều" in s_ca.columns:
             g_ca = (s_ca.assign(_p=s_ca["Giá Trị"].fillna(0) * s_ca["Trọng Số"])
                         .groupby(["Ngày", "Chiều"], as_index=False)
@@ -2809,36 +2713,8 @@ if tab2.open:
         else:
             note("Chưa đọc được cột ca hoặc loại hàng trong sheet Sản lượng theo ca.")
 
-        # 2.3 Trả hàng
-        section("3. Tỷ lệ trả hàng (càng thấp càng tốt)")
-        period_cards(scope(M_TRA, bc_vh), REF_DATE, "%", False, "wavg", "%Trả hàng")
-        cE, cF = st.columns([1.6, 1])
-        with cE:
-            line_chart(s_tra, "Tỷ lệ trả hàng theo ngày", DANGER, "%", t_tra_vh)
-        with cF:
-            bc_bar_chart(sl(M_TRA, a_vh, b_vh), t_tra_vh, False, "So sánh giữa bưu cục")
-
-        # 2.4 GTB thu tiền
-        section("4. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
-        period_cards(scope(M_GTB, bc_vh), REF_DATE, "%", True, "wavg", "%GTB")
-        line_chart(s_gtb, "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
-
-        # 2.5 GTC TTS
-        section("5. GTC TikTok Shop")
-        period_cards(scope(M_TTS, bc_vh), REF_DATE, "%", True, "wavg", "%GTC TTS")
-        cG, cH = st.columns([1.6, 1])
-        with cG:
-            combo_chart(s_tts, "Sản lượng và %GTC TikTok Shop", "Sản lượng TTS", "% GTC TTS", t_tts_vh)
-        with cH:
-            bc_bar_chart(sl(M_TTS, a_vh, b_vh), t_tts_vh, True, "So sánh giữa bưu cục")
-
-        # 2.6 ODR TTS
-        section("6. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
-        period_cards(scope(M_ODR, bc_vh), REF_DATE, "%", True, "wavg", "ODR")
-        line_chart(s_odr, "Tỷ lệ ODR theo ngày", ACCENT, "%", 98.0)
-
-        # 2.7 Gán & Leadtime (chỉ số có sẵn trong sheet)
-        section("7. Tỷ lệ gán và Leadtime")
+        # 2.3 Gán & Leadtime (chỉ số có sẵn trong sheet)
+        section("3. Tỷ lệ gán và Leadtime")
         cI, cJ = st.columns(2)
         with cI:
             if not s_gan.empty:
@@ -2863,6 +2739,34 @@ if tab2.open:
                 st.plotly_chart(fig_lead, width="stretch")
             else:
                 note("Chưa đọc được cột Leadtime.")
+
+        # 2.4 GTC TTS
+        section("4. GTC TikTok Shop")
+        period_cards(scope(M_TTS, bc_vh), REF_DATE, "%", True, "wavg", "%GTC TTS")
+        cG, cH = st.columns([1.6, 1])
+        with cG:
+            combo_chart(s_tts, "Sản lượng và %GTC TikTok Shop", "Sản lượng TTS", "% GTC TTS", t_tts_vh)
+        with cH:
+            bc_bar_chart(sl(M_TTS, a_vh, b_vh), t_tts_vh, True, "So sánh giữa bưu cục")
+
+        # 2.5 ODR TTS
+        section("5. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
+        period_cards(scope(M_ODR, bc_vh), REF_DATE, "%", True, "wavg", "ODR")
+        line_chart(s_odr, "Tỷ lệ ODR theo ngày", ACCENT, "%", 98.0)
+
+        # 2.6 Trả hàng
+        section("6. Tỷ lệ trả hàng (càng thấp càng tốt)")
+        period_cards(scope(M_TRA, bc_vh), REF_DATE, "%", False, "wavg", "%Trả hàng")
+        cE, cF = st.columns([1.6, 1])
+        with cE:
+            line_chart(s_tra, "Tỷ lệ trả hàng theo ngày", DANGER, "%", t_tra_vh)
+        with cF:
+            bc_bar_chart(sl(M_TRA, a_vh, b_vh), t_tra_vh, False, "So sánh giữa bưu cục")
+
+        # 2.7 GTB thu tiền
+        section("7. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
+        period_cards(scope(M_GTB, bc_vh), REF_DATE, "%", True, "wavg", "%GTB")
+        line_chart(s_gtb, "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
 
         section("Dữ liệu chi tiết vận hành")
         if not s_gtc.empty:
@@ -3072,6 +2976,130 @@ TIẾN ĐỘ THÁNG:
 - Còn thiếu so với mục tiêu: {fmt_money(max(target_dt - forecast_dt, 0))}
 
 KHÁCH HÀNG: {len(pheu_df) if not pheu_df.empty else 0} khách trong phễu.""")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TAB 8 — CẢNH BÁO NHÂN SỰ
+# ═══════════════════════════════════════════════════════════════════════
+if tab8.open:
+    with tab8:
+        with st.columns([1.1, 2.9])[0]:
+            bc_hr = st.selectbox("Bưu cục", ALL_BC, key="bc_hr")
+        section("Cảnh báo nhân sự")
+        with st.expander("Chỉnh ngưỡng cảnh báo nhân sự"):
+            h1, h2, h3, h4, h5 = st.columns(5)
+            with h1:
+                hr_low = st.number_input("%GTC thấp dưới (%)", 0.0, 100.0, HR_DEFAULTS["low"], 1.0,
+                                         key="hr_low")
+            with h2:
+                hr_streak = st.number_input("…số ngày liền", 2, 14, HR_DEFAULTS["streak"], 1, key="hr_streak")
+            with h3:
+                hr_drop = st.number_input("%GTC giảm từ (điểm)", 1.0, 50.0, HR_DEFAULTS["drop"], 1.0,
+                                          key="hr_drop")
+            with h4:
+                hr_absent = st.number_input("Vắng từ (ngày)", 1, 29, HR_DEFAULTS["absent"], 1, key="hr_absent")
+            with h5:
+                hr_ratio = st.number_input("Gán dưới (% trung vị BC)", 5, 100, HR_DEFAULTS["ratio"], 5,
+                                           key="hr_ratio")
+            st.caption("So 7 ngày gần nhất với 7 ngày trước đó. %GTC giảm chỉ xét người có từ 30 đơn gán mỗi bên; "
+                       "gán thấp so với trung vị đơn gán/ngày của nhân viên cùng bưu cục (làm từ 2 ngày). "
+                       "Vắng: có làm trong 30 ngày qua nhưng không có đơn từ số ngày trên.")
+
+        hr_day = hr_daily(DF_NSGTC)
+        if bc_hr != "Tất cả" and not hr_day.empty:
+            hr_day = hr_day[hr_day["Bưu cục"].map(norm) == norm(bc_hr)]
+        if hr_day.empty:
+            note("Chưa có dữ liệu Năng suất nhân viên cho phạm vi này.")
+        else:
+            hr_ref = hr_day["Ngày"].max()
+            hr_a = hr_ref - timedelta(days=6)
+            hr = hr_warnings(hr_day, hr_ref, hr_low, int(hr_streak), hr_drop, int(hr_absent), hr_ratio)
+            st.caption(f"Dữ liệu năng suất đến **{hr_ref:%d/%m/%Y}** · 7 ngày gần nhất "
+                       f"{hr_a:%d/%m}–{hr_ref:%d/%m/%Y} so với 7 ngày trước đó.")
+            n_flag = {k: int(hr["_flags"].map(lambda f, k=k: k in f.split("|")).sum()) if not hr.empty else 0
+                      for k in HR_FLAG_COLORS}
+            k1, k2, k3, k4 = st.columns(4)
+            for col_, k, ttl, sub in (
+                    (k1, "low", "%GTC thấp liên tiếp", f"dưới {hr_low:g}% từ {int(hr_streak)} ngày liền"),
+                    (k2, "drop", "%GTC giảm mạnh", f"giảm từ {hr_drop:g} điểm so 7 ngày trước"),
+                    (k3, "absent", "Vắng / không có đơn", f"từ {int(hr_absent)} ngày trở lên"),
+                    (k4, "gan", "Sản lượng gán thấp", f"dưới {hr_ratio}% trung vị bưu cục")):
+                with col_:
+                    st.markdown(metric_card(ttl, f"{n_flag[k]} người", None, sub=sub,
+                                            accent=n_flag[k] > 0), unsafe_allow_html=True)
+            if hr.empty:
+                st.markdown(
+                    "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ỔN ĐỊNH</span>"
+                    "Không có nhân viên nào chạm ngưỡng cảnh báo.</div>", unsafe_allow_html=True)
+            else:
+                n_cao = int((hr["Mức"] == "Cao").sum())
+                st.markdown(
+                    f"<div class='ghn-alert {'danger' if n_cao else ''}'>"
+                    f"<span class='a-tag {'tag-danger' if n_cao else 'tag-warn'}'>"
+                    f"{'CẦN XỬ LÝ' if n_cao else 'THEO DÕI'}</span>"
+                    f"<b>{len(hr)}</b> nhân viên cần chú ý, trong đó <b>{n_cao}</b> người mức Cao "
+                    f"(nhiều cảnh báo cùng lúc hoặc lệch nặng).</div>", unsafe_allow_html=True)
+                st.dataframe(
+                    hr.drop(columns=["_tags", "_flags", "_score"]), width="stretch", hide_index=True,
+                    column_config={
+                        "%GTC 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
+                        "%GTC 7 ngày trước": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Gán TB/ngày": st.column_config.NumberColumn(format="%.0f"),
+                        "Ngày làm cuối": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                        "Cảnh báo": st.column_config.TextColumn(width="large")})
+
+                hr_nguong = (f"%GTC dưới {hr_low:g}% từ {int(hr_streak)} ngày liền; giảm từ {hr_drop:g} điểm; "
+                             f"vắng từ {int(hr_absent)} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
+
+                def hr_png() -> bytes:
+                    """Vẽ ảnh danh sách cảnh báo — chỉ chạy khi bấm tải, xem trước hoặc gửi."""
+                    return render_hr_image(
+                        hr[["Mức", "Nhân viên", "Bưu cục", "%GTC 7 ngày", "_tags", "_flags"]],
+                        "CẢNH BÁO NHÂN SỰ",
+                        f"7 ngày {hr_a:%d/%m} – {hr_ref:%d/%m/%Y}  ·  Bưu cục: {bc_hr}",
+                        f"{len(hr)} nhân viên cần chú ý ({n_cao} mức Cao)  ·  "
+                        f"Dữ liệu năng suất đến {hr_ref:%d/%m/%Y}",
+                        "Ngưỡng: " + hr_nguong)
+
+                hb1, hb2 = st.columns(2, vertical_alignment="bottom")
+                with hb1:
+                    st.download_button("TẢI ẢNH CẢNH BÁO NHÂN SỰ", hr_png,
+                                       f"canh_bao_nhan_su_{hr_ref:%Y%m%d}.png", "image/png",
+                                       key="dl_hr_img", width="stretch", on_click="ignore")
+                with hb2:
+                    dang_xem = st.session_state.get("show_hr_preview", False)
+                    st.button("ẨN ẢNH XEM TRƯỚC" if dang_xem else "XEM TRƯỚC ẢNH CẢNH BÁO",
+                              key="btn_hr_preview", width="stretch",
+                              on_click=lambda: st.session_state.update(
+                                  show_hr_preview=not st.session_state.get("show_hr_preview", False)))
+                if st.session_state.get("show_hr_preview", False):
+                    with st.spinner("Đang vẽ ảnh..."):
+                        st.image(hr_png(), width="stretch")
+
+                st.markdown("**Thông báo cảnh báo gửi quản lý bưu cục (Telegram / GTalk)**")
+                st.caption("Danh sách có tên từng nhân viên — nên gửi vào nhóm quản lý / trưởng bưu cục, "
+                           "không gửi vào nhóm chung của toàn bộ nhân viên.")
+                st.session_state.setdefault("hr_msg", "")
+                hr_ctx = f"{hr_ref:%Y%m%d}|{bc_hr}|{hr_nguong}|{len(hr)}|{n_cao}"
+                if st.button("AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", key="btn_ai_hr_notice", width="stretch"):
+                    ds_txt = "\n".join(
+                        f"  {i}. [{r['Mức']}] {r['Nhân viên']} ({r['Bưu cục']}) — {r['Cảnh báo']}"
+                        for i, (_, r) in enumerate(hr.head(25).iterrows(), start=1))
+                    if len(hr) > 25:
+                        ds_txt += f"\n  … và {len(hr) - 25} người khác (xem ảnh)."
+                    tg_mo_ta, _ = describe_period(hr_a, hr_ref)
+                    with st.spinner("AI đang soạn thông báo..."):
+                        ok_ai, ai_text = ask_ai_checked(hr_notice_prompt(
+                            tg_mo_ta, f"{hr_ref:%d/%m/%Y}",
+                            "toàn bộ các bưu cục" if bc_hr == "Tất cả" else f"bưu cục {bc_hr}",
+                            hr_nguong, ds_txt, len(hr), n_cao))
+                    if ok_ai:
+                        st.session_state["hr_msg"] = clean_tele_text(ai_text)
+                        st.session_state["hr_msg_ctx"] = hr_ctx
+                    else:
+                        st.error(ai_text)
+                notice_send_panel("hr", hr_ctx, "AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", bc_hr, hr_png,
+                                  f"canh_bao_nhan_su_{hr_ref:%Y%m%d}.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -3964,13 +3992,13 @@ if tab6.open:
         st.markdown("Hỏi bằng tiếng Việt thường ngày. AI đọc trực tiếp các bảng dữ liệu "
                     "đã tải trong phiên làm việc này.")
 
-        z1, z2 = st.columns([2, 1])
+        z1, z2 = st.columns([1, 2])
         with z1:
-            # Mặc định: N-1 theo giờ Việt Nam
+            bc_ai = st.selectbox("Bưu cục", ALL_BC, key="bc_ai")
+        with z2:
+            # Mặc định: 7 ngày gần nhất theo giờ Việt Nam
             a_ai, b_ai = date_range_picker("Khoảng ngày AI được đọc",
                                            DEFAULT_7D_START, DEFAULT_7D_END, "date_ai")
-        with z2:
-            bc_ai = st.selectbox("Bưu cục", ALL_BC, key="bc_ai")
 
         if st.session_state.chat and st.button("XÓA HỘI THOẠI", key="clear_chat"):
             st.session_state.chat = []
