@@ -467,6 +467,9 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
     .section-title {{ margin: 20px 0 10px; }}
     table.ghn-table th, table.ghn-table td {{ padding: 8px 6px; }}
     .ghn-hero {{ padding: 14px 16px !important; }}
+    /* Nhãn dữ liệu trên biểu đồ: màn hẹp chỉ hiện cách một nhãn cho khỏi chồng chữ */
+    .stPlotlyChart g.textpoint:nth-child(even),
+    .stPlotlyChart g.point:nth-child(even) text.bartext {{ display: none; }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -1038,6 +1041,54 @@ def pay_period(ref: pd.Timestamp):
     return a, b, name, prev_a, prev_b, prev_name
 
 
+LABEL_FONT = dict(size=12)
+
+
+def point_labels(values, fmt, max_labels: int = 16, offset: int = 0) -> list[str]:
+    """Nhãn dữ liệu cho từng điểm. Nhiều điểm quá thì cách vài điểm ghi một nhãn (luôn ghi điểm cuối)
+    để nhãn không đè lên nhau; di chuột vẫn xem được số của mọi điểm.
+    `offset` lệch vị trí ghi nhãn giữa các đường trên cùng biểu đồ để nhãn so le nhau."""
+    vals = list(values)
+    n = len(vals)
+    step = max(1, -(-n // max_labels))
+    out = []
+    for i, v in enumerate(vals):
+        keep = i == n - 1 or ((i + offset) % step == 0 and n - 1 - i >= max(1, step // 2))
+        out.append(fmt(v) if keep and v is not None and pd.notna(v) else "")
+    return out
+
+
+def label_layout(series_values: list, gap: float = 12.0) -> list[tuple[str, int]]:
+    """Vị trí nhãn cho biểu đồ nhiều đường: đường nằm sát ngay dưới một đường khác thì ghi nhãn
+    phía dưới và so le điểm ghi nhãn, tránh hai hàng nhãn chồng lên nhau. Trả (textposition, offset)."""
+    means = [float(pd.to_numeric(pd.Series(v), errors="coerce").mean()) for v in series_values]
+    out = []
+    for i, m in enumerate(means):
+        sat_tren = any(j != i and 0 <= mj - m < gap and (mj > m or j < i) for j, mj in enumerate(means))
+        out.append(("bottom center", 1) if sat_tren else ("top center", 0))
+    return out
+
+
+def band_axes(fig, bar_max: float) -> None:
+    """Biểu đồ cột + đường % (hai trục): dồn cột xuống ~60% chiều cao dưới, đường % lên dải trên,
+    để nhãn số của cột và nhãn % của đường không đè lên nhau."""
+    fig.update_yaxes(range=[0, max(float(bar_max), 1.0) * 1.6], secondary_y=False)
+    fig.update_yaxes(range=[-140, 108], tickvals=[0, 50, 100], ticktext=["0%", "50%", "100%"],
+                     secondary_y=True)
+
+
+def pct_label(v) -> str:
+    return f"{v:.1f}%"
+
+
+def num_label(v) -> str:
+    return f"{v:,.0f}"
+
+
+def money_label(v) -> str:
+    return fmt_money(v, full=False)
+
+
 def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float | None = None,
                y_title: str | None = None):
     if df is None or df.empty:
@@ -1046,7 +1097,11 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
     g = daily(df) if unit == "%" else daily(df, "sum")
     fig = px.line(g, x="Ngày", y="Giá Trị", markers=True, title=title)
     fig.update_traces(line=dict(color=color, width=3),
-                      marker=dict(size=7, color=color, line=dict(width=2, color="#FFF")))
+                      marker=dict(size=7, color=color, line=dict(width=2, color="#FFF")),
+                      mode="lines+markers+text",
+                      text=point_labels(g["Giá Trị"], pct_label if unit == "%" else num_label),
+                      textposition="top center", textfont=dict(color=color, **LABEL_FONT),
+                      cliponaxis=False)
     if target:
         fig.add_hline(y=target, line_dash="dot", line_color=ACCENT, line_width=2,
                       annotation_text="Mốc KPI", annotation_position="top left")
@@ -1067,16 +1122,22 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
     g = daily(df)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=g["Ngày"], y=g["Trọng Số"], name=bar_name,
-                         marker_color=PRIMARY_SOFT, marker_line_width=0), secondary_y=False)
-    fig.add_trace(go.Scatter(x=g["Ngày"], y=g["Giá Trị"], name=line_name, mode="lines+markers",
+                         marker_color=PRIMARY_SOFT, marker_line_width=0,
+                         hoverinfo="x+y+name", text=point_labels(g["Trọng Số"], num_label), textposition="inside",
+                         insidetextanchor="end", textangle=-90 if len(g) > 10 else 0,
+                         textfont=dict(color=PRIMARY, **LABEL_FONT)), secondary_y=False)
+    fig.add_trace(go.Scatter(x=g["Ngày"], y=g["Giá Trị"], name=line_name, mode="lines+markers+text",
                              line=dict(color=ACCENT, width=3),
-                             marker=dict(size=7, line=dict(width=2, color="#FFF"))),
+                             marker=dict(size=7, line=dict(width=2, color="#FFF")),
+                             hoverinfo="x+y+name", text=point_labels(g["Giá Trị"], pct_label), textposition="top center",
+                             textfont=dict(color=ACCENT, **LABEL_FONT), cliponaxis=False),
                   secondary_y=True)
     if target:
         fig.add_hline(y=target, line_dash="dot", line_color=DANGER, line_width=2, secondary_y=True)
     fig.update_layout(title=title, height=450)
     fig.update_yaxes(title_text=bar_name, secondary_y=False)
     fig.update_yaxes(title_text=line_name, secondary_y=True, ticksuffix="%", showgrid=False)
+    band_axes(fig, g["Trọng Số"].max())
     fig.update_xaxes(tickformat="%d/%m")
     st.plotly_chart(fig, width="stretch")
 
@@ -2628,10 +2689,15 @@ if tab1.open:
         series = [(n, d, c) for n, d, c in series if not d.empty]
         if series:
             fig_ov = go.Figure()
-            for name, d, color in series:
+            pos_ov = label_layout([d["Giá Trị"] for _, d, _ in series])
+            for (name, d, color), (tpos, off) in zip(series, pos_ov):
                 fig_ov.add_trace(go.Scatter(x=d["Ngày"], y=d["Giá Trị"], name=name,
-                                            mode="lines+markers",
-                                            line=dict(color=color, width=3), marker=dict(size=6)))
+                                            mode="lines+markers+text",
+                                            line=dict(color=color, width=3), marker=dict(size=6),
+                                            hoverinfo="x+y+name",
+                                            text=point_labels(d["Giá Trị"], pct_label, 10, off),
+                                            textposition=tpos, cliponaxis=False,
+                                            textfont=dict(color=color, **LABEL_FONT)))
             fig_ov.add_hline(y=t_gtc_ov, line_dash="dot", line_color=ACCENT, line_width=2,
                              annotation_text="Mốc GTC", annotation_position="top left")
             fig_ov.update_yaxes(ticksuffix="%")
@@ -2745,18 +2811,27 @@ if tab2.open:
                     sub_ca = g_ca[g_ca["Chiều"] == ca]
                     fig_ca1.add_trace(go.Bar(x=sub_ca["Ngày"], y=sub_ca["w"], name=ca,
                                              marker_color=palette[i % len(palette)],
-                                             marker_line_width=0))
+                                             marker_line_width=0,
+                                             hoverinfo="x+y+name", text=point_labels(sub_ca["w"], num_label),
+                                             textposition="inside", insidetextanchor="middle",
+                                             textfont=dict(color="#FFFFFF", **LABEL_FONT)))
                 fig_ca1.update_layout(barmode="stack", title="Sản lượng theo ca", height=430)
                 fig_ca1.update_xaxes(tickformat="%d/%m")
                 st.plotly_chart(fig_ca1, width="stretch")
             with cD:
                 fig_ca2 = go.Figure()
-                for i, ca in enumerate(sorted(g_ca["Chiều"].unique())):
+                ca_list = sorted(g_ca["Chiều"].unique())
+                pos_ca = label_layout([g_ca.loc[g_ca["Chiều"] == ca, "r"] for ca in ca_list])
+                for i, ca in enumerate(ca_list):
                     sub_ca = g_ca[g_ca["Chiều"] == ca]
                     fig_ca2.add_trace(go.Scatter(x=sub_ca["Ngày"], y=sub_ca["r"], name=ca,
-                                                 mode="lines+markers",
+                                                 mode="lines+markers+text",
                                                  line=dict(color=palette[i % len(palette)], width=3),
-                                                 marker=dict(size=6)))
+                                                 marker=dict(size=6), hoverinfo="x+y+name",
+                                                 text=point_labels(sub_ca["r"], pct_label, 10, pos_ca[i][1]),
+                                                 textposition=pos_ca[i][0], cliponaxis=False,
+                                                 textfont=dict(color=palette[i % len(palette)],
+                                                               **LABEL_FONT)))
                 fig_ca2.update_layout(title="%GTC theo ca", height=430)
                 fig_ca2.update_yaxes(ticksuffix="%", range=[0, 100])
                 fig_ca2.update_xaxes(tickformat="%d/%m")
@@ -2783,7 +2858,11 @@ if tab2.open:
                 g_lead = s_lead.groupby("Ngày", as_index=False)["Giá Trị"].mean()
                 fig_lead = px.line(g_lead, x="Ngày", y="Giá Trị", markers=True,
                                    title="Leadtime theo ngày (giờ)")
-                fig_lead.update_traces(line=dict(color=PRIMARY, width=3), marker=dict(size=7))
+                fig_lead.update_traces(line=dict(color=PRIMARY, width=3), marker=dict(size=7),
+                                       mode="lines+markers+text", cliponaxis=False,
+                                       text=point_labels(g_lead["Giá Trị"], lambda v: f"{v:.1f}"),
+                                       textposition="top center",
+                                       textfont=dict(color=PRIMARY, **LABEL_FONT))
                 fig_lead.update_xaxes(tickformat="%d/%m", title_text=None)
                 fig_lead.update_yaxes(title_text="Giờ")
                 fig_lead.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
@@ -2946,6 +3025,9 @@ if tab3.open:
             plot_kd = d_kd_range.groupby("Ngày", as_index=False)["Giá Trị"].sum()
             fig_kd = px.bar(plot_kd, x="Ngày", y="Giá Trị", title="Doanh thu theo ngày")
             fig_kd.update_traces(marker_color=PRIMARY, marker_line_width=0,
+                                 text=point_labels(plot_kd["Giá Trị"], money_label),
+                                 textposition="outside", cliponaxis=False,
+                                 textfont=dict(color=PRIMARY, **LABEL_FONT),
                                  hovertemplate="%{x|%d/%m/%Y}<br>%{y:,.0f} đ<extra></extra>")
             fig_kd.update_xaxes(tickformat="%d/%m", title_text=None)
             fig_kd.update_yaxes(tickformat=",.0f", title_text="Doanh thu (đ)")
@@ -3327,13 +3409,23 @@ if tab4.open:
             g_ns = G_range.groupby("Ngày", as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
             g_ns["r"] = np.where(g_ns[col_gan] > 0, g_ns[col_gtc] / g_ns[col_gan] * 100, 0.0)
             fig_ns = make_subplots(specs=[[{"secondary_y": True}]])
+            ns_angle = -90 if len(g_ns) > 10 else 0
             fig_ns.add_trace(go.Bar(x=g_ns["Ngày"], y=g_ns[col_gan], name="Sản lượng gán",
-                                    marker_color=PRIMARY_SOFT, marker_line_width=0), secondary_y=False)
+                                    marker_color=PRIMARY_SOFT, marker_line_width=0,
+                                    hoverinfo="x+y+name", text=point_labels(g_ns[col_gan], num_label), textposition="outside",
+                                    textangle=ns_angle, cliponaxis=False,
+                                    textfont=dict(color=PRIMARY, **LABEL_FONT)), secondary_y=False)
             fig_ns.add_trace(go.Bar(x=g_ns["Ngày"], y=g_ns[col_gtc], name="Sản lượng GTC",
-                                    marker_color=PRIMARY, marker_line_width=0), secondary_y=False)
+                                    marker_color=PRIMARY, marker_line_width=0,
+                                    hoverinfo="x+y+name", text=point_labels(g_ns[col_gtc], num_label), textposition="inside",
+                                    insidetextanchor="end", textangle=ns_angle,
+                                    textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
             fig_ns.add_trace(go.Scatter(x=g_ns["Ngày"], y=g_ns["r"], name="% GTC",
-                                        mode="lines+markers", line=dict(color=ACCENT, width=3),
-                                        marker=dict(size=7)), secondary_y=True)
+                                        mode="lines+markers+text", line=dict(color=ACCENT, width=3),
+                                        marker=dict(size=7),
+                                        hoverinfo="x+y+name", text=point_labels(g_ns["r"], pct_label), textposition="top center",
+                                        cliponaxis=False, textfont=dict(color=ACCENT, **LABEL_FONT)),
+                             secondary_y=True)
             # Đường xu hướng %GTC: hồi quy tuyến tính theo ngày thực tế (ngày thiếu dữ liệu không bị kéo lệch),
             # bỏ các ngày không có đơn gán vì %GTC của ngày đó không có nghĩa.
             xs_all = (g_ns["Ngày"] - g_ns["Ngày"].min()).dt.days.to_numpy(dtype=float)
@@ -3355,8 +3447,8 @@ if tab4.open:
             fig_ns.update_layout(barmode="overlay", height=470,
                                  title="Sản lượng gán · GTC · tỷ lệ")
             fig_ns.update_yaxes(title_text="Số đơn", secondary_y=False)
-            fig_ns.update_yaxes(title_text="% GTC", secondary_y=True, ticksuffix="%",
-                                showgrid=False, range=[0, 100])
+            fig_ns.update_yaxes(title_text="% GTC", secondary_y=True, ticksuffix="%", showgrid=False)
+            band_axes(fig_ns, g_ns[col_gan].max())
             fig_ns.update_xaxes(tickformat="%d/%m")
             st.plotly_chart(fig_ns, width="stretch")
             if not xu_huong_ok:
@@ -3372,7 +3464,11 @@ if tab4.open:
                 fig_price = px.line(g_price, x="Ngày", y=col_price, markers=True,
                                     title="Đơn giá trung bình theo ngày")
                 fig_price.update_traces(line=dict(color=PRIMARY, width=3),
-                                        marker=dict(size=7, color=PRIMARY))
+                                        marker=dict(size=7, color=PRIMARY),
+                                        mode="lines+markers+text", cliponaxis=False,
+                                        text=point_labels(g_price[col_price], lambda v: f"{v:,.0f}"),
+                                        textposition="top center",
+                                        textfont=dict(color=PRIMARY, **LABEL_FONT))
                 fig_price.update_yaxes(title_text="VNĐ")
                 fig_price.update_xaxes(tickformat="%d/%m")
                 fig_price.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
@@ -3387,7 +3483,11 @@ if tab4.open:
                 fig_pay = px.line(g_pay, x="Ngày", y="Tổng Lương", markers=True,
                                   title="Tổng lương theo ngày")
                 fig_pay.update_traces(line=dict(color=SUCCESS, width=3),
-                                      marker=dict(size=7, color=SUCCESS))
+                                      marker=dict(size=7, color=SUCCESS),
+                                      mode="lines+markers+text", cliponaxis=False,
+                                      text=point_labels(g_pay["Tổng Lương"], money_label),
+                                      textposition="top center",
+                                      textfont=dict(color=SUCCESS, **LABEL_FONT))
                 fig_pay.update_yaxes(title_text="VNĐ")
                 fig_pay.update_xaxes(tickformat="%d/%m")
                 fig_pay.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
@@ -3562,10 +3662,15 @@ if tab5.open:
                 kpi_series.append((g, name, color, tgt))
         if kpi_series:
             fig_kpi = go.Figure()
-            for g, name, color, tgt in kpi_series:
+            pos_kpi = label_layout([g["Giá Trị"] for g, _, _, _ in kpi_series])
+            for (g, name, color, tgt), (tpos, off) in zip(kpi_series, pos_kpi):
                 fig_kpi.add_trace(go.Scatter(x=g["Ngày"], y=g["Giá Trị"], name=name,
-                                             mode="lines+markers",
-                                             line=dict(color=color, width=3), marker=dict(size=6)))
+                                             mode="lines+markers+text",
+                                             line=dict(color=color, width=3), marker=dict(size=6),
+                                             hoverinfo="x+y+name",
+                                             text=point_labels(g["Giá Trị"], pct_label, 10, off),
+                                             textposition=tpos, cliponaxis=False,
+                                             textfont=dict(color=color, **LABEL_FONT)))
                 fig_kpi.add_hline(y=tgt, line_dash="dot", line_color=color, line_width=1.5, opacity=0.5)
             fig_kpi.update_yaxes(ticksuffix="%")
             fig_kpi.update_xaxes(tickformat="%d/%m")
