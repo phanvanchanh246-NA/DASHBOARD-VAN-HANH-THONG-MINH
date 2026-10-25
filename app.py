@@ -190,6 +190,8 @@ st.markdown(f"""
    chat...). Đổi cỡ chữ gốc từ 16px lên 24px là mọi thứ đó tự phóng theo.
    Các cỡ px trong CSS bên dưới đã được nhân sẵn 1.5. */
 html {{ font-size: 20px; }}
+/* Hệ số cỡ chữ cho các khối tự dựng; đổi theo độ rộng màn hình ở cuối khối CSS. */
+:root {{ --fs: 1; }}
 
 html, body, [class*="css"], .stApp {{
     font-family: 'Montserrat', sans-serif !important;
@@ -225,10 +227,10 @@ h1, h2, h3, h4 {{
     box-shadow: 0 4px 14px rgba(0,119,182,0.25);
 }}
 .ghn-banner h1 {{
-    color: #FFFFFF !important; font-size: 38.25px; font-weight: 900 !important;
+    color: #FFFFFF !important; font-size: calc(38.25px * var(--fs)); font-weight: 900 !important;
     margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;
 }}
-.ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: 17.75px; font-weight: 600; margin: 0; }}
+.ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: calc(17.75px * var(--fs)); font-weight: 600; margin: 0; }}
 .ghn-banner-row {{ display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }}
 .ghn-banner-text {{ flex: 1 1 320px; min-width: 0; }}
 .ghn-logo-plate {{
@@ -237,15 +239,15 @@ h1, h2, h3, h4 {{
 }}
 .ghn-logo-plate {{ max-width: 100%; box-sizing: border-box; }}
 .ghn-logo-plate img {{ height: 50px; width: auto; max-width: 100%; object-fit: contain; display: block; }}
-.ghn-banner-row h1 {{ font-size: 30.5px; }}
+.ghn-banner-row h1 {{ font-size: calc(30.5px * var(--fs)); }}
 .ghn-login-logo {{ text-align: center; margin: 40px 0 20px 0; }}
 .ghn-login-logo img {{ width: min(360px, 85%); height: auto; }}
 @media (max-width: 640px) {{
     .block-container {{ padding-top: 3.2rem; }}
     .ghn-banner {{ padding: 16px 16px; }}
     .ghn-banner-row {{ gap: 14px; }}
-    .ghn-banner-row h1 {{ font-size: 22px; }}
-    .ghn-banner p {{ font-size: 13.5px; }}
+    .ghn-banner-row h1 {{ font-size: calc(22px * var(--fs)); }}
+    .ghn-banner p {{ font-size: calc(13.5px * var(--fs)); }}
     .ghn-logo-plate {{ width: 100%; padding: 8px 12px; }}
     .ghn-logo-plate img {{ height: auto; width: 100%; max-width: 260px; margin: 0 auto; }}
 }}
@@ -261,15 +263,15 @@ h1, h2, h3, h4 {{
     height: 100%;
 }}
 .metric-card .m-title {{
-    font-size: 16px; font-weight: 700; color: {MUTED};
+    font-size: calc(16px * var(--fs)); font-weight: 700; color: {MUTED};
     text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;
 }}
 .metric-card .m-value {{
-    font-size: 35.75px; font-weight: 900; color: {PRIMARY};
+    font-size: calc(35.75px * var(--fs)); font-weight: 900; color: {PRIMARY};
     line-height: 1.1; font-variant-numeric: tabular-nums;
 }}
 .metric-card .m-value.accent {{ color: {ACCENT}; }}
-.metric-card .m-delta {{ font-size: 16px; font-weight: 700; margin-top: 6px; }}
+.metric-card .m-delta {{ font-size: calc(16px * var(--fs)); font-weight: 700; margin-top: 6px; }}
 .metric-card .m-delta.up {{ color: {SUCCESS}; }}
 .metric-card .m-delta.down {{ color: {DANGER}; }}
 .metric-card .m-delta.flat {{ color: {MUTED}; }}
@@ -287,7 +289,7 @@ h1, h2, h3, h4 {{
 }}
 .stTabs [data-baseweb="tab"] p {{
     font-family: 'Montserrat', sans-serif !important;
-    font-size: 19px !important; font-weight: 700 !important; color: {MUTED} !important;
+    font-size: calc(19px * var(--fs)) !important; font-weight: 700 !important; color: {MUTED} !important;
 }}
 .stTabs [aria-selected="true"] {{
     background: #FFF6EC !important;
@@ -307,17 +309,17 @@ div[data-testid="stDataFrame"] thead tr th {{
     color: #FFFFFF !important;
     font-weight: 800 !important;
     font-family: 'Montserrat', sans-serif !important;
-    text-transform: uppercase; font-size: 15.25px !important;
+    text-transform: uppercase; font-size: calc(15.25px * var(--fs)) !important;
 }}
 div[data-testid="stDataFrame"] [role="columnheader"] {{
     background-color: {PRIMARY} !important; color: #FFFFFF !important; font-weight: 800 !important;
 }}
 
 /* ── Bảng HTML tự dựng ──────────────────────────────────────────────── */
-table.ghn-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 17.25px; }}
+table.ghn-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: calc(17.25px * var(--fs)); }}
 table.ghn-table thead th {{
     background: {PRIMARY}; color: #FFFFFF; font-weight: 800; text-transform: uppercase;
-    font-size: 15.25px; padding: 10px 12px; text-align: right; letter-spacing: 0.3px;
+    font-size: calc(15.25px * var(--fs)); padding: 10px 12px; text-align: right; letter-spacing: 0.3px;
 }}
 table.ghn-table thead th:first-child, table.ghn-table td:first-child {{ text-align: left; }}
 table.ghn-table td {{
@@ -333,7 +335,7 @@ table.ghn-table td span.down {{ color: {DANGER}; font-weight: 800; }}
 /* ── Nút bấm màu cam ────────────────────────────────────────────────── */
 .stButton > button {{
     background: {ACCENT}; color: #FFFFFF; border: none; border-radius: 6px;
-    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 16.5px;
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: calc(16.5px * var(--fs));
     text-transform: uppercase; letter-spacing: 0.4px; padding: 0.4rem 1.4rem;
     min-height: 48px;   /* bằng chiều cao ô chọn/ô nhập để đứng cạnh nhau thì thẳng hàng */
     box-shadow: 0 2px 6px rgba(255,140,0,0.35);
@@ -341,7 +343,7 @@ table.ghn-table td span.down {{ color: {DANGER}; font-weight: 800; }}
 .stButton > button:hover {{ background: #E67E00; color: #FFFFFF; }}
 .stDownloadButton > button {{
     background: {BG}; color: {PRIMARY}; border: 2px solid {PRIMARY}; border-radius: 6px;
-    font-weight: 800; font-size: 15.25px; text-transform: uppercase;
+    font-weight: 800; font-size: calc(15.25px * var(--fs)); text-transform: uppercase;
     padding: 0.4rem 1.4rem; min-height: 48px;
 }}
 .stDownloadButton > button:hover {{ background: {PRIMARY}; color: #FFFFFF; }}
@@ -349,7 +351,7 @@ table.ghn-table td span.down {{ color: {DANGER}; font-weight: 800; }}
 /* ── Nhãn ô nhập ────────────────────────────────────────────────────── */
 label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea label {{
     font-family: 'Montserrat', sans-serif !important;
-    font-weight: 700 !important; font-size: 15.25px !important;
+    font-weight: 700 !important; font-size: calc(15.25px * var(--fs)) !important;
     color: {PRIMARY} !important; text-transform: uppercase; letter-spacing: 0.3px;
 }}
 
@@ -357,12 +359,12 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 .ghn-alert {{
     background: #FFF; border-left: 5px solid {ACCENT}; border-radius: 8px;
     padding: 16px 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    font-size: 17.75px; line-height: 1.7;
+    font-size: calc(17.75px * var(--fs)); line-height: 1.7;
 }}
 .ghn-alert.danger {{ border-left-color: {DANGER}; }}
 .ghn-alert.ok {{ border-left-color: {SUCCESS}; }}
 .ghn-alert .a-tag {{
-    display: inline-block; font-size: 14px; font-weight: 800; text-transform: uppercase;
+    display: inline-block; font-size: calc(14px * var(--fs)); font-weight: 800; text-transform: uppercase;
     padding: 2px 10px; border-radius: 12px; margin-right: 8px;
 }}
 .tag-danger {{ background: #FDECEE; color: {DANGER}; }}
@@ -404,7 +406,7 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
     display: block !important;
     font-family: 'Montserrat', sans-serif;
     font-weight: 700;
-    font-size: 11px;
+    font-size: calc(11px * var(--fs));
     color: #B36200;
     letter-spacing: 0.3px;
     line-height: 1;
@@ -412,14 +414,59 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 }}
 
 .section-title {{
-    font-size: 21.75px; font-weight: 900; color: {PRIMARY};
+    font-size: calc(21.75px * var(--fs)); font-weight: 900; color: {PRIMARY};
     text-transform: uppercase; letter-spacing: 0.3px;
     border-left: 5px solid {ACCENT}; padding-left: 12px; margin: 26px 0 12px;
 }}
 .note-box {{
     background: #F8FBFD; border: 1px dashed {PRIMARY_SOFT}; border-radius: 8px;
-    padding: 18px; text-align: center; color: {MUTED}; font-size: 16.5px; font-weight: 600;
+    padding: 18px; text-align: center; color: {MUTED}; font-size: calc(16.5px * var(--fs)); font-weight: 600;
     margin: 10px 0;
+}}
+.ghn-hero-title {{
+    color: #FFFFFF; margin: 0; font-size: calc(28px * var(--fs)); font-weight: 900; line-height: 1.2;
+    text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 3px rgba(0,0,0,0.28);
+    font-family: 'Montserrat', sans-serif;
+}}
+
+/* ── TỰ CO GIÃN THEO MÀN HÌNH ──────────────────────────────────────────
+   Màn lớn (≥1800px): phóng chữ và ô nhập cho dễ đọc từ xa.
+   Máy tính bảng / laptop nhỏ (≤1100px): thanh tab xuống dòng để thấy đủ các tab,
+   các cột hẹp tự xuống hàng thay vì bị bóp.
+   Điện thoại (≤640px): thu gọn banner, lề, cỡ chữ. Streamlit tự xếp cột thành một cột. */
+@media (min-width: 1800px) {{
+    html {{ font-size: 22px; }}
+    :root {{ --fs: 1.12; }}
+    .ghn-logo-plate img {{ height: 58px; }}
+}}
+@media (min-width: 2400px) {{
+    html {{ font-size: 24px; }}
+    :root {{ --fs: 1.25; }}
+    .block-container {{ padding-left: 2.4rem; padding-right: 2.4rem; }}
+    .ghn-logo-plate img {{ height: 66px; }}
+}}
+@media (max-width: 1100px) {{
+    :root {{ --fs: 0.94; }}
+    .stTabs [role="tablist"] {{ flex-wrap: wrap; row-gap: 4px; }}
+    .stTabs [role="tab"] {{ padding: 0 12px; }}
+    [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
+    [data-testid="stColumn"] {{ min-width: min(230px, 100%); }}
+    .ghn-logo-plate img {{ height: 40px; }}
+    .ghn-banner h1, .ghn-banner-row h1 {{ font-size: calc(26px * var(--fs)); }}
+}}
+@media (max-width: 640px) {{
+    html {{ font-size: 18px; }}
+    :root {{ --fs: 0.86; }}
+    .block-container {{ padding-left: 0.8rem; padding-right: 0.8rem; }}
+    .stTabs [role="tab"] {{ padding: 0 7px; height: 36px; min-height: 0; }}
+    .stTabs [role="tab"] p {{ font-size: 13.5px !important; }}
+    .ghn-banner {{ margin-bottom: 14px; }}
+    .ghn-banner-row h1 {{ font-size: calc(22px * var(--fs)); }}
+    .ghn-alert {{ padding: 12px 14px; line-height: 1.55; }}
+    .metric-card {{ padding: 12px 14px; }}
+    .section-title {{ margin: 20px 0 10px; }}
+    table.ghn-table th, table.ghn-table td {{ padding: 8px 6px; }}
+    .ghn-hero {{ padding: 14px 16px !important; }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -3568,13 +3615,10 @@ if tab7.open:
         # Dùng div thay cho h2: quy tắc chung "h1,h2,h3,h4 { color: xanh đậm !important }"
         # sẽ đè lên màu trắng, khiến chữ xanh đậm chìm nghỉm trên nền xanh.
         st.markdown(f"""
-    <div style="background:linear-gradient(120deg,{PRIMARY} 0%,#00B4D8 100%);
+    <div class="ghn-hero" style="background:linear-gradient(120deg,{PRIMARY} 0%,#00B4D8 100%);
                 border-radius:10px;padding:20px 26px;margin-bottom:18px;
                 box-shadow:0 3px 10px rgba(0,119,182,0.25);">
-        <div style="color:#FFFFFF;margin:0;font-size:28px;font-weight:900;line-height:1.2;
-                    text-transform:uppercase;letter-spacing:0.5px;
-                    text-shadow:0 1px 3px rgba(0,0,0,0.28);
-                    font-family:'Montserrat',sans-serif;">
+        <div class="ghn-hero-title">
             Bảng xếp hạng thi đua giao thành công {esc(st.session_state.get('td_mode', 'Tháng')).lower()}
         </div>
     </div>""", unsafe_allow_html=True)
@@ -3786,11 +3830,11 @@ if tab7.open:
                                    else "dẫn đầu bảng xếp hạng")
                         st.markdown(f"""
                 <div class="metric-card" style="border-left-color:{SUCCESS};text-align:center;">
-                    <div style="font-size:35.75px;line-height:1;">{medals[hang_thuong]}</div>
+                    <div style="font-size:calc(35.75px * var(--fs));line-height:1;">{medals[hang_thuong]}</div>
                     <div class="m-title" style="margin-top:6px;">{esc(staff_label(row['Nhân Viên']))}</div>
                     <div class="m-value">{row[col_now]:.2f}%</div>
                     <div class="m-delta up">{thuong_txt(hang_thuong)}</div>
-                    <div style="font-size:14px;color:{MUTED};margin-top:4px;">
+                    <div style="font-size:calc(14px * var(--fs));color:{MUTED};margin-top:4px;">
                         {row['Gán']:,.0f} đơn gán · {row['GTC']:,.0f} đơn GTC · {ghi_chu}
                     </div>
                 </div>""", unsafe_allow_html=True)
@@ -4106,6 +4150,6 @@ Trình bày bằng markdown, in đậm các con số quan trọng.""")
 
 st.markdown(
     f"<div style='margin-top:36px;padding-top:16px;border-top:2px solid {LINE};"
-    f"text-align:center;color:{MUTED};font-size: 15.25px;font-weight:600;'>"
+    f"text-align:center;color:{MUTED};font-size: calc(15.25px * var(--fs));font-weight:600;'>"
     f"TRUNG TÂM VẬN HÀNH CHIẾN LƯỢC — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
     unsafe_allow_html=True)
