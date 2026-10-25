@@ -1961,6 +1961,7 @@ YÊU CẦU:
 
 # ── Cảnh báo nhân sự ────────────────────────────────────────────────────
 HR_DEFAULTS = {"low": 70.0, "streak": 3, "drop": 10.0, "absent": 3, "ratio": 50}
+HR_QUIT_DAYS = 7     # không phát sinh đơn từ 7 ngày trở lên: coi như đã nghỉ việc, không hiển thị
 HR_FLAG_COLORS = {"low": DANGER, "drop": ACCENT, "absent": "#6C757D", "gan": "#00B4D8"}
 
 
@@ -1999,7 +2000,8 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
     """Dò 4 loại cảnh báo nhân sự trên dữ liệu theo ngày (từ hr_daily), tính tới ngày `ref`:
       low    — %GTC dưới `low`% trong `streak` ngày làm việc liền gần nhất
       drop   — %GTC 7 ngày gần nhất giảm từ `drop` điểm so với 7 ngày trước đó (mỗi bên ≥ 30 đơn gán)
-      absent — có làm trong 30 ngày qua nhưng đã `absent` ngày trở lên không có đơn
+      absent — đã `absent` ngày trở lên không có đơn (nhưng chưa tới HR_QUIT_DAYS)
+    Người không có đơn từ HR_QUIT_DAYS ngày trở lên coi như đã nghỉ việc và bị bỏ qua.
       gan    — đơn gán bình quân/ngày trong 7 ngày dưới `ratio`% trung vị của bưu cục (làm ≥ 2 ngày)
     Mỗi nhân viên một dòng, chỉ giữ người có ít nhất một cảnh báo."""
     cols = ["Mức", "Nhân viên", "Bưu cục", "Cảnh báo", "%GTC 7 ngày", "%GTC 7 ngày trước",
@@ -2035,11 +2037,13 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
         flags, tags, desc, score = [], [], [], 0.0
 
         days_off = (ref - last).days
+        if days_off >= HR_QUIT_DAYS:
+            continue
         if days_off >= absent:
             flags.append("absent")
             tags.append(f"Vắng {days_off} ngày")
             desc.append(f"{days_off} ngày không có đơn (làm cuối {last:%d/%m})")
-            score += 2 if days_off >= 7 else 1
+            score += 2 if days_off >= 5 else 1
         else:
             day_pct = (x["GTC"] / x["Gán"] * 100).iloc[::-1]
             run = 0
@@ -2997,13 +3001,15 @@ if tab8.open:
                 hr_drop = st.number_input("%GTC giảm từ (điểm)", 1.0, 50.0, HR_DEFAULTS["drop"], 1.0,
                                           key="hr_drop")
             with h4:
-                hr_absent = st.number_input("Vắng từ (ngày)", 1, 29, HR_DEFAULTS["absent"], 1, key="hr_absent")
+                hr_absent = st.number_input("Vắng từ (ngày)", 1, HR_QUIT_DAYS - 1, HR_DEFAULTS["absent"], 1,
+                                            key="hr_absent")
             with h5:
                 hr_ratio = st.number_input("Gán dưới (% trung vị BC)", 5, 100, HR_DEFAULTS["ratio"], 5,
                                            key="hr_ratio")
             st.caption("So 7 ngày gần nhất với 7 ngày trước đó. %GTC giảm chỉ xét người có từ 30 đơn gán mỗi bên; "
                        "gán thấp so với trung vị đơn gán/ngày của nhân viên cùng bưu cục (làm từ 2 ngày). "
-                       "Vắng: có làm trong 30 ngày qua nhưng không có đơn từ số ngày trên.")
+                       f"Vắng: không có đơn từ số ngày trên. Người không có đơn từ {HR_QUIT_DAYS} ngày trở lên "
+                       "coi như đã nghỉ việc nên không hiển thị.")
 
         hr_day = hr_daily(DF_NSGTC)
         if bc_hr != "Tất cả" and not hr_day.empty:
@@ -3022,7 +3028,8 @@ if tab8.open:
             for col_, k, ttl, sub in (
                     (k1, "low", "%GTC thấp liên tiếp", f"dưới {hr_low:g}% từ {int(hr_streak)} ngày liền"),
                     (k2, "drop", "%GTC giảm mạnh", f"giảm từ {hr_drop:g} điểm so 7 ngày trước"),
-                    (k3, "absent", "Vắng / không có đơn", f"từ {int(hr_absent)} ngày trở lên"),
+                    (k3, "absent", "Vắng / không có đơn",
+                     f"{int(hr_absent)}–{HR_QUIT_DAYS - 1} ngày không có đơn"),
                     (k4, "gan", "Sản lượng gán thấp", f"dưới {hr_ratio}% trung vị bưu cục")):
                 with col_:
                     st.markdown(metric_card(ttl, f"{n_flag[k]} người", None, sub=sub,
@@ -3049,7 +3056,7 @@ if tab8.open:
                         "Cảnh báo": st.column_config.TextColumn(width="large")})
 
                 hr_nguong = (f"%GTC dưới {hr_low:g}% từ {int(hr_streak)} ngày liền; giảm từ {hr_drop:g} điểm; "
-                             f"vắng từ {int(hr_absent)} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
+                             f"vắng {int(hr_absent)}–{HR_QUIT_DAYS - 1} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
 
                 def hr_png() -> bytes:
                     """Vẽ ảnh danh sách cảnh báo — chỉ chạy khi bấm tải, xem trước hoặc gửi."""
