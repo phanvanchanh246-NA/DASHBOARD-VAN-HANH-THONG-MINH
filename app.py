@@ -2113,7 +2113,7 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
       gan    — đơn gán bình quân/ngày trong 7 ngày dưới `ratio`% trung vị của bưu cục (làm ≥ 2 ngày)
     Mỗi nhân viên một dòng, chỉ giữ người có ít nhất một cảnh báo."""
     cols = ["Mức", "Nhân viên", "Bưu cục", "Cảnh báo", "%GTC 7 ngày", "%GTC 7 ngày trước",
-            "Gán TB/ngày", "Ngày làm cuối", "_tags", "_flags", "_score"]
+            "Gán TB/ngày", "Ngày làm cuối", "_tags", "_flags", "_score", "_ma"]
     if daily is None or daily.empty:
         return pd.DataFrame(columns=cols)
     ref = pd.Timestamp(ref).normalize()
@@ -2187,7 +2187,7 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
             "Cảnh báo": (lambda s: s[:1].upper() + s[1:])("; ".join(desc)),
             "%GTC 7 ngày": p_rec, "%GTC 7 ngày trước": p_prev,
             "Gán TB/ngày": avg_gan, "Ngày làm cuối": last,
-            "_tags": "|".join(tags), "_flags": "|".join(flags), "_score": score,
+            "_tags": "|".join(tags), "_flags": "|".join(flags), "_score": score, "_ma": ma,
         })
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -2308,6 +2308,142 @@ YÊU CẦU:
   gán thấp); nhắc xem ảnh danh sách đính kèm.
 - Không quy kết, không chê trách nặng nề; không bịa nguyên nhân, số liệu hay hình thức kỷ luật.
 - Giữ nguyên cách viết tên như trong số liệu. Chỉ trả về nội dung tin nhắn, không giải thích, không tiêu đề."""
+
+
+# ── Chi tiết một nhân viên + hướng dẫn trao đổi 1:1 ─────────────────────
+def hr_staff_chart(daily: pd.DataFrame, ma: str, ref: pd.Timestamp, low: float, days: int = 30):
+    """Biểu đồ 30 ngày của một nhân viên: cột đơn gán, đơn GTC và đường %GTC.
+    Ngày không có đơn vẫn giữ trên trục (cột trống) để thấy rõ ngày nghỉ / vắng."""
+    ref = pd.Timestamp(ref).normalize()
+    a = ref - pd.Timedelta(days=days - 1)
+    d = daily[(daily["MaNV"] == ma) & (daily["Ngày"] >= a) & (daily["Ngày"] <= ref)]
+    d = (d.groupby("Ngày")[["Gán", "GTC"]].sum()
+          .reindex(pd.date_range(a, ref, freq="D"), fill_value=0).rename_axis("Ngày").reset_index())
+    d["r"] = np.where(d["Gán"] > 0, d["GTC"] / d["Gán"].where(d["Gán"] > 0) * 100, np.nan)
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(x=d["Ngày"], y=d["Gán"], name="Đơn gán", marker_color=PRIMARY_SOFT,
+                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+    fig.add_trace(go.Bar(x=d["Ngày"], y=d["GTC"], name="Đơn GTC", marker_color=PRIMARY,
+                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=d["Ngày"], y=d["r"], name="% GTC", mode="lines+markers+text",
+                             connectgaps=False, line=dict(color=ACCENT, width=3), marker=dict(size=7),
+                             hoverinfo="x+y+name", text=point_labels(d["r"], pct_label, 12),
+                             textposition="top center", cliponaxis=False,
+                             textfont=dict(color=ACCENT, **LABEL_FONT)), secondary_y=True)
+    # Vẽ ngưỡng thành một đường có tên trong chú thích (add_hline kèm chữ bị lệch chỗ khi có hai trục).
+    fig.add_trace(go.Scatter(x=[d["Ngày"].iloc[0], d["Ngày"].iloc[-1]], y=[low, low], mode="lines",
+                             name=f"Ngưỡng cảnh báo {low:g}%", hoverinfo="skip",
+                             line=dict(color=DANGER, width=2, dash="dot")), secondary_y=True)
+    fig.update_layout(barmode="overlay", height=430, title=f"Đơn gán · GTC · %GTC — {days} ngày gần nhất")
+    fig.update_yaxes(title_text="Số đơn", secondary_y=False)
+    fig.update_yaxes(title_text="% GTC", secondary_y=True, showgrid=False)
+    band_axes(fig, d["Gán"].max())
+    fig.update_xaxes(tickformat="%d/%m")
+    return fig, d
+
+
+HR_1ON1 = {
+    "low": {
+        "ten": "%GTC thấp nhiều ngày liền",
+        "hoi": ["Mấy ngày gần đây đơn không giao được chủ yếu vì lý do gì: khách không nghe máy, hẹn lại, "
+                "sai địa chỉ, hay không kịp giờ?",
+                "Tuyến hoặc khu vực em chạy có gì thay đổi không (đơn xa hơn, đường khó, khách mới)?",
+                "Em thường gọi khách trước khi đi giao không, gọi vào lúc nào?",
+                "Em có đang gặp khó khăn về xe, điện thoại, sức khỏe hay việc riêng không?"],
+        "lam": ["Cùng mở danh sách đơn thất bại mấy ngày gần nhất, xem lý do lặp lại nhiều nhất.",
+                "Kèm tuyến 1–2 buổi cùng một bạn %GTC tốt ở khu vực gần.",
+                "Thống nhất gọi xác nhận khách trước giờ giao, sắp lộ trình theo khung giờ khách hẹn."],
+    },
+    "drop": {
+        "ten": "%GTC giảm mạnh so với tuần trước",
+        "hoi": ["Từ khoảng ngày %GTC bắt đầu giảm (xem biểu đồ), công việc của em có gì khác không?",
+                "Em có được chuyển tuyến, nhận thêm loại đơn mới (TikTok, hàng cồng kềnh…) không?",
+                "Tuần trước em làm tốt hơn, theo em điều gì đã giúp em làm tốt lúc đó?"],
+        "lam": ["Chỉ ra đúng ngày bắt đầu giảm trên biểu đồ để cùng tìm nguyên nhân cụ thể.",
+                "Nếu do tuyến hoặc loại đơn khó: xem lại cách chia tuyến, chia đơn.",
+                "Theo dõi %GTC hằng ngày trong 1 tuần tới, phản hồi sớm khi có cải thiện."],
+    },
+    "absent": {
+        "ten": "Vắng / không có đơn mấy ngày gần đây",
+        "hoi": ["Hỏi thăm trước: sức khỏe, gia đình em dạo này thế nào?",
+                "Em có gặp khó khăn gì khiến mấy hôm nay chưa đi làm được không?",
+                "Em dự kiến ngày nào quay lại làm? Bưu cục có thể hỗ trợ gì cho em?"],
+        "lam": ["Liên hệ riêng (gọi điện hoặc gặp), không hỏi trong nhóm chung.",
+                "Thống nhất ngày quay lại; nếu bạn có ý định nghỉ thì ghi nhận lý do và báo bộ phận nhân sự.",
+                "Sắp xếp người hỗ trợ tuyến trong thời gian bạn vắng để khách không bị ảnh hưởng."],
+    },
+    "gan": {
+        "ten": "Sản lượng gán thấp hơn nhiều so với bưu cục",
+        "hoi": ["Em đang nhận ít đơn vì chủ động xin giảm, vì tuyến ít đơn, hay vì cách phân đơn?",
+                "Em nghĩ mỗi ngày em có thể nhận thêm khoảng bao nhiêu đơn mà vẫn giao tốt?",
+                "Có điều gì (xe, thời gian, sức khỏe) đang làm em khó nhận thêm đơn không?"],
+        "lam": ["Xem lại cách phân đơn cho tuyến của bạn so với các bạn cùng bưu cục.",
+                "Tăng dần đơn gán (khoảng 10–15% mỗi ngày), theo dõi để %GTC không bị giảm theo.",
+                "Nếu vướng xe / sức khỏe / thời gian: ghi nhận và tìm cách hỗ trợ trước khi tăng đơn."],
+    },
+}
+
+
+def hr_1on1_guide(r, low: float) -> str:
+    """Hướng dẫn NVXL trao đổi 1:1 với một nhân viên, soạn theo đúng các cảnh báo của người đó."""
+    flags = [f for f in str(r["_flags"]).split("|") if f in HR_1ON1]
+    p7, p_prev = r["%GTC 7 ngày"], r["%GTC 7 ngày trước"]
+    so_lieu = [f"Cảnh báo: {r['Cảnh báo']}"]
+    if p7 is not None and pd.notna(p7):
+        so_lieu.append(f"%GTC 7 ngày gần nhất: {p7:.2f}%"
+                       + (f" (7 ngày trước: {p_prev:.2f}%)" if p_prev is not None and pd.notna(p_prev) else ""))
+    if r["Gán TB/ngày"] is not None and pd.notna(r["Gán TB/ngày"]):
+        so_lieu.append(f"Đơn gán bình quân: {r['Gán TB/ngày']:,.0f} đơn/ngày")
+    so_lieu.append(f"Ngày làm gần nhất: {pd.Timestamp(r['Ngày làm cuối']):%d/%m/%Y}")
+    muc_tieu = ("Xác nhận ngày quay lại làm và giữ liên lạc mỗi ngày cho tới khi đi làm lại."
+                if flags == ["absent"] else
+                f"%GTC từ {low:g}% trở lên trong 3 ngày làm tới, hướng tới 80%.")
+    out = [f"#### Trao đổi 1:1 với {r['Nhân viên']} — mức {r['Mức']}",
+           "**1. Chuẩn bị (5 phút)**",
+           "- Xem biểu đồ ở trên, ghi lại vài con số chính để nói cho cụ thể:",
+           *[f"  - {s}" for s in so_lieu],
+           "- Chọn chỗ riêng, 15–20 phút, đầu hoặc cuối ca. Không trao đổi trước mặt đồng nghiệp.",
+           "**2. Mở đầu**",
+           "- Hỏi thăm, ghi nhận một điểm em làm tốt (chuyên cần, thái độ với khách, ngày %GTC cao…).",
+           "- Nói rõ mục đích: cùng tìm cách để em làm tốt hơn, không phải để khiển trách.",
+           "**3. Cùng nhìn số liệu**",
+           "- Đưa số liệu thật, hỏi em nghĩ gì về các con số này trước khi nói nhận xét của mình."]
+    if flags:
+        out.append("**4. Tìm nguyên nhân — câu hỏi gợi ý**")
+        for f in flags:
+            out.append(f"- _{HR_1ON1[f]['ten']}:_")
+            out += [f"  - {q}" for q in HR_1ON1[f]["hoi"]]
+        out.append("**5. Thống nhất việc cần làm và hỗ trợ**")
+        for f in flags:
+            out += [f"- {x}" for x in HR_1ON1[f]["lam"]]
+    out += ["**6. Chốt cam kết và hẹn theo dõi**",
+            f"- Mục tiêu: {muc_tieu}",
+            "- Chốt 1–2 việc cụ thể em sẽ làm, việc bưu cục sẽ hỗ trợ, và hẹn ngày xem lại (sau 3–5 ngày).",
+            "- Ghi lại: nguyên nhân em nêu, cam kết hai bên, ngày hẹn.",
+            "**Lưu ý:** lắng nghe nhiều hơn nói; hỏi câu mở; không so sánh với người khác trước mặt em; "
+            "không kết luận hay nhắc kỷ luật khi chưa nghe em nói hết."]
+    # Dòng trống trước mỗi tiêu đề in đậm để Markdown không dính tiêu đề vào gạch đầu dòng phía trên
+    return "\n".join(("\n" + s) if s.startswith("**") else s for s in out)
+
+
+def hr_1on1_prompt(r, low: float, ngay_txt: str) -> str:
+    return f"""Bạn là chuyên gia quản lý nhân sự vận hành giao hàng của GHN. Soạn KỊCH BẢN TRAO ĐỔI 1:1 để nhân viên xử lý
+(NVXL — người quản lý trực tiếp) nói chuyện riêng với một nhân viên giao hàng đang bị cảnh báo.
+
+SỐ LIỆU THẬT (chỉ dùng đúng những số này):
+- Nhân viên: {r['Nhân viên']} — bưu cục {r['Bưu cục']} — mức cảnh báo {r['Mức']}.
+- Cảnh báo: {r['Cảnh báo']}.
+- Ngưỡng %GTC cảnh báo {low:g}%, mục tiêu thưởng 80%.
+- Số liệu theo ngày gần nhất (ngày: gán / GTC / %GTC):
+{ngay_txt}
+
+YÊU CẦU:
+- Tiếng Việt, VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 1.500 ký tự, xưng "anh/chị" – "em".
+- Gồm: câu mở đầu thân thiện có ghi nhận điểm tốt (nếu số liệu có ngày tốt thì nêu đúng ngày đó);
+  cách nêu số liệu nhẹ nhàng; 4–5 câu hỏi mở đúng với các cảnh báo trên; 2–3 hành động cụ thể hai bên
+  cùng thống nhất; câu chốt cam kết và hẹn ngày xem lại.
+- Không quy kết, không đe dọa kỷ luật, không bịa nguyên nhân hay số liệu.
+- Chỉ trả về kịch bản, không giải thích thêm."""
 
 
 def notice_send_panel(p: str, ctx_sig: str, rewrite_label: str, bc: str, png_fn, filename: str) -> None:
@@ -3175,14 +3311,78 @@ if tab8.open:
                     f"{'CẦN XỬ LÝ' if n_cao else 'THEO DÕI'}</span>"
                     f"<b>{len(hr)}</b> nhân viên cần chú ý, trong đó <b>{n_cao}</b> người mức Cao "
                     f"(nhiều cảnh báo cùng lúc hoặc lệch nặng).</div>", unsafe_allow_html=True)
-                st.dataframe(
-                    hr.drop(columns=["_tags", "_flags", "_score"]), width="stretch", hide_index=True,
+                st.caption("👆 Bấm vào ô vuông đầu dòng để xem biểu đồ GTC và hướng dẫn trao đổi 1:1 với nhân viên đó.")
+                # Khóa không bắt đầu bằng "hr_": bảng có chọn dòng không cho gán lại giá trị qua session_state.
+                chon = st.dataframe(
+                    hr.drop(columns=["_tags", "_flags", "_score", "_ma"]), width="stretch", hide_index=True,
+                    on_select="rerun", selection_mode="single-row", key="tbl_hr_staff",
                     column_config={
                         "%GTC 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
                         "%GTC 7 ngày trước": st.column_config.NumberColumn(format="%.2f%%"),
                         "Gán TB/ngày": st.column_config.NumberColumn(format="%.0f"),
                         "Ngày làm cuối": st.column_config.DateColumn(format="DD/MM/YYYY"),
                         "Cảnh báo": st.column_config.TextColumn(width="large")})
+                dong = [i for i in chon.selection.rows if 0 <= i < len(hr)]
+                if dong:
+                    r_nv = hr.iloc[dong[0]]
+                    section(f"Chi tiết: {r_nv['Nhân viên']}")
+                    fig_nv, d_nv = hr_staff_chart(hr_day, r_nv["_ma"], hr_ref, hr_low)
+                    co_lam = d_nv[d_nv["Gán"] > 0]
+                    m1, m2, m3, m4 = st.columns(4)
+                    p7, p_prev = r_nv["%GTC 7 ngày"], r_nv["%GTC 7 ngày trước"]
+                    co_p7, co_prev = p7 is not None and pd.notna(p7), p_prev is not None and pd.notna(p_prev)
+                    with m1:
+                        st.markdown(metric_card("%GTC 7 ngày", f"{p7:.2f}%" if co_p7 else "—",
+                                                (p7 - p_prev) if co_p7 and co_prev else None, "%", True,
+                                                co_prev, sub="so với 7 ngày trước"), unsafe_allow_html=True)
+                    with m2:
+                        tong_gan = float(co_lam["Gán"].sum())
+                        st.markdown(metric_card("%GTC 30 ngày",
+                                                f"{co_lam['GTC'].sum() / tong_gan * 100:.2f}%" if tong_gan else "—",
+                                                None, sub=f"{int(co_lam['GTC'].sum()):,}/{int(tong_gan):,} đơn"),
+                                    unsafe_allow_html=True)
+                    with m3:
+                        st.markdown(metric_card("Ngày có đơn (30 ngày)", f"{len(co_lam)} ngày", None,
+                                                sub=f"làm gần nhất {pd.Timestamp(r_nv['Ngày làm cuối']):%d/%m}"),
+                                    unsafe_allow_html=True)
+                    with m4:
+                        st.markdown(metric_card("Mức cảnh báo", str(r_nv["Mức"]), None,
+                                                sub=r_nv["_tags"].replace("|", " · "), accent=r_nv["Mức"] == "Cao"),
+                                    unsafe_allow_html=True)
+                    st.plotly_chart(fig_nv, width="stretch", key="chart_hr_staff")
+
+                    section("Hướng dẫn NVXL trao đổi 1:1")
+                    guide = hr_1on1_guide(r_nv, hr_low)
+                    with st.container(border=True):
+                        st.markdown(guide)
+                    g1, g2 = st.columns(2, vertical_alignment="bottom")
+                    with g1:
+                        viet_1on1 = st.button("AI SOẠN KỊCH BẢN 1:1 RIÊNG", key="btn_ai_hr_1on1", width="stretch")
+                    with g2:
+                        st.download_button("TẢI HƯỚNG DẪN 1:1 (.TXT)",
+                                           (guide.replace("#### ", "").replace("**", "").replace("_", "")
+                                            + ("\n\nKỊCH BẢN AI SOẠN:\n" + st.session_state["hr_1on1_txt"][1]
+                                               if st.session_state.get("hr_1on1_txt", ("",))[0] == r_nv["_ma"]
+                                               else "")).encode("utf-8"),
+                                           f"trao_doi_1_1_{r_nv['_ma']}.txt", "text/plain", key="dl_hr_1on1",
+                                           width="stretch", on_click="ignore")
+                    if viet_1on1:
+                        ngay_txt = "\n".join(
+                            f"  {x['Ngày']:%d/%m}: {int(x['Gán'])} / {int(x['GTC'])} / {x['r']:.1f}%"
+                            if x["Gán"] > 0 else f"  {x['Ngày']:%d/%m}: không có đơn"
+                            for _, x in d_nv.tail(14).iterrows())
+                        with st.spinner("AI đang soạn kịch bản..."):
+                            ok_ai, ai_text = ask_ai_checked(hr_1on1_prompt(r_nv, hr_low, ngay_txt))
+                        if ok_ai:
+                            st.session_state["hr_1on1_txt"] = (r_nv["_ma"], clean_tele_text(ai_text))
+                            st.rerun()
+                        else:
+                            st.error(ai_text)
+                    kb = st.session_state.get("hr_1on1_txt")
+                    if kb and kb[0] == r_nv["_ma"]:
+                        st.markdown("**Kịch bản AI soạn** (đọc lại, chỉnh cho hợp trước khi dùng)")
+                        st.text_area("Kịch bản 1:1", kb[1], height=300, key="ta_1on1_" + hashlib.sha1(kb[1].encode()).hexdigest()[:10],
+                                     label_visibility="collapsed")
 
                 hr_nguong = (f"%GTC dưới {hr_low:g}% từ {int(hr_streak)} ngày liền; giảm từ {hr_drop:g} điểm; "
                              f"vắng {int(hr_absent)}–{HR_QUIT_DAYS - 1} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
