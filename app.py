@@ -1069,12 +1069,12 @@ def label_layout(series_values: list, gap: float = 12.0) -> list[tuple[str, int]
     return out
 
 
-def band_axes(fig, bar_max: float) -> None:
+def band_axes(fig, bar_max: float, roomy: bool = False) -> None:
     """Biểu đồ cột + đường % (hai trục): dồn cột xuống ~60% chiều cao dưới, đường % lên dải trên,
-    để nhãn số của cột và nhãn % của đường không đè lên nhau."""
-    fig.update_yaxes(range=[0, max(float(bar_max), 1.0) * 1.6], secondary_y=False)
-    fig.update_yaxes(range=[-140, 108], tickvals=[0, 50, 100], ticktext=["0%", "50%", "100%"],
-                     secondary_y=True)
+    để nhãn số của cột và nhãn % của đường không đè lên nhau. `roomy`: dải % rộng hơn khi có 2 đường %."""
+    fig.update_yaxes(range=[0, max(float(bar_max), 1.0) * (1.9 if roomy else 1.6)], secondary_y=False)
+    fig.update_yaxes(range=[-105, 108] if roomy else [-140, 108], tickvals=[0, 50, 100],
+                     ticktext=["0%", "50%", "100%"], secondary_y=True)
 
 
 def pct_label(v) -> str:
@@ -1115,29 +1115,39 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
 
 
 def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_name="% GTC",
-                target: float | None = None):
+                target: float | None = None, gan_df: pd.DataFrame | None = None):
+    """Cột sản lượng + đường %GTC (+ đường % gán đơn nếu có `gan_df`) theo ngày, hai trục."""
     if df is None or df.empty:
         note(f"Chưa có dữ liệu: {title}")
         return
     g = daily(df)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=g["Ngày"], y=g["Trọng Số"], name=bar_name,
-                         marker_color=PRIMARY_SOFT, marker_line_width=0,
+                         marker_color=PRIMARY, marker_line_width=0,
                          hoverinfo="x+y+name", text=point_labels(g["Trọng Số"], num_label), textposition="inside",
                          insidetextanchor="end", textangle=-90 if len(g) > 10 else 0,
-                         textfont=dict(color=PRIMARY, **LABEL_FONT)), secondary_y=False)
-    fig.add_trace(go.Scatter(x=g["Ngày"], y=g["Giá Trị"], name=line_name, mode="lines+markers+text",
-                             line=dict(color=ACCENT, width=3),
-                             marker=dict(size=7, line=dict(width=2, color="#FFF")),
-                             hoverinfo="x+y+name", text=point_labels(g["Giá Trị"], pct_label), textposition="top center",
-                             textfont=dict(color=ACCENT, **LABEL_FONT), cliponaxis=False),
-                  secondary_y=True)
+                         textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
+    lines = [(g, line_name, ACCENT, "circle")]
+    if gan_df is not None and not gan_df.empty:
+        lines.append((daily(gan_df), "% Gán đơn", "#00B4D8", "diamond"))
+    # gap=40: đường %GTC nằm dưới đường % gán thì ghi nhãn phía dưới, tránh đè lên đường mốc KPI.
+    pos = label_layout([d["Giá Trị"] for d, *_ in lines], gap=40)
+    for (d, name, color, sym), (tpos, off) in zip(lines, pos):
+        fig.add_trace(go.Scatter(x=d["Ngày"], y=d["Giá Trị"], name=name, mode="lines+markers+text",
+                                 line=dict(color=color, width=3),
+                                 marker=dict(size=8, symbol=sym, line=dict(width=2, color="#FFF")),
+                                 hoverinfo="x+y+name", text=point_labels(d["Giá Trị"], pct_label, 16, off),
+                                 textposition=tpos, textfont=dict(color=color, **LABEL_FONT), cliponaxis=False),
+                      secondary_y=True)
     if target:
-        fig.add_hline(y=target, line_dash="dot", line_color=DANGER, line_width=2, secondary_y=True)
-    fig.update_layout(title=title, height=450)
+        # Mốc vẽ thành đường có tên trong chú thích (add_hline kèm chữ bị lệch chỗ khi có hai trục).
+        fig.add_trace(go.Scatter(x=[g["Ngày"].iloc[0], g["Ngày"].iloc[-1]], y=[target, target], mode="lines",
+                                 name=f"Mốc KPI {target:g}%", hoverinfo="skip",
+                                 line=dict(color=DANGER, width=2, dash="dot")), secondary_y=True)
+    fig.update_layout(title=title, height=490)
     fig.update_yaxes(title_text=bar_name, secondary_y=False)
-    fig.update_yaxes(title_text=line_name, secondary_y=True, ticksuffix="%", showgrid=False)
-    band_axes(fig, g["Trọng Số"].max())
+    fig.update_yaxes(title_text="Tỷ lệ (%)", secondary_y=True, ticksuffix="%", showgrid=False)
+    band_axes(fig, g["Trọng Số"].max(), roomy=len(lines) > 1)
     fig.update_xaxes(tickformat="%d/%m")
     st.plotly_chart(fig, width="stretch")
 
@@ -2446,6 +2456,169 @@ YÊU CẦU:
 - Chỉ trả về kịch bản, không giải thích thêm."""
 
 
+def one_on_one_panel(p: str, ident: str, guide: str, prompt_fn, filename: str) -> None:
+    """Khung hướng dẫn 1:1 dùng chung: hiện hướng dẫn, nút AI soạn kịch bản riêng, nút tải .txt.
+    `p` là tiền tố khóa ('hr', 'bc'); `ident` là mã đối tượng đang xem (nhân viên / bưu cục);
+    `prompt_fn()` chỉ được gọi khi bấm nút AI."""
+    k_txt = f"{p}_1on1_txt"
+    with st.container(border=True):
+        st.markdown(guide)
+    kb = st.session_state.get(k_txt)
+    kb = kb if kb and kb[0] == ident else None
+    g1, g2 = st.columns(2, vertical_alignment="bottom")
+    with g1:
+        viet = st.button("AI SOẠN KỊCH BẢN 1:1 RIÊNG", key=f"btn_ai_{p}_1on1", width="stretch")
+    with g2:
+        txt = (guide.replace("#### ", "").replace("**", "").replace("_", "")
+               + (f"\n\nKỊCH BẢN AI SOẠN:\n{kb[1]}" if kb else ""))
+        st.download_button("TẢI HƯỚNG DẪN 1:1 (.TXT)", txt.encode("utf-8"), filename, "text/plain",
+                           key=f"dl_{p}_1on1", width="stretch", on_click="ignore")
+    if viet:
+        with st.spinner("AI đang soạn kịch bản..."):
+            ok_ai, ai_text = ask_ai_checked(prompt_fn())
+        if ok_ai:
+            st.session_state[k_txt] = (ident, clean_tele_text(ai_text))
+            st.rerun()
+        else:
+            st.error(ai_text)
+    if kb:
+        st.markdown("**Kịch bản AI soạn** (đọc lại, chỉnh cho hợp trước khi dùng)")
+        st.text_area("Kịch bản 1:1", kb[1], height=300, label_visibility="collapsed",
+                     key=f"ta_{p}_1on1_" + hashlib.sha1(kb[1].encode()).hexdigest()[:10])
+
+
+# ── Cảnh báo bưu cục %GTC thấp liên tục ─────────────────────────────────
+def bc_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Mỗi bưu cục một dòng mỗi ngày (bỏ dòng tổng): Bưu Cục, Ngày, Giá Trị (%, bình quân theo sản lượng), Trọng Số."""
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["Bưu Cục", "Ngày", "Giá Trị", "Trọng Số"])
+    d = df[~df["Bưu Cục"].map(is_total_row)].dropna(subset=["Giá Trị"])
+    d = d.assign(_p=d["Giá Trị"] * d["Trọng Số"])
+    g = d.groupby(["Bưu Cục", "Ngày"], as_index=False).agg(_p=("_p", "sum"), w=("Trọng Số", "sum"),
+                                                            v=("Giá Trị", "mean"))
+    g["Giá Trị"] = np.where(g["w"] > 0, g["_p"] / g["w"].where(g["w"] > 0), g["v"])
+    return g.rename(columns={"w": "Trọng Số"})[["Bưu Cục", "Ngày", "Giá Trị", "Trọng Số"]]
+
+
+def bc_warnings(gtc_day: pd.DataFrame, gan_day: pd.DataFrame, targets: dict, min_days: int = 3) -> pd.DataFrame:
+    """Bưu cục có %GTC dưới mốc KPI liên tục từ `min_days` ngày có số liệu gần nhất trở lên.
+    `targets`: {tên bưu cục: mốc %GTC}. Mức Cao khi kéo dài từ min_days+2 ngày hoặc ngày cuối thấp hơn mốc ≥ 10 điểm."""
+    cols = ["Mức", "Bưu cục", "Số ngày liên tiếp dưới mốc", "%GTC ngày cuối", "%GTC 7 ngày",
+            "%GTC 7 ngày trước", "Mốc KPI", "% Gán 7 ngày", "Sản lượng 7 ngày", "Ngày dữ liệu cuối",
+            "_tu_ngay", "_score"]
+    if gtc_day is None or gtc_day.empty:
+        return pd.DataFrame(columns=cols)
+
+    def wv(x):
+        w = float(x["Trọng Số"].sum())
+        return float((x["Giá Trị"] * x["Trọng Số"]).sum()) / w if w > 0 else None
+
+    rows = []
+    for bc, x in gtc_day.groupby("Bưu Cục"):
+        x = x.sort_values("Ngày")
+        tgt = float(targets.get(bc, 70.0))
+        run, tu = 0, None
+        for _, r in x.iloc[::-1].iterrows():
+            if r["Giá Trị"] < tgt:
+                run, tu = run + 1, r["Ngày"]
+            else:
+                break
+        if run < min_days:
+            continue
+        last = x["Ngày"].iloc[-1]
+        w7 = x[x["Ngày"] > last - pd.Timedelta(days=7)]
+        wp = x[(x["Ngày"] <= last - pd.Timedelta(days=7)) & (x["Ngày"] > last - pd.Timedelta(days=14))]
+        gn = gan_day[(gan_day["Bưu Cục"] == bc) & (gan_day["Ngày"] > last - pd.Timedelta(days=7))
+                     & (gan_day["Ngày"] <= last)] if gan_day is not None and not gan_day.empty else gan_day
+        p_last = float(x["Giá Trị"].iloc[-1])
+        score = (2 if run >= min_days + 2 else 1) + (1 if tgt - p_last >= 10 else 0)
+        rows.append({
+            "Mức": "Cao" if score >= 2 else "Trung bình", "Bưu cục": bc,
+            "Số ngày liên tiếp dưới mốc": run, "%GTC ngày cuối": p_last, "%GTC 7 ngày": wv(w7),
+            "%GTC 7 ngày trước": wv(wp) if not wp.empty else None, "Mốc KPI": tgt,
+            "% Gán 7 ngày": wv(gn) if gn is not None and not gn.empty else None,
+            "Sản lượng 7 ngày": float(w7["Trọng Số"].sum()), "Ngày dữ liệu cuối": last,
+            "_tu_ngay": tu, "_score": score,
+        })
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    out = pd.DataFrame(rows, columns=cols)
+    return out.sort_values(["_score", "Số ngày liên tiếp dưới mốc"], ascending=False).reset_index(drop=True)
+
+
+def bc_1on1_guide(r, extra: dict) -> str:
+    """Hướng dẫn Quản lý khu vực trao đổi 1:1 với NVXL (người phụ trách) của một bưu cục có %GTC thấp liên tục.
+    `extra`: số liệu bổ sung đã tính sẵn (ca thấp nhất, TTS, nhân viên bị cảnh báo, biến động sản lượng)."""
+    tgt = r["Mốc KPI"]
+    so_lieu = [f"%GTC dưới mốc {tgt:g}% liên tục {r['Số ngày liên tiếp dưới mốc']} ngày "
+               f"(từ {pd.Timestamp(r['_tu_ngay']):%d/%m} đến {pd.Timestamp(r['Ngày dữ liệu cuối']):%d/%m})",
+               f"%GTC ngày cuối: {r['%GTC ngày cuối']:.2f}% — thấp hơn mốc {tgt - r['%GTC ngày cuối']:.2f} điểm"]
+    if r["%GTC 7 ngày"] is not None and pd.notna(r["%GTC 7 ngày"]):
+        so_lieu.append(f"%GTC 7 ngày: {r['%GTC 7 ngày']:.2f}%"
+                       + (f" (7 ngày trước: {r['%GTC 7 ngày trước']:.2f}%)"
+                          if r["%GTC 7 ngày trước"] is not None and pd.notna(r["%GTC 7 ngày trước"]) else ""))
+    if r["% Gán 7 ngày"] is not None and pd.notna(r["% Gán 7 ngày"]):
+        so_lieu.append(f"% gán đơn 7 ngày: {r['% Gán 7 ngày']:.2f}%")
+    so_lieu += [v for v in (extra.get("vol"), extra.get("ca"), extra.get("tts"), extra.get("staff")) if v]
+    hoi = ["Theo em, mấy ngày qua đơn không giao được chủ yếu vì lý do gì (khách hẹn lại, không liên lạc được, "
+           "sai địa chỉ, không kịp giờ)? Em đã xem báo cáo lý do giao thất bại chưa?",
+           "Hàng về bưu cục có trễ giờ không? Đơn được gán cho nhân viên lúc mấy giờ?"]
+    gan = r["% Gán 7 ngày"]
+    if gan is not None and pd.notna(gan) and gan < 95:
+        hoi.append(f"% gán đơn chỉ {gan:.1f}%: còn đơn chưa gán hoặc gán trễ vì sao (thiếu người, hàng về muộn, "
+                   "đơn sai tuyến)?")
+    if extra.get("ca"):
+        hoi.append("Ca có %GTC thấp nhất gặp vấn đề gì riêng (giờ hàng về, số người trong ca, loại hàng)?")
+    if extra.get("staff"):
+        hoi.append("Các bạn đang bị cảnh báo ở tab Cảnh báo nhân sự gặp khó khăn gì? Em đã trao đổi 1:1 với các bạn chưa?")
+    if extra.get("vol_up"):
+        hoi.append("Sản lượng tăng so với tuần trước: bưu cục có đủ người và đủ tuyến để giao hết không?")
+    hoi.append("Em cần khu vực hỗ trợ gì nhất lúc này (người, xe, điều chỉnh tuyến, làm việc với kho)?")
+    lam = ["Họp nhanh đầu ca 5–10 phút: nhắc mục tiêu %GTC trong ngày, chia tuyến, nhắc gọi khách trước khi giao.",
+           "Gán đơn sớm ngay khi hàng về; xử lý dứt điểm đơn tồn, đơn hẹn lại từ hôm trước.",
+           "Mỗi cuối ngày xem danh sách đơn thất bại theo lý do, giao lại ưu tiên trong sáng hôm sau.",
+           "Kèm cặp riêng các nhân viên %GTC thấp; điều chỉnh tuyến nếu tuyến quá tải."]
+    out = [f"#### Trao đổi 1:1 với NVXL bưu cục {r['Bưu cục']} — mức {r['Mức']}",
+           "**1. Chuẩn bị (5–10 phút)**",
+           "- Xem biểu đồ ở trên, ghi lại các con số chính:",
+           *[f"  - {s}" for s in so_lieu],
+           "- Hẹn riêng 20–30 phút (gặp trực tiếp hoặc gọi video), không trao đổi trong nhóm chung.",
+           "**2. Mở đầu**",
+           "- Ghi nhận nỗ lực của NVXL và bưu cục (ngày làm tốt, việc đã cải thiện).",
+           "- Nói rõ mục đích: cùng tìm nguyên nhân và cách đưa %GTC về trên mốc, không phải để khiển trách.",
+           "**3. Cùng nhìn số liệu**",
+           "- Đưa số liệu thật, hỏi NVXL tự đánh giá trước: theo em vì sao bưu cục đang dưới mốc?",
+           "**4. Tìm nguyên nhân — câu hỏi gợi ý**",
+           *[f"- {q}" for q in hoi],
+           "**5. Thống nhất việc cần làm và hỗ trợ**",
+           *[f"- {x}" for x in lam],
+           "**6. Chốt cam kết và hẹn theo dõi**",
+           f"- Mục tiêu: %GTC từ {tgt:g}% trở lên trong 3 ngày tới; báo cáo nhanh kết quả mỗi cuối ngày.",
+           "- Chốt 2–3 việc NVXL sẽ làm, việc khu vực sẽ hỗ trợ, và hẹn ngày xem lại (sau 3 ngày).",
+           "- Ghi lại: nguyên nhân NVXL nêu, cam kết hai bên, ngày hẹn.",
+           "**Lưu ý:** lắng nghe trước, hỏi câu mở; không so sánh bưu cục trước mặt người khác; "
+           "tập trung vào việc cần làm, không quy lỗi cho cá nhân."]
+    return "\n".join(("\n" + s) if s.startswith("**") else s for s in out)
+
+
+def bc_1on1_prompt(r, extra: dict, ngay_txt: str) -> str:
+    return f"""Bạn là Quản lý khu vực của GHN. Soạn KỊCH BẢN TRAO ĐỔI 1:1 để bạn nói chuyện riêng với NVXL
+(người phụ trách) của một bưu cục đang có %GTC dưới mốc KPI nhiều ngày liên tục.
+
+SỐ LIỆU THẬT (chỉ dùng đúng những số này):
+- Bưu cục {r['Bưu cục']} — mức cảnh báo {r['Mức']}. Mốc %GTC {r['Mốc KPI']:g}%.
+- %GTC dưới mốc liên tục {r['Số ngày liên tiếp dưới mốc']} ngày, ngày cuối {r['%GTC ngày cuối']:.2f}%.
+- Số liệu bổ sung: {'; '.join(v for v in (extra.get('vol'), extra.get('ca'), extra.get('tts'), extra.get('staff')) if v) or 'không có'}.
+- Theo ngày gần nhất (ngày: sản lượng / %GTC / % gán):
+{ngay_txt}
+
+YÊU CẦU:
+- Tiếng Việt, VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 1.500 ký tự, xưng "anh/chị" – "em".
+- Gồm: mở đầu ghi nhận nỗ lực; nêu số liệu ngắn gọn; 4–5 câu hỏi mở tìm nguyên nhân sát với số liệu
+  (gán đơn, ca, nhân sự, sản lượng); 3 hành động cụ thể hai bên thống nhất; chốt mục tiêu và ngày hẹn xem lại.
+- Không quy kết, không đe dọa kỷ luật, không bịa nguyên nhân hay số liệu. Chỉ trả về kịch bản."""
+
+
 def notice_send_panel(p: str, ctx_sig: str, rewrite_label: str, bc: str, png_fn, filename: str) -> None:
     """Ô nội dung thông báo + chọn nơi gửi (Telegram và/hoặc nhiều nhóm GTalk) + nút gửi ảnh kèm thông báo.
     Dùng chung cho các mục có nút gửi; mọi khóa trạng thái bắt đầu bằng `p` (vd. 'rank', 'hr')."""
@@ -2561,6 +2734,7 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     #   Tỷ lệ Trả hàng          : Ngày | Cấp Quản Lý | Bưu cục | % Vol | % Return
     M_GTC = metric_frame("gtc_tong", [["% gtc"], ["gtc"], ["giao thanh cong"]])
     M_GAN = metric_frame("gtc_tong", [["% gan"], ["gan"]])
+    M_GAN_TTS = metric_frame("gtc_tts", [["% gan"], ["gan"]])
     M_LEAD = metric_frame("gtc_tong", [["leadtime"], ["lead time"]], is_pct=False)
     M_CA = metric_frame("sl_theo_ca", [["% gtc"], ["gtc"]], extra_dim=[["loai hang"], ["ca"]])
     M_TRA = metric_frame("tra_hang", [["% return"], ["return"], ["chuyen tra"], ["tra hang"], ["tra"]])
@@ -2617,6 +2791,7 @@ DEFAULT_N1 = clamp(YESTERDAY_VN)
 
 # Mặc định 7 ngày gần nhất theo giờ Việt Nam: từ N-7 đến N-1.
 # Kẹp lại trong khoảng ngày thực có trong dữ liệu để st.date_input không báo lỗi.
+QUICK_OPTIONS = ["Ngày", "Tuần", "Tháng"]   # bộ lọc "Chọn nhanh" của tab Vận hành, Kinh doanh
 DEFAULT_7D_END = clamp(YESTERDAY_VN)
 DEFAULT_7D_START = clamp(YESTERDAY_VN - timedelta(days=6))
 if DEFAULT_7D_START > DEFAULT_7D_END:
@@ -2697,7 +2872,7 @@ with st.sidebar:
 # Tab đang ẩn không vẽ widget nên Streamlit sẽ xóa giá trị bộ lọc của tab đó.
 # Ghi lại giá trị ở đầu mỗi lượt chạy để bộ lọc còn nguyên khi quay lại tab.
 _FILTER_KEY_PREFIXES = ("bc_", "quick_", "lh_", "nv_", "role_", "date_", "kpi_", "num_dt_", "rank_",
-                        "td_", "hr_")
+                        "td_", "hr_", "bcw_")
 for _k in list(st.session_state.keys()):
     if isinstance(_k, str) and _k.startswith(_FILTER_KEY_PREFIXES):
         st.session_state[_k] = st.session_state[_k]
@@ -2799,6 +2974,7 @@ if tab1.open:
 
         # Tóm tắt cảnh báo nhân sự (chi tiết ở tab riêng), dùng ngưỡng đang chỉnh bên tab đó
         hr_day_ov = hr_daily(DF_NSGTC)
+        hr_ov = pd.DataFrame()
         if bc_ov != "Tất cả" and not hr_day_ov.empty:
             hr_day_ov = hr_day_ov[hr_day_ov["Bưu cục"].map(norm) == norm(bc_ov)]
         if not hr_day_ov.empty:
@@ -2815,6 +2991,120 @@ if tab1.open:
                     f"<b>{len(hr_ov)}</b> nhân viên cần chú ý, <b>{n_cao_ov}</b> người mức Cao. "
                     f"Xem chi tiết, tải ảnh và gửi thông báo ở tab <b>Cảnh báo nhân sự</b>.</div>",
                     unsafe_allow_html=True)
+
+        # ── Cảnh báo bưu cục %GTC thấp liên tục ────────────────────────────
+        section("Cảnh báo bưu cục — %GTC thấp liên tục")
+        with st.columns([1.1, 2.9])[0]:
+            bcw_days = st.number_input("Dưới mốc KPI từ (ngày liên tiếp)", 2, 14, 3, 1, key="bcw_days")
+        gtc_day = bc_daily(M_GTC)
+        gan_day = bc_daily(M_GAN)
+        if bc_ov != "Tất cả" and not gtc_day.empty:
+            gtc_day = gtc_day[gtc_day["Bưu Cục"].map(norm) == norm(bc_ov)]
+        targets_bc = {b: kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0, exclude=["tts", "tiktok"], bc=b)
+                      for b in gtc_day["Bưu Cục"].unique()}
+        bw = bc_warnings(gtc_day, gan_day, targets_bc, int(bcw_days))
+        if gtc_day.empty:
+            note("Chưa có số liệu %GTC theo từng bưu cục.")
+        elif bw.empty:
+            st.markdown(
+                "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ỔN ĐỊNH</span>"
+                f"Không có bưu cục nào dưới mốc %GTC từ {int(bcw_days)} ngày liên tiếp.</div>",
+                unsafe_allow_html=True)
+        else:
+            n_cao_bc = int((bw["Mức"] == "Cao").sum())
+            st.markdown(
+                f"<div class='ghn-alert {'danger' if n_cao_bc else ''}'>"
+                f"<span class='a-tag {'tag-danger' if n_cao_bc else 'tag-warn'}'>"
+                f"{'CẦN XỬ LÝ' if n_cao_bc else 'THEO DÕI'}</span>"
+                f"<b>{len(bw)}</b> bưu cục có %GTC dưới mốc từ {int(bcw_days)} ngày liên tiếp, "
+                f"<b>{n_cao_bc}</b> bưu cục mức Cao.</div>", unsafe_allow_html=True)
+            st.caption("👆 Bấm vào ô vuông đầu dòng để xem số liệu GTC và hướng dẫn trao đổi 1:1 với NVXL bưu cục đó.")
+            chon_bc = st.dataframe(
+                bw.drop(columns=["_tu_ngay", "_score"]), width="stretch", hide_index=True,
+                on_select="rerun", selection_mode="single-row", key="tbl_bc_warn",
+                column_config={
+                    "Số ngày liên tiếp dưới mốc": st.column_config.NumberColumn(format="%d ngày"),
+                    "%GTC ngày cuối": st.column_config.NumberColumn(format="%.2f%%"),
+                    "%GTC 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
+                    "%GTC 7 ngày trước": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Mốc KPI": st.column_config.NumberColumn(format="%.0f%%"),
+                    "% Gán 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Sản lượng 7 ngày": st.column_config.NumberColumn(format="%,d"),
+                    "Ngày dữ liệu cuối": st.column_config.DateColumn(format="DD/MM/YYYY")})
+            dong_bc = [i for i in chon_bc.selection.rows if 0 <= i < len(bw)]
+            if dong_bc:
+                r_bc = bw.iloc[dong_bc[0]]
+                ten_bc, tgt_bc, last_bc = r_bc["Bưu cục"], float(r_bc["Mốc KPI"]), r_bc["Ngày dữ liệu cuối"]
+                section(f"Chi tiết bưu cục: {ten_bc}")
+                a30 = last_bc - timedelta(days=29)
+                g_bc = sl(scope(M_GTC, ten_bc), a30, last_bc)
+                gan_bc = sl(scope(M_GAN, ten_bc), a30, last_bc)
+
+                # Số liệu bổ sung cho hướng dẫn 1:1
+                extra_bc: dict = {}
+                d_bc = gtc_day[gtc_day["Bưu Cục"] == ten_bc]
+                v7 = float(d_bc[d_bc["Ngày"] > last_bc - timedelta(days=7)]["Trọng Số"].sum())
+                vp = float(d_bc[(d_bc["Ngày"] <= last_bc - timedelta(days=7))
+                                & (d_bc["Ngày"] > last_bc - timedelta(days=14))]["Trọng Số"].sum())
+                if vp > 0:
+                    extra_bc["vol"] = (f"sản lượng 7 ngày {v7:,.0f} đơn, "
+                                       f"{'tăng' if v7 >= vp else 'giảm'} {abs(v7 / vp - 1) * 100:.0f}% so với 7 ngày trước")
+                    extra_bc["vol_up"] = v7 > vp * 1.1
+                ca7 = sl(scope(M_CA, ten_bc), last_bc - timedelta(days=6), last_bc)
+                if not ca7.empty and "Chiều" in ca7.columns:
+                    ca_r = (ca7.assign(_p=ca7["Giá Trị"].fillna(0) * ca7["Trọng Số"]).groupby("Chiều")
+                               .agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
+                    ca_r = ca_r[ca_r["w"] > 0]
+                    if len(ca_r) > 1:
+                        ca_r["r"] = ca_r["_p"] / ca_r["w"]
+                        thap = ca_r["r"].idxmin()
+                        extra_bc["ca"] = f"ca có %GTC thấp nhất 7 ngày: {thap} ({ca_r.loc[thap, 'r']:.1f}%)"
+                tts7 = sl(scope(M_TTS, ten_bc), last_bc - timedelta(days=6), last_bc)
+                if not tts7.empty:
+                    extra_bc["tts"] = f"%GTC TikTok 7 ngày: {wavg(tts7['Giá Trị'], tts7['Trọng Số']):.1f}%"
+                nv_bc = (hr_ov[hr_ov["Bưu cục"].map(norm) == norm(ten_bc)] if not hr_ov.empty else hr_ov)
+                if nv_bc is not None and not nv_bc.empty:
+                    cao = nv_bc[nv_bc["Mức"] == "Cao"]["Nhân viên"].head(5).tolist()
+                    extra_bc["staff"] = (f"{len(nv_bc)} nhân viên đang bị cảnh báo"
+                                         + (f" (mức Cao: {', '.join(cao)})" if cao else ""))
+
+                b1, b2, b3, b4 = st.columns(4)
+                p7b, ppb = r_bc["%GTC 7 ngày"], r_bc["%GTC 7 ngày trước"]
+                co7, cop = p7b is not None and pd.notna(p7b), ppb is not None and pd.notna(ppb)
+                with b1:
+                    st.markdown(metric_card("%GTC ngày cuối", f"{r_bc['%GTC ngày cuối']:.2f}%",
+                                            r_bc["%GTC ngày cuối"] - tgt_bc, "%", True, True,
+                                            sub=f"so với mốc {tgt_bc:g}%"), unsafe_allow_html=True)
+                with b2:
+                    st.markdown(metric_card("%GTC 7 ngày", f"{p7b:.2f}%" if co7 else "—",
+                                            (p7b - ppb) if co7 and cop else None, "%", True, cop,
+                                            sub="so với 7 ngày trước"), unsafe_allow_html=True)
+                with b3:
+                    gb = r_bc["% Gán 7 ngày"]
+                    st.markdown(metric_card("% Gán đơn 7 ngày",
+                                            f"{gb:.2f}%" if gb is not None and pd.notna(gb) else "—", None,
+                                            sub=f"sản lượng 7 ngày {r_bc['Sản lượng 7 ngày']:,.0f} đơn"),
+                                unsafe_allow_html=True)
+                with b4:
+                    st.markdown(metric_card("Ngày liên tiếp dưới mốc", f"{int(r_bc['Số ngày liên tiếp dưới mốc'])} ngày",
+                                            None, sub=f"từ {pd.Timestamp(r_bc['_tu_ngay']):%d/%m} · mức {r_bc['Mức']}",
+                                            accent=r_bc["Mức"] == "Cao"), unsafe_allow_html=True)
+                combo_chart(g_bc, f"Sản lượng, %GTC và % gán đơn — {ten_bc} (30 ngày)", "Sản lượng", "% GTC",
+                            tgt_bc, gan_df=gan_bc)
+
+                section("Hướng dẫn trao đổi 1:1 với NVXL bưu cục")
+
+                def bc_prompt() -> str:
+                    g_d, gan_d = daily(g_bc).tail(14), daily(gan_bc)
+                    gan_map = dict(zip(gan_d["Ngày"], gan_d["Giá Trị"]))
+                    ngay_txt = "\n".join(
+                        f"  {x['Ngày']:%d/%m}: {x['Trọng Số']:,.0f} / {x['Giá Trị']:.1f}% / "
+                        + (f"{gan_map[x['Ngày']]:.1f}%" if x["Ngày"] in gan_map else "—")
+                        for _, x in g_d.iterrows())
+                    return bc_1on1_prompt(r_bc, extra_bc, ngay_txt)
+
+                one_on_one_panel("bc", ten_bc, bc_1on1_guide(r_bc, extra_bc), bc_prompt,
+                                 f"trao_doi_1_1_NVXL_{re.sub(r'[^a-z0-9]+', '_', norm(ten_bc)).strip('_')}.txt")
 
         section("Diễn biến các chỉ số vận hành — 30 ngày gần nhất")
         w30 = REF_DATE - timedelta(days=29)
@@ -2875,12 +3165,10 @@ if tab2.open:
         with f1:
             bc_vh = st.selectbox("Bưu cục", ALL_BC, key="bc_vh")
         with f2:
-            quick_vh = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng"],
-                                horizontal=True, key="quick_vh")
-        if quick_vh == "7 ngày gần nhất":
-            # Mặc định khi mở trang: 7 ngày gần nhất theo giờ Việt Nam (N-7 đến N-1).
-            a_vh, b_vh = DEFAULT_7D_START, DEFAULT_7D_END
-        elif quick_vh == "Ngày":
+            if st.session_state.get("quick_vh") not in QUICK_OPTIONS:   # giá trị cũ "7 ngày gần nhất"
+                st.session_state.pop("quick_vh", None)
+            quick_vh = st.radio("Chọn nhanh", QUICK_OPTIONS, horizontal=True, key="quick_vh")
+        if quick_vh == "Ngày":
             a_vh, b_vh = DEFAULT_N1, DEFAULT_N1
         elif quick_vh == "Tuần":
             a_vh, b_vh = REF_DATE - timedelta(days=REF_DATE.weekday()), REF_DATE
@@ -2905,6 +3193,7 @@ if tab2.open:
         s_tts = sl(scope(M_TTS, bc_vh), a_vh, b_vh)
         s_odr = sl(scope(M_ODR, bc_vh), a_vh, b_vh)
         s_gan = sl(scope(M_GAN, bc_vh), a_vh, b_vh)
+        s_gan_tts = sl(scope(M_GAN_TTS, bc_vh), a_vh, b_vh)
         s_lead = sl(scope(M_LEAD, bc_vh), a_vh, b_vh)
         s_ca = sl(scope(M_CA, bc_vh), a_vh, b_vh)
 
@@ -2913,7 +3202,8 @@ if tab2.open:
         period_cards(scope(M_GTC, bc_vh), REF_DATE, "%", True, "wavg", "%GTC")
         cA, cB = st.columns([1.6, 1])
         with cA:
-            combo_chart(s_gtc, "Sản lượng và %GTC theo ngày", "Sản lượng", "% GTC", t_gtc_vh)
+            combo_chart(s_gtc, "Sản lượng, %GTC và % gán đơn theo ngày", "Sản lượng", "% GTC", t_gtc_vh,
+                        gan_df=s_gan)
         with cB:
             bc_bar_chart(sl(M_GTC, a_vh, b_vh), t_gtc_vh, True, "So sánh giữa bưu cục")
 
@@ -2975,53 +3265,23 @@ if tab2.open:
         else:
             note("Chưa đọc được cột ca hoặc loại hàng trong sheet Sản lượng theo ca.")
 
-        # 2.3 Gán & Leadtime (chỉ số có sẵn trong sheet)
-        section("3. Tỷ lệ gán và Leadtime")
-        cI, cJ = st.columns(2)
-        with cI:
-            if not s_gan.empty:
-                st.markdown(metric_card("Tỷ lệ gán bình quân",
-                                        f"{wavg(s_gan['Giá Trị'], s_gan['Trọng Số']):,.2f}%",
-                                        None, sub="trong khoảng đã chọn"), unsafe_allow_html=True)
-                line_chart(s_gan, "Tỷ lệ gán theo ngày", "#00B4D8", "%")
-            else:
-                note("Chưa đọc được cột % Gán.")
-        with cJ:
-            if not s_lead.empty:
-                st.markdown(metric_card("Leadtime bình quân",
-                                        f"{s_lead['Giá Trị'].mean():,.1f} giờ",
-                                        None, sub="thời gian xử lý đơn"), unsafe_allow_html=True)
-                g_lead = s_lead.groupby("Ngày", as_index=False)["Giá Trị"].mean()
-                fig_lead = px.line(g_lead, x="Ngày", y="Giá Trị", markers=True,
-                                   title="Leadtime theo ngày (giờ)")
-                fig_lead.update_traces(line=dict(color=PRIMARY, width=3), marker=dict(size=7),
-                                       mode="lines+markers+text", cliponaxis=False,
-                                       text=point_labels(g_lead["Giá Trị"], lambda v: f"{v:.1f}"),
-                                       textposition="top center",
-                                       textfont=dict(color=PRIMARY, **LABEL_FONT))
-                fig_lead.update_xaxes(tickformat="%d/%m", title_text=None)
-                fig_lead.update_yaxes(title_text="Giờ")
-                fig_lead.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
-                st.plotly_chart(fig_lead, width="stretch")
-            else:
-                note("Chưa đọc được cột Leadtime.")
-
-        # 2.4 GTC TTS
-        section("4. GTC TikTok Shop")
+        # 2.3 GTC TTS
+        section("3. GTC TikTok Shop")
         period_cards(scope(M_TTS, bc_vh), REF_DATE, "%", True, "wavg", "%GTC TTS")
         cG, cH = st.columns([1.6, 1])
         with cG:
-            combo_chart(s_tts, "Sản lượng và %GTC TikTok Shop", "Sản lượng TTS", "% GTC TTS", t_tts_vh)
+            combo_chart(s_tts, "Sản lượng, %GTC và % gán đơn TikTok Shop", "Sản lượng TTS", "% GTC TTS",
+                        t_tts_vh, gan_df=s_gan_tts)
         with cH:
             bc_bar_chart(sl(M_TTS, a_vh, b_vh), t_tts_vh, True, "So sánh giữa bưu cục")
 
-        # 2.5 ODR TTS
-        section("5. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
+        # 2.4 ODR TTS
+        section("4. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
         period_cards(scope(M_ODR, bc_vh), REF_DATE, "%", True, "wavg", "ODR")
         line_chart(s_odr, "Tỷ lệ ODR theo ngày", ACCENT, "%", 98.0)
 
-        # 2.6 Trả hàng
-        section("6. Tỷ lệ trả hàng (càng thấp càng tốt)")
+        # 2.5 Trả hàng
+        section("5. Tỷ lệ trả hàng (càng thấp càng tốt)")
         period_cards(scope(M_TRA, bc_vh), REF_DATE, "%", False, "wavg", "%Trả hàng")
         cE, cF = st.columns([1.6, 1])
         with cE:
@@ -3029,24 +3289,10 @@ if tab2.open:
         with cF:
             bc_bar_chart(sl(M_TRA, a_vh, b_vh), t_tra_vh, False, "So sánh giữa bưu cục")
 
-        # 2.7 GTB thu tiền
-        section("7. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
+        # 2.6 GTB thu tiền
+        section("6. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
         period_cards(scope(M_GTB, bc_vh), REF_DATE, "%", True, "wavg", "%GTB")
         line_chart(s_gtb, "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
-
-        section("Dữ liệu chi tiết vận hành")
-        if not s_gtc.empty:
-            detail_vh = s_gtc.rename(columns={"Trọng Số": "Sản lượng", "Giá Trị": "%GTC"})[
-                ["Ngày", "Bưu Cục", "Sản lượng", "%GTC"]].sort_values("Ngày", ascending=False)
-            st.dataframe(detail_vh, width="stretch", hide_index=True, height=300,
-                         column_config={
-                             "Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
-                             "Sản lượng": st.column_config.NumberColumn(format="%,d"),
-                             "%GTC": st.column_config.NumberColumn(format="%.2f%%")})
-            st.download_button("TẢI CSV", detail_vh.to_csv(index=False).encode("utf-8-sig"),
-                               "van_hanh_chi_tiet.csv", "text/csv", key="dl_vh", on_click="ignore")
-        else:
-            note("Không có dữ liệu chi tiết trong khoảng đã chọn.")
 
         def _w(d):
             return wavg(d["Giá Trị"], d["Trọng Số"]) if d is not None and not d.empty else 0.0
@@ -3076,11 +3322,10 @@ if tab3.open:
         with k1:
             bc_kd = st.selectbox("Bưu cục", ALL_BC, key="bc_kd")
         with k3:
-            quick_kd = st.radio("Chọn nhanh", ["7 ngày gần nhất", "Ngày", "Tuần", "Tháng"],
-                                horizontal=True, key="quick_kd")
-        if quick_kd == "7 ngày gần nhất":
-            a_kd, b_kd = DEFAULT_7D_START, DEFAULT_7D_END
-        elif quick_kd == "Ngày":
+            if st.session_state.get("quick_kd") not in QUICK_OPTIONS:   # giá trị cũ "7 ngày gần nhất"
+                st.session_state.pop("quick_kd", None)
+            quick_kd = st.radio("Chọn nhanh", QUICK_OPTIONS, horizontal=True, key="quick_kd")
+        if quick_kd == "Ngày":
             a_kd, b_kd = DEFAULT_N1, DEFAULT_N1
         elif quick_kd == "Tuần":
             a_kd, b_kd = REF_DATE - timedelta(days=REF_DATE.weekday()), REF_DATE
@@ -3352,37 +3597,15 @@ if tab8.open:
                     st.plotly_chart(fig_nv, width="stretch", key="chart_hr_staff")
 
                     section("Hướng dẫn NVXL trao đổi 1:1")
-                    guide = hr_1on1_guide(r_nv, hr_low)
-                    with st.container(border=True):
-                        st.markdown(guide)
-                    g1, g2 = st.columns(2, vertical_alignment="bottom")
-                    with g1:
-                        viet_1on1 = st.button("AI SOẠN KỊCH BẢN 1:1 RIÊNG", key="btn_ai_hr_1on1", width="stretch")
-                    with g2:
-                        st.download_button("TẢI HƯỚNG DẪN 1:1 (.TXT)",
-                                           (guide.replace("#### ", "").replace("**", "").replace("_", "")
-                                            + ("\n\nKỊCH BẢN AI SOẠN:\n" + st.session_state["hr_1on1_txt"][1]
-                                               if st.session_state.get("hr_1on1_txt", ("",))[0] == r_nv["_ma"]
-                                               else "")).encode("utf-8"),
-                                           f"trao_doi_1_1_{r_nv['_ma']}.txt", "text/plain", key="dl_hr_1on1",
-                                           width="stretch", on_click="ignore")
-                    if viet_1on1:
+                    def hr_prompt() -> str:
                         ngay_txt = "\n".join(
                             f"  {x['Ngày']:%d/%m}: {int(x['Gán'])} / {int(x['GTC'])} / {x['r']:.1f}%"
                             if x["Gán"] > 0 else f"  {x['Ngày']:%d/%m}: không có đơn"
                             for _, x in d_nv.tail(14).iterrows())
-                        with st.spinner("AI đang soạn kịch bản..."):
-                            ok_ai, ai_text = ask_ai_checked(hr_1on1_prompt(r_nv, hr_low, ngay_txt))
-                        if ok_ai:
-                            st.session_state["hr_1on1_txt"] = (r_nv["_ma"], clean_tele_text(ai_text))
-                            st.rerun()
-                        else:
-                            st.error(ai_text)
-                    kb = st.session_state.get("hr_1on1_txt")
-                    if kb and kb[0] == r_nv["_ma"]:
-                        st.markdown("**Kịch bản AI soạn** (đọc lại, chỉnh cho hợp trước khi dùng)")
-                        st.text_area("Kịch bản 1:1", kb[1], height=300, key="ta_1on1_" + hashlib.sha1(kb[1].encode()).hexdigest()[:10],
-                                     label_visibility="collapsed")
+                        return hr_1on1_prompt(r_nv, hr_low, ngay_txt)
+
+                    one_on_one_panel("hr", r_nv["_ma"], hr_1on1_guide(r_nv, hr_low), hr_prompt,
+                                     f"trao_doi_1_1_{r_nv['_ma']}.txt")
 
                 hr_nguong = (f"%GTC dưới {hr_low:g}% từ {int(hr_streak)} ngày liền; giảm từ {hr_drop:g} điểm; "
                              f"vắng {int(hr_absent)}–{HR_QUIT_DAYS - 1} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
