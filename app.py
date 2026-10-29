@@ -1,5 +1,5 @@
 """
-TRUNG TÂM VẬN HÀNH CHIẾN LƯỢC — GHN
+TRUNG TÂM VẬN HÀNH — GHN
 Dashboard Streamlit: Vận hành · Kinh doanh · Năng suất & Lương · KPI · AI cố vấn
 
 Chạy local:
@@ -120,6 +120,7 @@ SHEET_LINKS: dict[str, str] = {
     "gtb_thu_tien": "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=454179383",
     "gtc_tts": "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=1164899523",
     "odr_tts": "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=1013193026",
+    "opr_tts": "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=505537577",
     # KPI
     "kpi": "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=1344197558",
     # Kinh doanh
@@ -1188,7 +1189,7 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
 
 
 def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_name="% GTC",
-                target: float | None = None, gan_df: pd.DataFrame | None = None):
+                target: float | None = None, gan_df: pd.DataFrame | None = None, max_labels: int = 16):
     """Cột sản lượng + đường %GTC (+ đường % gán đơn nếu có `gan_df`) theo ngày, hai trục."""
     if df is None or df.empty:
         note(f"Chưa có dữ liệu: {title}")
@@ -1209,7 +1210,7 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
         fig.add_trace(go.Scatter(x=d["Ngày"], y=d["Giá Trị"], name=name, mode="lines+markers+text",
                                  line=dict(color=color, width=3),
                                  marker=dict(size=8, symbol=sym, line=dict(width=2, color="#FFF")),
-                                 hoverinfo="x+y+name", text=point_labels(d["Giá Trị"], pct_label, 16, off),
+                                 hoverinfo="x+y+name", text=point_labels(d["Giá Trị"], pct_label, max_labels, off),
                                  textposition=tpos, textfont=dict(color=color, **LABEL_FONT), cliponaxis=False),
                       secondary_y=True)
     if target:
@@ -2861,6 +2862,8 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
                          [["da thu chuyen tra"], ["da thu"], ["gtb"], ["thu tien"]])
     M_TTS = metric_frame("gtc_tts", [["% gtc"], ["gtc tts"], ["gtc"]])
     M_ODR = metric_frame("odr_tts", [["odr"], ["ontime"], ["dung han"]])
+    # OPR TikTok: Ngày | Quản Lý | Bưu cục | LTC (đơn lấy thành công) | %OPR TTS — trọng số là LTC
+    M_OPR = metric_frame("opr_tts", [["opr"]], weight_keys=[["ltc"], ["lay thanh cong"]] + VOL_KEYS)
     M_DT = metric_frame("doanh_thu", [["doanh thu"]], weight_keys=None, is_pct=False)
 
     DF_KPI = safe_load("kpi")
@@ -2873,7 +2876,7 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
 # Lưu vào session_state để tab AI cố vấn đọc được
 st.session_state["dataframes"] = {
     "GTC tổng": M_GTC, "Tỷ lệ trả hàng": M_TRA, "GTB thu tiền": M_GTB,
-    "GTC TikTok": M_TTS, "ODR TikTok": M_ODR, "Sản lượng theo ca": M_CA,
+    "GTC TikTok": M_TTS, "ODR TikTok": M_ODR, "OPR TikTok": M_OPR, "Sản lượng theo ca": M_CA,
     "Doanh thu": M_DT, "Khách hàng mới": DF_KHM, "Phễu khách hàng": DF_PHEU,
     "Lương nhân viên": DF_LUONG, "Năng suất GTC": DF_NSGTC, "KPI": DF_KPI,
 }
@@ -2891,7 +2894,7 @@ YESTERDAY_VN = TODAY_VN - timedelta(days=1)
 
 # Ngày mới nhất có trong dữ liệu — quét TOÀN BỘ 12 sheet, không chỉ vài sheet.
 # Trước đây chỉ quét 3 khung nên nếu một sheet đọc sai ngày là cả dashboard lệch theo.
-_ALL_FRAMES = [M_GTC, M_CA, M_TRA, M_GTB, M_TTS, M_ODR, M_DT,
+_ALL_FRAMES = [M_GTC, M_CA, M_TRA, M_GTB, M_TTS, M_ODR, M_OPR, M_DT,
                DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC]
 _dates = [f["Ngày"].max() for f in _ALL_FRAMES
           if f is not None and not f.empty and "Ngày" in f.columns and f["Ngày"].notna().any()]
@@ -2920,6 +2923,7 @@ if DEFAULT_7D_START > DEFAULT_7D_END:
 SHEET_LABELS = {
     "gtc_tong": "GTC tổng", "sl_theo_ca": "Sản lượng theo ca", "tra_hang": "Tỷ lệ trả hàng",
     "gtb_thu_tien": "GTB thu tiền", "gtc_tts": "GTC TikTok", "odr_tts": "ODR TikTok",
+    "opr_tts": "OPR TikTok",
     "kpi": "Mốc KPI", "doanh_thu": "Doanh thu", "kh_moi": "Khách hàng mới",
     "pheu_kh": "Phễu khách hàng", "ns_luong": "Lương nhân viên", "ns_gtc": "Năng suất GTC",
     "ns_thang_truoc": "Năng suất tháng trước",
@@ -3347,6 +3351,9 @@ if PAGE == "van_hanh":
         s_gtb = sl(scope(M_GTB, bc_vh), a_vh, b_vh)
         s_tts = sl(scope(M_TTS, bc_vh), a_vh, b_vh)
         s_odr = sl(scope(M_ODR, bc_vh), a_vh, b_vh)
+        s_opr = sl(scope(M_OPR, bc_vh), a_vh, b_vh)
+        # Mốc OPR lấy ở sheet KPI nếu có cột OPR; chưa có thì không vẽ đường mốc (không tự đặt số).
+        t_opr_vh = kpi_target([["opr"]], 0.0, bc=bc_vh) or None
         s_gan = sl(scope(M_GAN, bc_vh), a_vh, b_vh)
         s_gan_tts = sl(scope(M_GAN_TTS, bc_vh), a_vh, b_vh)
         s_lead = sl(scope(M_LEAD, bc_vh), a_vh, b_vh)
@@ -3439,9 +3446,19 @@ if PAGE == "van_hanh":
             period_cards(scope(M_ODR, bc_vh), REF_DATE, "%", True, "wavg", "ODR")
             line_chart(s_odr, "Tỷ lệ ODR theo ngày", ACCENT, "%", 98.0)
 
+            # 2.4b OPR TTS
+            section("5. OPR TikTok Shop — lấy hàng đúng hạn")
+            period_cards(scope(M_OPR, bc_vh), REF_DATE, "%", True, "wavg", "OPR")
+            cO, cP = st.columns([1.6, 1])
+            with cO:
+                combo_chart(s_opr, "Đơn lấy thành công và %OPR TikTok Shop", "Đơn lấy thành công", "% OPR",
+                            t_opr_vh, max_labels=9)
+            with cP:
+                bc_bar_chart(sl(M_OPR, a_vh, b_vh), t_opr_vh, True, "So sánh giữa bưu cục")
+
         with _sub_tab2[3]:
             # 2.5 Trả hàng
-            section("5. Tỷ lệ trả hàng (càng thấp càng tốt)")
+            section("6. Tỷ lệ trả hàng (càng thấp càng tốt)")
             period_cards(scope(M_TRA, bc_vh), REF_DATE, "%", False, "wavg", "%Trả hàng")
             cE, cF = st.columns([1.6, 1])
             with cE:
@@ -3450,7 +3467,7 @@ if PAGE == "van_hanh":
                 bc_bar_chart(sl(M_TRA, a_vh, b_vh), t_tra_vh, False, "So sánh giữa bưu cục")
 
             # 2.6 GTB thu tiền
-            section("6. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
+            section("7. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
             period_cards(scope(M_GTB, bc_vh), REF_DATE, "%", True, "wavg", "%GTB")
             line_chart(s_gtb, "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
 
@@ -3469,6 +3486,7 @@ BÌNH QUÂN TRONG KHOẢNG ĐÃ LỌC:
 - %GTB thu tiền: {_w(s_gtb):.2f}%
 - %GTC TikTok: {_w(s_tts):.2f}% (mốc KPI {t_tts_vh:.2f}%)
 - ODR TikTok: {_w(s_odr):.2f}% (mốc 98%)
+- OPR TikTok (lấy hàng đúng hạn): {_w(s_opr):.2f}%{f" (mốc {t_opr_vh:.2f}%)" if t_opr_vh else ""}
 - Tỷ lệ gán: {_w(s_gan):.2f}%
 - Leadtime bình quân: {s_lead['Giá Trị'].mean() if not s_lead.empty else 0:.2f} giờ
 - Tổng sản lượng: {s_gtc['Trọng Số'].sum() if not s_gtc.empty else 0:,.0f} đơn""")
@@ -4758,7 +4776,7 @@ if PAGE == "ai":
             metric_specs = [
                 ("GTC TONG", M_GTC, "wavg"), ("TRA HANG", M_TRA, "wavg"),
                 ("GTB THU TIEN", M_GTB, "wavg"), ("GTC TIKTOK", M_TTS, "wavg"),
-                ("ODR TIKTOK", M_ODR, "wavg"), ("DOANH THU", M_DT, "sum"),
+                ("ODR TIKTOK", M_ODR, "wavg"), ("OPR TIKTOK", M_OPR, "wavg"), ("DOANH THU", M_DT, "sum"),
             ]
             for name, frame, how in metric_specs:
                 s = sl(scope(frame, bc_ai), a, b)
@@ -4840,5 +4858,5 @@ Trình bày bằng markdown, in đậm các con số quan trọng.""")
 st.markdown(
     f"<div style='margin-top:36px;padding-top:16px;border-top:2px solid {LINE};"
     f"text-align:center;color:{MUTED};font-size: calc(15.25px * var(--fs));font-weight:600;'>"
-    f"TRUNG TÂM VẬN HÀNH CHIẾN LƯỢC — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
+    f"TRUNG TÂM VẬN HÀNH — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
     unsafe_allow_html=True)
