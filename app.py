@@ -72,7 +72,7 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════════
 _APP_ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icon-192.png")
 st.set_page_config(
-    page_title="Trung Tâm Vận Hành Chiến Lược — GHN",
+    page_title="Trung Tâm Vận Hành — GHN",
     page_icon=_APP_ICON if os.path.exists(_APP_ICON) else "🚀",
     layout="wide",
     initial_sidebar_state="auto",   # máy tính: mở menu bên trái; điện thoại: thu gọn
@@ -1836,7 +1836,7 @@ def ai_advisor(key: str, tab_label: str, data_text: str, extra_note: str = ""):
             prompt = f"""{ADVISOR_ROLES[role]}
 
 Dưới đây là số liệu THỰC TẾ đang hiển thị trên tab "{tab_label}" của dashboard
-Trung tâm vận hành chiến lược GHN:
+Trung tâm vận hành GHN:
 
 {data_text}
 
@@ -2814,7 +2814,7 @@ def login_screen():
                         unsafe_allow_html=True)
         st.markdown("""
         <div class="ghn-banner" style="text-align:center;">
-            <h1>Trung Tâm Vận Hành Chiến Lược</h1>
+            <h1>Trung Tâm Vận Hành</h1>
             <p>GIAO HÀNG NHANH — Hệ thống báo cáo nội bộ</p>
         </div>""", unsafe_allow_html=True)
 
@@ -2959,7 +2959,7 @@ st.markdown(f"""
 <div class="ghn-banner">
   <div class="ghn-banner-row">{_logo_html}
     <div class="ghn-banner-text">
-      <h1>Trung Tâm Vận Hành Chiến Lược — GHN</h1>
+      <h1>Trung Tâm Vận Hành — GHN</h1>
       <p>Hiệu suất thực · Quyết định nhanh · AI cố vấn &nbsp;|&nbsp;
          {esc(AUTH['id'])} · {esc(AUTH['role'])} &nbsp;|&nbsp;
          Dữ liệu đến {REF_DATE:%d/%m/%Y} · Đồng bộ {datetime.now():%H:%M}</p>
