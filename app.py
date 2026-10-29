@@ -2339,26 +2339,56 @@ def render_hr_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str, 
     return _png_bytes(img)
 
 
-def hr_notice_prompt(thoi_gian: str, ngay_du_lieu: str, pham_vi: str, nguong: str, ds_txt: str,
-                     n_total: int, n_cao: int) -> str:
+HR_FLAG_NAMES = {"low": "%GTC thấp liên tiếp", "drop": "%GTC giảm mạnh", "absent": "Vắng / không có đơn",
+                 "gan": "Gán thấp"}
+
+
+def hr_notice_data(hr: pd.DataFrame) -> tuple[str, str]:
+    """Gom danh sách cảnh báo cho AI viết gọn: (người mức Cao kèm thẻ ngắn, nhóm còn lại theo loại cảnh báo).
+    Tên bỏ mã nhân viên cho tin nhắn ngắn (ảnh đính kèm vẫn có mã)."""
+    def ten(x):
+        return re.sub(r"^\d+\s*·\s*", "", str(x))
+    cao = hr[hr["Mức"] == "Cao"]
+    def p7(r):
+        v = r["%GTC 7 ngày"]
+        return f" · %GTC 7 ngày {v:.1f}%" if v is not None and pd.notna(v) else ""
+    cao_txt = "\n".join(f"  - {ten(r['Nhân viên'])} — {r['Bưu cục']}: {str(r['_tags']).replace('|', ' · ')}{p7(r)}"
+                        for _, r in cao.iterrows()) or "  (không có)"
+    con = hr[hr["Mức"] != "Cao"]
+    nhom: dict[str, list[str]] = {}
+    for _, r in con.iterrows():
+        nhom.setdefault(str(r["_flags"]).split("|")[0], []).append(ten(r["Nhân viên"]))
+    nhom_txt = "\n".join(f"  - {HR_FLAG_NAMES.get(k, k)} ({len(v)}): {', '.join(v)}"
+                         for k, v in nhom.items()) or "  (không có)"
+    return cao_txt, nhom_txt
+
+
+def hr_notice_prompt(thoi_gian: str, ngay_du_lieu: str, pham_vi: str, nguong: str, cao_txt: str,
+                     nhom_txt: str, n_total: int, n_cao: int) -> str:
     return f"""Bạn là Quản lý khu vực của GHN, soạn tin nhắn gửi vào nhóm QUẢN LÝ bưu cục (trưởng bưu cục,
-điều phối) để cảnh báo các nhân viên giao hàng cần quan tâm. Giọng nghiêm túc, xây dựng, hướng giải pháp.
+điều phối) để cảnh báo các nhân viên giao hàng cần quan tâm. Giọng nghiêm túc, xây dựng.
 
 SỐ LIỆU THẬT (chỉ dùng đúng những số này):
 - Dữ liệu năng suất đến ngày {ngay_du_lieu}; so sánh 7 ngày gần nhất ({thoi_gian}) với 7 ngày trước đó.
 - Phạm vi: {pham_vi}. Ngưỡng cảnh báo: {nguong}.
-- Có {n_total} nhân viên bị cảnh báo, trong đó {n_cao} người mức Cao. Danh sách (mức cao xếp trước):
-{ds_txt}
+- {n_total} nhân viên cần chú ý, {n_cao} người mức Cao.
+- Mức Cao (tên — bưu cục — vấn đề):
+{cao_txt}
+- Mức Trung bình, gom theo loại cảnh báo:
+{nhom_txt}
 
-YÊU CẦU:
-- Tiếng Việt, tối đa 1.000 ký tự, VĂN BẢN THUẦN: không dùng markdown, không dấu * hay #. Tối đa 4 emoji.
-- Gọi thời gian đúng như ghi ở trên (ví dụ "7 ngày từ 16/10 đến 22/10/2026"). TUYỆT ĐỐI không dùng từ "kỳ".
-- Thứ tự: một câu mở đầu nêu ngày dữ liệu và số người cần chú ý; liệt kê ngắn gọn những người mức Cao
-  (tên + vấn đề chính, đúng số liệu); gộp những người còn lại thành một câu; đề xuất 2-3 việc cụ thể cho
-  quản lý bưu cục (hỏi thăm người vắng, kèm tuyến/kèm cặp người %GTC thấp, xem lại cách phân đơn cho người
-  gán thấp); nhắc xem ảnh danh sách đính kèm.
-- Không quy kết, không chê trách nặng nề; không bịa nguyên nhân, số liệu hay hình thức kỷ luật.
-- Giữ nguyên cách viết tên như trong số liệu. Chỉ trả về nội dung tin nhắn, không giải thích, không tiêu đề."""
+YÊU CẦU — NGẮN GỌN NHƯNG ĐỦ Ý:
+- VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 3 emoji. Mỗi dòng ngắn, không câu rào đón,
+  không giải thích lý thuyết, không lặp ý. Cố gắng dưới 700 ký tự (danh sách dài thì vẫn giữ mỗi dòng thật ngắn).
+- TUYỆT ĐỐI không dùng từ "kỳ". Không bịa nguyên nhân, số liệu hay hình thức kỷ luật. Giữ nguyên tên như trên.
+- Bố cục đúng như sau:
+  Dòng 1: "⚠️ Cảnh báo nhân sự — dữ liệu đến {ngay_du_lieu}: {n_total} người cần chú ý ({n_cao} mức Cao)."
+  "Mức Cao:" rồi mỗi người một dòng "- Tên — bưu cục: vấn đề + con số chính".
+  "Theo dõi:" rồi mỗi loại cảnh báo một dòng "- Loại (số người): tên, tên…".
+  "Việc cần làm:" tối đa 3 dòng, mỗi dòng một việc cụ thể, chỉ cho loại cảnh báo đang có
+  (vắng → gọi hỏi thăm, xác nhận ngày đi làm; %GTC thấp/giảm → trao đổi 1:1, kèm tuyến; gán thấp → xem lại phân đơn).
+  Dòng cuối: "Chi tiết xem ảnh đính kèm."
+- Chỉ trả về nội dung tin nhắn."""
 
 
 # ── Chi tiết một nhân viên + hướng dẫn trao đổi 1:1 ─────────────────────
@@ -3687,17 +3717,13 @@ if tab8.open:
                 st.session_state.setdefault("hr_msg", "")
                 hr_ctx = f"{hr_ref:%Y%m%d}|{bc_hr}|{hr_nguong}|{len(hr)}|{n_cao}"
                 if st.button("AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", key="btn_ai_hr_notice", width="stretch"):
-                    ds_txt = "\n".join(
-                        f"  {i}. [{r['Mức']}] {r['Nhân viên']} ({r['Bưu cục']}) — {r['Cảnh báo']}"
-                        for i, (_, r) in enumerate(hr.head(25).iterrows(), start=1))
-                    if len(hr) > 25:
-                        ds_txt += f"\n  … và {len(hr) - 25} người khác (xem ảnh)."
+                    cao_txt, nhom_txt = hr_notice_data(hr)
                     tg_mo_ta, _ = describe_period(hr_a, hr_ref)
                     with st.spinner("AI đang soạn thông báo..."):
                         ok_ai, ai_text = ask_ai_checked(hr_notice_prompt(
                             tg_mo_ta, f"{hr_ref:%d/%m/%Y}",
                             "toàn bộ các bưu cục" if bc_hr == "Tất cả" else f"bưu cục {bc_hr}",
-                            hr_nguong, ds_txt, len(hr), n_cao))
+                            hr_nguong, cao_txt, nhom_txt, len(hr), n_cao))
                     if ok_ai:
                         st.session_state["hr_msg"] = clean_tele_text(ai_text)
                         st.session_state["hr_msg_ctx"] = hr_ctx
