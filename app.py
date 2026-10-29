@@ -70,9 +70,10 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════════
 # 0. CẤU HÌNH TRANG
 # ═══════════════════════════════════════════════════════════════════════
+_APP_ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icon-192.png")
 st.set_page_config(
     page_title="Trung Tâm Vận Hành Chiến Lược — GHN",
-    page_icon="🚀",
+    page_icon=_APP_ICON if os.path.exists(_APP_ICON) else "🚀",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -473,6 +474,44 @@ label, .stSelectbox label, .stDateInput label, .stMultiSelect label, .stTextArea
 }}
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── Cài dashboard thành app trên điện thoại (PWA) ───────────────────────
+# Gắn manifest + biểu tượng vào <head> để "Thêm vào màn hình chính" ra app có logo GHN, mở toàn màn hình.
+# File nằm trong static/, được phục vụ tại /app/static/ (bật enableStaticServing ở .streamlit/config.toml).
+st.html("""<script>
+(function () {
+  var h = document.head;
+  if (h.querySelector('link[rel="manifest"]')) return;
+  function add(tag, attrs) {
+    var e = document.createElement(tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    h.appendChild(e);
+  }
+  add('link', {rel: 'manifest', href: '/app/static/manifest.json'});
+  add('link', {rel: 'apple-touch-icon', href: '/app/static/apple-touch-icon.png'});
+  add('meta', {name: 'apple-mobile-web-app-capable', content: 'yes'});
+  add('meta', {name: 'mobile-web-app-capable', content: 'yes'});
+  add('meta', {name: 'apple-mobile-web-app-title', content: 'GHN Dashboard'});
+  add('meta', {name: 'apple-mobile-web-app-status-bar-style', content: 'default'});
+  add('meta', {name: 'theme-color', content: '#0077B6'});
+})();
+</script>""", unsafe_allow_javascript=True)
+
+APP_INSTALL_GUIDE = """
+**iPhone (Safari)**
+1. Mở dashboard bằng **Safari**.
+2. Bấm nút **Chia sẻ** (ô vuông có mũi tên lên) ở thanh dưới.
+3. Chọn **Thêm vào MH chính** → **Thêm**.
+
+**Android (Chrome)**
+1. Mở dashboard bằng **Chrome**.
+2. Bấm **⋮** góc trên bên phải.
+3. Chọn **Cài đặt ứng dụng** hoặc **Thêm vào màn hình chính** → **Cài đặt**.
+
+Biểu tượng **GHN Dashboard** sẽ nằm trên màn hình chính, mở ra toàn màn hình như một ứng dụng.
+Dashboard tự cập nhật khi có bản mới, không cần cài lại.
+"""
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2716,6 +2755,9 @@ def login_screen():
                 else:
                     st.error("ID hoặc mật khẩu không chính xác.")
 
+        with st.expander("📱 Cài dashboard lên điện thoại"):
+            st.markdown(APP_INSTALL_GUIDE)
+
 
 if st.session_state.auth is None:
     login_screen()
@@ -2860,6 +2902,8 @@ with st.sidebar:
     if st.button("Đăng xuất", width="stretch"):
         st.session_state.auth = None
         st.rerun()
+    with st.expander("📱 Cài lên điện thoại"):
+        st.markdown(APP_INSTALL_GUIDE)
     cau_hinh_loi = _kiem_tra_nguon()
     if cau_hinh_loi:
         st.divider()
