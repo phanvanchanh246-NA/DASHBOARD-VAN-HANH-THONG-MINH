@@ -3051,6 +3051,7 @@ if PAGE == "tong_quan":
         g_tra = scope(M_TRA, bc_ov)
         g_tts = scope(M_TTS, bc_ov)
         g_odr = scope(M_ODR, bc_ov)
+        g_opr = scope(M_OPR, bc_ov)
         g_dt = scope(M_DT, bc_ov)
 
         t_gtc_ov = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
@@ -3063,6 +3064,7 @@ if PAGE == "tong_quan":
         p_tra = get_period_data(g_tra, REF_DATE)
         p_tts = get_period_data(g_tts, REF_DATE)
         p_odr = get_period_data(g_odr, REF_DATE)
+        p_opr = get_period_data(g_opr, REF_DATE)
         p_dt = get_period_data(g_dt, REF_DATE, "sum")
         # Khung sản lượng: lấy chính cột Trọng Số làm giá trị để cộng dồn.
         # LƯU Ý: phải GHI ĐÈ đúng cột "Giá Trị" sẵn có. Nếu tạo cột tạm rồi rename,
@@ -3095,6 +3097,20 @@ if PAGE == "tong_quan":
                 st.markdown(metric_card("Doanh thu tháng", fmt_money(p_dt["m"]),
                                         p_dt["m"] - p_dt["m1"], "đ", True, p_dt["has_m1"]),
                             unsafe_allow_html=True)
+            c5, c6, c7, _ = st.columns(4)
+            with c5:
+                st.markdown(metric_card("ODR TikTok", f"{p_odr['n']:,.2f}%",
+                                        p_odr["n"] - p_odr["n1"], "%", True, p_odr["has_n1"],
+                                        sub=f"· mốc {t_odr_ov:g}%"), unsafe_allow_html=True)
+            with c6:
+                st.markdown(metric_card("OPR TikTok", f"{p_opr['n']:,.2f}%",
+                                        p_opr["n"] - p_opr["n1"], "%", True, p_opr["has_n1"],
+                                        sub="· lấy hàng đúng hạn"), unsafe_allow_html=True)
+            with c7:
+                # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
+                st.markdown(metric_card("Tỷ lệ trả hàng", f"{p_tra['n']:,.2f}%",
+                                        p_tra["n"] - p_tra["n1"], "%", False, p_tra["has_n1"],
+                                        sub=f"· tối đa {t_tra_ov:g}%"), unsafe_allow_html=True)
 
             section("Cảnh báo — chỉ số chưa đạt mốc")
             checks = [
