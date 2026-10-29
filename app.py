@@ -452,6 +452,36 @@ section[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="tr
 section[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="true"] p span[role="img"] {{
     color: {ACCENT} !important; font-weight: 800;
 }}
+/* ── Thanh trên cùng: nút ☰ MENU thay cho mũi tên ">>", bớt khoảng trắng ── */
+header[data-testid="stHeader"] {{
+    background: transparent !important; height: 3rem !important; min-height: 3rem !important;
+    pointer-events: none;
+}}
+header[data-testid="stHeader"] button {{ pointer-events: auto; }}
+[data-testid="stAppDeployButton"] {{ display: none !important; }}
+[data-testid="stExpandSidebarButton"] {{
+    background: {ACCENT} !important; border-radius: 18px !important; border: none !important;
+    padding: 6px 16px !important; width: auto !important; height: auto !important; min-height: 0 !important;
+    box-shadow: 0 2px 6px rgba(255,140,0,0.35);
+}}
+[data-testid="stExpandSidebarButton"] > * {{ display: none !important; }}
+[data-testid="stExpandSidebarButton"]::before {{
+    content: "☰  MENU"; white-space: pre; font-family: 'Montserrat', sans-serif;
+    font-weight: 800; font-size: 14px; letter-spacing: .5px; color: #FFFFFF;
+}}
+/* Menu đóng: chừa một hàng cho nút MENU. Menu mở: không cần hàng đó, kéo nội dung lên sát trên. */
+.block-container {{ padding-top: 3rem !important; }}
+.stApp:has(section[data-testid="stSidebar"][aria-expanded="true"]) .block-container {{
+    padding-top: 1rem !important;
+}}
+/* Thanh bên: bớt khoảng trắng phía trên chữ MENU */
+[data-testid="stSidebarHeader"] {{ height: 2.4rem !important; min-height: 0 !important; padding: 0.4rem 0.8rem 0 !important; }}
+[data-testid="stSidebarUserContent"] {{ padding-top: 0 !important; }}
+/* Các khối chỉ chứa CSS / script ẩn vẫn chiếm một khoảng cách trong bố cục: bỏ đi */
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] style:only-child),
+[data-testid="stElementContainer"]:has(> [data-testid="stHtml"] > script:only-child) {{
+    display: none !important;
+}}
 .ghn-hero-title {{
     color: #FFFFFF; margin: 0; font-size: calc(28px * var(--fs)); font-weight: 900; line-height: 1.2;
     text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 3px rgba(0,0,0,0.28);
@@ -496,15 +526,6 @@ section[data-testid="stSidebar"] [data-testid="stRadioOption"][data-selected="tr
     .section-title {{ margin: 20px 0 10px; }}
     table.ghn-table th, table.ghn-table td {{ padding: 8px 6px; }}
     .ghn-hero {{ padding: 14px 16px !important; }}
-    /* Nút mở menu bên trái: hiện rõ thành nút "Menu" màu cam */
-    [data-testid="stExpandSidebarButton"] {{
-        background: {ACCENT} !important; color: #FFFFFF !important; border-radius: 18px !important;
-        padding: 4px 14px 4px 10px !important; width: auto !important; gap: 4px;
-    }}
-    [data-testid="stExpandSidebarButton"] svg, [data-testid="stExpandSidebarButton"] span {{ color: #FFFFFF !important; }}
-    [data-testid="stExpandSidebarButton"]::after {{
-        content: "Menu"; font-weight: 800; font-size: 15px; color: #FFFFFF;
-    }}
     /* Nhãn dữ liệu trên biểu đồ: màn hẹp chỉ hiện cách một nhãn cho khỏi chồng chữ */
     .stPlotlyChart g.textpoint:nth-child(even),
     .stPlotlyChart g.point:nth-child(even) text.bartext {{ display: none; }}
@@ -2967,7 +2988,6 @@ st.markdown(f"""
     <div class="ghn-banner-text">
       <h1>Trung Tâm Vận Hành — GHN</h1>
       <p>Hiệu suất thực · Quyết định nhanh · AI cố vấn &nbsp;|&nbsp;
-         {esc(AUTH['id'])} · {esc(AUTH['role'])} &nbsp;|&nbsp;
          Dữ liệu đến {REF_DATE:%d/%m/%Y} · Đồng bộ {datetime.now():%H:%M}</p>
     </div>
   </div>
