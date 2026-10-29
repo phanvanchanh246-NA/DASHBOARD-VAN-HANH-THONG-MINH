@@ -3058,7 +3058,8 @@ if PAGE == "tong_quan":
                               exclude=["tts", "tiktok"], bc=bc_ov)
         t_tts_ov = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc_ov)
         t_tra_ov = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc_ov)
-        t_odr_ov = 98.0
+        t_odr_ov = kpi_target([["odr"]], 98.0, bc=bc_ov)
+        t_opr_ov = kpi_target([["opr"]], 100.0, bc=bc_ov)
 
         p_gtc = get_period_data(g_gtc, REF_DATE)
         p_tra = get_period_data(g_tra, REF_DATE)
@@ -3105,7 +3106,7 @@ if PAGE == "tong_quan":
             with c6:
                 st.markdown(metric_card("OPR TikTok", f"{p_opr['n']:,.2f}%",
                                         p_opr["n"] - p_opr["n1"], "%", True, p_opr["has_n1"],
-                                        sub="· lấy hàng đúng hạn"), unsafe_allow_html=True)
+                                        sub=f"· mốc {t_opr_ov:g}%"), unsafe_allow_html=True)
             with c7:
                 # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
                 st.markdown(metric_card("Tỷ lệ trả hàng", f"{p_tra['n']:,.2f}%",
@@ -3117,6 +3118,7 @@ if PAGE == "tong_quan":
                 ("GTC tổng", p_gtc["n"], t_gtc_ov, True, "tỷ lệ giao thành công toàn khu vực"),
                 ("GTC TikTok", p_tts["n"], t_tts_ov, True, "đơn sàn TikTok Shop"),
                 ("ODR TikTok", p_odr["n"], t_odr_ov, True, "cam kết đúng hạn với sàn, thấp là bị phạt"),
+                ("OPR TikTok", p_opr["n"], t_opr_ov, True, "lấy hàng đúng hạn với sàn"),
                 ("Tỷ lệ trả hàng", p_tra["n"], t_tra_ov, False, "đơn quay đầu về kho"),
             ]
             issues = []
@@ -3379,6 +3381,7 @@ if PAGE == "van_hanh":
         s_opr = sl(scope(M_OPR, bc_vh), a_vh, b_vh)
         # Mốc OPR lấy ở sheet KPI nếu có cột OPR; chưa có thì không vẽ đường mốc (không tự đặt số).
         t_opr_vh = kpi_target([["opr"]], 0.0, bc=bc_vh) or None
+        t_odr_vh = kpi_target([["odr"]], 98.0, bc=bc_vh)
         s_gan = sl(scope(M_GAN, bc_vh), a_vh, b_vh)
         s_gan_tts = sl(scope(M_GAN_TTS, bc_vh), a_vh, b_vh)
         s_lead = sl(scope(M_LEAD, bc_vh), a_vh, b_vh)
@@ -3476,7 +3479,7 @@ if PAGE == "van_hanh":
             # 2.4 ODR TTS
             section("4. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
             period_cards(scope(M_ODR, bc_vh), REF_DATE, "%", True, "wavg", "ODR")
-            line_chart(cs(M_ODR), "Tỷ lệ ODR theo ngày", ACCENT, "%", 98.0)
+            line_chart(cs(M_ODR), "Tỷ lệ ODR theo ngày", ACCENT, "%", t_odr_vh)
 
             # 2.4b OPR TTS
             section("5. OPR TikTok Shop — lấy hàng đúng hạn")
@@ -3521,7 +3524,7 @@ BÌNH QUÂN TRONG KHOẢNG ĐÃ LỌC:
 - %Trả hàng: {_w(s_tra):.2f}% (ngưỡng tối đa {t_tra_vh:.2f}%)
 - %GTB thu tiền: {_w(s_gtb):.2f}%
 - %GTC TikTok: {_w(s_tts):.2f}% (mốc KPI {t_tts_vh:.2f}%)
-- ODR TikTok: {_w(s_odr):.2f}% (mốc 98%)
+- ODR TikTok: {_w(s_odr):.2f}% (mốc {t_odr_vh:.2f}%)
 - OPR TikTok (lấy hàng đúng hạn): {_w(s_opr):.2f}%{f" (mốc {t_opr_vh:.2f}%)" if t_opr_vh else ""}
 - Tỷ lệ gán: {_w(s_gan):.2f}%
 - Leadtime bình quân: {s_lead['Giá Trị'].mean() if not s_lead.empty else 0:.2f} giờ
@@ -4239,13 +4242,15 @@ if PAGE == "kpi":
                            exclude=["tts", "tiktok"], bc=bc_kpi)
         t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc_kpi)
         t_tra = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc_kpi)
+        t_odr = kpi_target([["odr"]], 98.0, bc=bc_kpi)
+        t_opr = kpi_target([["opr"]], 100.0, bc=bc_kpi)
 
         if DF_KPI.empty or DF_KPI.select_dtypes("number").notna().sum().sum() == 0:
             st.warning("Sheet KPI chưa có số liệu. Đang dùng mốc tạm — bạn chỉnh ở dưới, "
                        "hoặc điền vào sheet KPI là dashboard tự nhận.", icon="⚠️")
 
         with st.expander("Chỉnh mốc KPI thủ công"):
-            x1, x2, x3 = st.columns(3)
+            x1, x2, x3, x4, x5 = st.columns(5)
             with x1:
                 t_gtc = st.number_input("%GTC tổng tối thiểu", 0.0, 100.0, float(t_gtc), 0.5,
                                         key=f"kpi_gtc_{bc_kpi}")
@@ -4255,10 +4260,18 @@ if PAGE == "kpi":
             with x3:
                 t_tra = st.number_input("%Trả hàng tối đa", 0.0, 100.0, float(t_tra), 0.5,
                                         key=f"kpi_tra_{bc_kpi}")
+            with x4:
+                t_odr = st.number_input("ODR TTS tối thiểu", 0.0, 100.0, float(t_odr), 0.5,
+                                        key=f"kpi_odr_{bc_kpi}")
+            with x5:
+                t_opr = st.number_input("OPR TTS tối thiểu", 0.0, 100.0, float(t_opr), 0.5,
+                                        key=f"kpi_opr_{bc_kpi}")
 
         a_gtc = agg(scope(M_GTC, bc_kpi), a_kpi, b_kpi)
         a_tts = agg(scope(M_TTS, bc_kpi), a_kpi, b_kpi)
         a_tra = agg(scope(M_TRA, bc_kpi), a_kpi, b_kpi)
+        a_odr = agg(scope(M_ODR, bc_kpi), a_kpi, b_kpi)
+        a_opr = agg(scope(M_OPR, bc_kpi), a_kpi, b_kpi)
 
         _sub_tab5 = st.tabs(['Đồng hồ KPI', 'Đối chiếu chi tiết', 'Bám mốc theo ngày', 'Nhận định AI'])
         with _sub_tab5[0]:
@@ -4270,6 +4283,11 @@ if PAGE == "kpi":
                 gauge_chart("%GTC TikTok Shop", a_tts, t_tts, True)
             with gc3:
                 gauge_chart("%Trả hàng (thấp là tốt)", a_tra, t_tra, False)
+            gc4, gc5, _ = st.columns(3)
+            with gc4:
+                gauge_chart("ODR TikTok Shop", a_odr, t_odr, True)
+            with gc5:
+                gauge_chart("OPR TikTok Shop", a_opr, t_opr, True)
 
         with _sub_tab5[1]:
             section("Đối chiếu chi tiết")
@@ -4284,14 +4302,18 @@ if PAGE == "kpi":
                 ["Chỉ tiêu", "Thực tế", "Mục tiêu", "Chênh lệch", "Trạng thái"],
                 [kpi_row("%GTC Tổng", a_gtc, t_gtc, True),
                  kpi_row("%GTC TikTok Shop", a_tts, t_tts, True),
-                 kpi_row("%Trả hàng", a_tra, t_tra, False)]), unsafe_allow_html=True)
+                 kpi_row("%Trả hàng", a_tra, t_tra, False),
+                 kpi_row("ODR TikTok Shop", a_odr, t_odr, True),
+                 kpi_row("OPR TikTok Shop", a_opr, t_opr, True)]), unsafe_allow_html=True)
 
         with _sub_tab5[2]:
             section("Bám mốc theo ngày")
             kpi_series = []
             for frame, name, color, tgt in ((M_GTC, "%GTC Tổng", PRIMARY, t_gtc),
                                             (M_TTS, "%GTC TTS", SUCCESS, t_tts),
-                                            (M_TRA, "%Trả hàng", DANGER, t_tra)):
+                                            (M_TRA, "%Trả hàng", DANGER, t_tra),
+                                            (M_ODR, "ODR TTS", ACCENT, t_odr),
+                                            (M_OPR, "OPR TTS", "#00B4D8", t_opr)):
                 g = daily(sl(scope(frame, bc_kpi), a_kpi, b_kpi))
                 if not g.empty:
                     kpi_series.append((g, name, color, tgt))
@@ -4314,7 +4336,8 @@ if PAGE == "kpi":
 
                 tbl_kpi = daily(sl(scope(M_GTC, bc_kpi), a_kpi, b_kpi)).rename(
                     columns={"Giá Trị": "%GTC", "Trọng Số": "Sản lượng"})
-                for frame, nm in ((M_TTS, "%GTC TTS"), (M_TRA, "%Trả hàng")):
+                for frame, nm in ((M_TTS, "%GTC TTS"), (M_TRA, "%Trả hàng"), (M_ODR, "ODR TTS"),
+                                  (M_OPR, "OPR TTS")):
                     d = daily(sl(scope(frame, bc_kpi), a_kpi, b_kpi))[["Ngày", "Giá Trị"]].rename(
                         columns={"Giá Trị": nm})
                     tbl_kpi = tbl_kpi.merge(d, on="Ngày", how="outer")
@@ -4327,7 +4350,9 @@ if PAGE == "kpi":
                                  "%GTC": st.column_config.ProgressColumn(format="%.2f%%",
                                                                          min_value=0, max_value=100),
                                  "%GTC TTS": st.column_config.NumberColumn(format="%.2f%%"),
-                                 "%Trả hàng": st.column_config.NumberColumn(format="%.2f%%")})
+                                 "%Trả hàng": st.column_config.NumberColumn(format="%.2f%%"),
+                                 "ODR TTS": st.column_config.NumberColumn(format="%.2f%%"),
+                                 "OPR TTS": st.column_config.NumberColumn(format="%.2f%%")})
                 st.download_button("TẢI CSV", tbl_kpi.to_csv(index=False).encode("utf-8-sig"),
                                    "kpi_theo_ngay.csv", "text/csv", key="dl_kpi", on_click="ignore")
             else:
@@ -4342,6 +4367,8 @@ if PAGE == "kpi":
 - %GTC tổng: thực tế {a_gtc:.2f}% / mốc tối thiểu {t_gtc:.2f}% -> {'ĐẠT' if a_gtc >= t_gtc else 'CHƯA ĐẠT'}
 - %GTC TikTok: thực tế {a_tts:.2f}% / mốc tối thiểu {t_tts:.2f}% -> {'ĐẠT' if a_tts >= t_tts else 'CHƯA ĐẠT'}
 - %Trả hàng: thực tế {a_tra:.2f}% / ngưỡng tối đa {t_tra:.2f}% -> {'ĐẠT' if a_tra <= t_tra else 'CHƯA ĐẠT'}
+- ODR TikTok: thực tế {a_odr:.2f}% / mốc tối thiểu {t_odr:.2f}% -> {'ĐẠT' if a_odr >= t_odr else 'CHƯA ĐẠT'}
+- OPR TikTok: thực tế {a_opr:.2f}% / mốc tối thiểu {t_opr:.2f}% -> {'ĐẠT' if a_opr >= t_opr else 'CHƯA ĐẠT'}
 
 Đã qua {(b_kpi - a_kpi).days + 1} ngày trong kỳ theo dõi.""",
             extra_note="Hãy ước lượng khả năng về đích của từng chỉ số nếu giữ nguyên tốc độ hiện tại, "
