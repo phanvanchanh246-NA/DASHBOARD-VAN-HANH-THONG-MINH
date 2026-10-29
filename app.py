@@ -20,7 +20,8 @@ Biến môi trường (KHÔNG fix cứng key vào code):
     GTALK_OA_TOKEN      — "username:password" của OA GTalk (tùy chọn)
     GTALK_CHANNELS      — các nhóm GTalk nhận tin, JSON {"Tên nhóm": "channelId"} hoặc "Tên=channelId;Tên2=id2"
     GTALK_API_BASE      — mặc định https://mbff.ghn.vn (thật); thử trước ở https://test-api.mbff.ghn.tech
-    ADMIN_PASS          — mật khẩu tài khoản ADMIN (mặc định: ghn@admin)
+    ADMIN_ID            — tên đăng nhập tài khoản quản trị (mặc định: 3032156)
+    ADMIN_PASS          — mật khẩu tài khoản quản trị (mặc định: ghn@admin)
     USER_PASS           — mật khẩu tài khoản USER  (mặc định: ghn@user)
 """
 
@@ -103,6 +104,7 @@ TELEGRAM_API_BASE = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.or
 GTALK_OA_TOKEN = os.environ.get("GTALK_OA_TOKEN", "").strip()
 GTALK_API_BASE = os.environ.get("GTALK_API_BASE", "https://mbff.ghn.vn").strip().rstrip("/")
 GTALK_CHANNELS_RAW = os.environ.get("GTALK_CHANNELS", "").strip()
+ADMIN_ID = os.environ.get("ADMIN_ID", "3032156").strip().upper()
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "ghn@admin").strip()
 USER_PASS = os.environ.get("USER_PASS", "ghn@user").strip()
 
@@ -2791,7 +2793,7 @@ for _k, _v in {"auth": None, "ai_cache": {}, "chat": [], "kpi_manual": {}}.items
     st.session_state.setdefault(_k, _v)
 
 ACCOUNTS = {
-    "ADMIN": {"password": ADMIN_PASS, "role": "Giám Đốc.AM"},
+    ADMIN_ID: {"password": ADMIN_PASS, "role": "Giám Đốc.AM"},
     "USER": {"password": USER_PASS, "role": "Nhân Viên"},
 }
 
@@ -2820,7 +2822,7 @@ def login_screen():
         </div>""", unsafe_allow_html=True)
 
         with st.form("login_form"):
-            user_id = st.text_input("Mã nhân viên (ID)", placeholder="ADMIN hoặc USER")
+            user_id = st.text_input("Mã nhân viên (ID)", placeholder="Nhập mã nhân viên")
             password = st.text_input("Mật khẩu", type="password")
             submitted = st.form_submit_button("ĐĂNG NHẬP", width="stretch")
             if submitted:
