@@ -3338,8 +3338,17 @@ if PAGE == "van_hanh":
             a_vh, b_vh = synced_range_picker("Khoảng ngày", a_vh, b_vh, "date_vh",
                                              sync_token=quick_vh)
 
+        # Biểu đồ theo ngày: lọc 1 ngày (hoặc vài ngày) thì vẫn vẽ 14 ngày gần nhất tính đến ngày cuối,
+        # nếu không biểu đồ chỉ có 1 điểm, nhìn như không có dữ liệu. Thẻ số và bảng vẫn theo đúng khoảng đã chọn.
+        chart_a = a_vh if (b_vh - a_vh).days >= 6 else b_vh - timedelta(days=13)
+
+        def cs(frame):
+            return sl(scope(frame, bc_vh), chart_a, b_vh)
+
         st.caption(f"Đang xem {a_vh:%d/%m/%Y} – {b_vh:%d/%m/%Y} · Bưu cục: {bc_vh}. "
-                   "Mọi tỷ lệ % tính bằng trung bình có trọng số theo sản lượng.")
+                   "Mọi tỷ lệ % tính bằng trung bình có trọng số theo sản lượng."
+                   + (f" Biểu đồ theo ngày hiển thị 14 ngày gần nhất ({chart_a:%d/%m} – {b_vh:%d/%m}) để thấy diễn biến."
+                      if chart_a != a_vh else ""))
 
         t_gtc_vh = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
                               exclude=["tts", "tiktok"], bc=bc_vh)
@@ -3366,8 +3375,8 @@ if PAGE == "van_hanh":
             period_cards(scope(M_GTC, bc_vh), REF_DATE, "%", True, "wavg", "%GTC")
             cA, cB = st.columns([1.6, 1])
             with cA:
-                combo_chart(s_gtc, "Sản lượng, %GTC và % gán đơn theo ngày", "Sản lượng", "% GTC", t_gtc_vh,
-                            gan_df=s_gan)
+                combo_chart(cs(M_GTC), "Sản lượng, %GTC và % gán đơn theo ngày", "Sản lượng", "% GTC", t_gtc_vh,
+                            gan_df=cs(M_GAN))
             with cB:
                 bc_bar_chart(sl(M_GTC, a_vh, b_vh), t_gtc_vh, True, "So sánh giữa bưu cục")
 
@@ -3378,13 +3387,20 @@ if PAGE == "van_hanh":
                                   if x and x.lower() != "nan"})
                           if "Chiều" in M_CA.columns else [])
             lh_pick = st.multiselect("Loại hàng / ca làm việc", lh_options, default=lh_options, key="lh_vh")
-            if lh_pick and "Chiều" in s_ca.columns:
-                s_ca = s_ca[s_ca["Chiều"].isin(lh_pick)]
-            if not s_ca.empty and "Chiều" in s_ca.columns:
-                g_ca = (s_ca.assign(_p=s_ca["Giá Trị"].fillna(0) * s_ca["Trọng Số"])
-                            .groupby(["Ngày", "Chiều"], as_index=False)
-                            .agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
-                g_ca["r"] = np.where(g_ca["w"] > 0, g_ca["_p"] / g_ca["w"], np.nan)
+            def ca_daily(d):
+                if lh_pick and "Chiều" in d.columns:
+                    d = d[d["Chiều"].isin(lh_pick)]
+                if d.empty or "Chiều" not in d.columns:
+                    return pd.DataFrame()
+                g = (d.assign(_p=d["Giá Trị"].fillna(0) * d["Trọng Số"])
+                      .groupby(["Ngày", "Chiều"], as_index=False)
+                      .agg(_p=("_p", "sum"), w=("Trọng Số", "sum")))
+                g["r"] = np.where(g["w"] > 0, g["_p"] / g["w"], np.nan)
+                return g
+
+            g_ca = ca_daily(s_ca)            # bảng: đúng khoảng đã chọn
+            g_ca_chart = ca_daily(cs(M_CA))  # biểu đồ: ít nhất 14 ngày
+            if not g_ca.empty:
 
                 rows_ca = []
                 for ca in sorted(g_ca["Chiều"].unique()):
@@ -3398,8 +3414,8 @@ if PAGE == "van_hanh":
                 palette = [PRIMARY, ACCENT, SUCCESS, "#00B4D8"]
                 with cC:
                     fig_ca1 = go.Figure()
-                    for i, ca in enumerate(sorted(g_ca["Chiều"].unique())):
-                        sub_ca = g_ca[g_ca["Chiều"] == ca]
+                    for i, ca in enumerate(sorted(g_ca_chart["Chiều"].unique())):
+                        sub_ca = g_ca_chart[g_ca_chart["Chiều"] == ca]
                         fig_ca1.add_trace(go.Bar(x=sub_ca["Ngày"], y=sub_ca["w"], name=ca,
                                                  marker_color=palette[i % len(palette)],
                                                  marker_line_width=0,
@@ -3411,10 +3427,10 @@ if PAGE == "van_hanh":
                     st.plotly_chart(fig_ca1, width="stretch")
                 with cD:
                     fig_ca2 = go.Figure()
-                    ca_list = sorted(g_ca["Chiều"].unique())
-                    pos_ca = label_layout([g_ca.loc[g_ca["Chiều"] == ca, "r"] for ca in ca_list])
+                    ca_list = sorted(g_ca_chart["Chiều"].unique())
+                    pos_ca = label_layout([g_ca_chart.loc[g_ca_chart["Chiều"] == ca, "r"] for ca in ca_list])
                     for i, ca in enumerate(ca_list):
-                        sub_ca = g_ca[g_ca["Chiều"] == ca]
+                        sub_ca = g_ca_chart[g_ca_chart["Chiều"] == ca]
                         fig_ca2.add_trace(go.Scatter(x=sub_ca["Ngày"], y=sub_ca["r"], name=ca,
                                                      mode="lines+markers+text",
                                                      line=dict(color=palette[i % len(palette)], width=3),
@@ -3436,22 +3452,22 @@ if PAGE == "van_hanh":
             period_cards(scope(M_TTS, bc_vh), REF_DATE, "%", True, "wavg", "%GTC TTS")
             cG, cH = st.columns([1.6, 1])
             with cG:
-                combo_chart(s_tts, "Sản lượng, %GTC và % gán đơn TikTok Shop", "Sản lượng TTS", "% GTC TTS",
-                            t_tts_vh, gan_df=s_gan_tts)
+                combo_chart(cs(M_TTS), "Sản lượng, %GTC và % gán đơn TikTok Shop", "Sản lượng TTS", "% GTC TTS",
+                            t_tts_vh, gan_df=cs(M_GAN_TTS))
             with cH:
                 bc_bar_chart(sl(M_TTS, a_vh, b_vh), t_tts_vh, True, "So sánh giữa bưu cục")
 
             # 2.4 ODR TTS
             section("4. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
             period_cards(scope(M_ODR, bc_vh), REF_DATE, "%", True, "wavg", "ODR")
-            line_chart(s_odr, "Tỷ lệ ODR theo ngày", ACCENT, "%", 98.0)
+            line_chart(cs(M_ODR), "Tỷ lệ ODR theo ngày", ACCENT, "%", 98.0)
 
             # 2.4b OPR TTS
             section("5. OPR TikTok Shop — lấy hàng đúng hạn")
             period_cards(scope(M_OPR, bc_vh), REF_DATE, "%", True, "wavg", "OPR")
             cO, cP = st.columns([1.6, 1])
             with cO:
-                combo_chart(s_opr, "Đơn lấy thành công và %OPR TikTok Shop", "Đơn lấy thành công", "% OPR",
+                combo_chart(cs(M_OPR), "Đơn lấy thành công và %OPR TikTok Shop", "Đơn lấy thành công", "% OPR",
                             t_opr_vh, max_labels=9)
             with cP:
                 bc_bar_chart(sl(M_OPR, a_vh, b_vh), t_opr_vh, True, "So sánh giữa bưu cục")
@@ -3462,14 +3478,18 @@ if PAGE == "van_hanh":
             period_cards(scope(M_TRA, bc_vh), REF_DATE, "%", False, "wavg", "%Trả hàng")
             cE, cF = st.columns([1.6, 1])
             with cE:
-                line_chart(s_tra, "Tỷ lệ trả hàng theo ngày", DANGER, "%", t_tra_vh)
+                line_chart(cs(M_TRA), "Tỷ lệ trả hàng theo ngày", DANGER, "%", t_tra_vh)
             with cF:
                 bc_bar_chart(sl(M_TRA, a_vh, b_vh), t_tra_vh, False, "So sánh giữa bưu cục")
 
             # 2.6 GTB thu tiền
             section("7. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
             period_cards(scope(M_GTB, bc_vh), REF_DATE, "%", True, "wavg", "%GTB")
-            line_chart(s_gtb, "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
+            cQ, cR = st.columns([1.6, 1])
+            with cQ:
+                line_chart(cs(M_GTB), "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
+            with cR:
+                bc_bar_chart(sl(M_GTB, a_vh, b_vh), None, True, "So sánh giữa bưu cục")
 
         with _sub_tab2[4]:
             def _w(d):
@@ -3580,7 +3600,11 @@ if PAGE == "kinh_doanh":
                                             sub="nếu giữ nguyên tốc độ"), unsafe_allow_html=True)
 
             section("3. Biểu đồ doanh thu theo ngày")
-            d_kd_range = sl(dt_scope, a_kd, b_kd)
+            # Lọc 1 ngày / vài ngày thì biểu đồ vẫn vẽ 14 ngày gần nhất để thấy diễn biến.
+            kd_chart_a = a_kd if (b_kd - a_kd).days >= 6 else b_kd - timedelta(days=13)
+            d_kd_range = sl(dt_scope, kd_chart_a, b_kd)
+            if kd_chart_a != a_kd:
+                st.caption(f"Biểu đồ hiển thị 14 ngày gần nhất ({kd_chart_a:%d/%m} – {b_kd:%d/%m}).")
             if not d_kd_range.empty:
                 # Vẽ theo từng ngày trong khoảng đã lọc. Khoảng ngày do bộ lọc "Chọn nhanh"
                 # quyết định nên không cần thêm ô "Gộp theo" nữa.
