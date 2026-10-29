@@ -3338,16 +3338,16 @@ if PAGE == "van_hanh":
             a_vh, b_vh = synced_range_picker("Khoảng ngày", a_vh, b_vh, "date_vh",
                                              sync_token=quick_vh)
 
-        # Biểu đồ theo ngày: lọc 1 ngày (hoặc vài ngày) thì vẫn vẽ 14 ngày gần nhất tính đến ngày cuối,
+        # Biểu đồ theo ngày: lọc 1 ngày (hoặc vài ngày) thì vẫn vẽ 7 ngày gần nhất tính đến ngày cuối,
         # nếu không biểu đồ chỉ có 1 điểm, nhìn như không có dữ liệu. Thẻ số và bảng vẫn theo đúng khoảng đã chọn.
-        chart_a = a_vh if (b_vh - a_vh).days >= 6 else b_vh - timedelta(days=13)
+        chart_a = a_vh if (b_vh - a_vh).days >= 6 else b_vh - timedelta(days=6)
 
         def cs(frame):
             return sl(scope(frame, bc_vh), chart_a, b_vh)
 
         st.caption(f"Đang xem {a_vh:%d/%m/%Y} – {b_vh:%d/%m/%Y} · Bưu cục: {bc_vh}. "
                    "Mọi tỷ lệ % tính bằng trung bình có trọng số theo sản lượng."
-                   + (f" Biểu đồ theo ngày hiển thị 14 ngày gần nhất ({chart_a:%d/%m} – {b_vh:%d/%m}) để thấy diễn biến."
+                   + (f" Biểu đồ theo ngày hiển thị 7 ngày gần nhất ({chart_a:%d/%m} – {b_vh:%d/%m}) để thấy diễn biến."
                       if chart_a != a_vh else ""))
 
         t_gtc_vh = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
@@ -3399,7 +3399,7 @@ if PAGE == "van_hanh":
                 return g
 
             g_ca = ca_daily(s_ca)            # bảng: đúng khoảng đã chọn
-            g_ca_chart = ca_daily(cs(M_CA))  # biểu đồ: ít nhất 14 ngày
+            g_ca_chart = ca_daily(cs(M_CA))  # biểu đồ: ít nhất 7 ngày
             if not g_ca.empty:
 
                 rows_ca = []
@@ -3600,11 +3600,11 @@ if PAGE == "kinh_doanh":
                                             sub="nếu giữ nguyên tốc độ"), unsafe_allow_html=True)
 
             section("3. Biểu đồ doanh thu theo ngày")
-            # Lọc 1 ngày / vài ngày thì biểu đồ vẫn vẽ 14 ngày gần nhất để thấy diễn biến.
-            kd_chart_a = a_kd if (b_kd - a_kd).days >= 6 else b_kd - timedelta(days=13)
+            # Lọc 1 ngày / vài ngày thì biểu đồ vẫn vẽ 7 ngày gần nhất để thấy diễn biến.
+            kd_chart_a = a_kd if (b_kd - a_kd).days >= 6 else b_kd - timedelta(days=6)
             d_kd_range = sl(dt_scope, kd_chart_a, b_kd)
             if kd_chart_a != a_kd:
-                st.caption(f"Biểu đồ hiển thị 14 ngày gần nhất ({kd_chart_a:%d/%m} – {b_kd:%d/%m}).")
+                st.caption(f"Biểu đồ hiển thị 7 ngày gần nhất ({kd_chart_a:%d/%m} – {b_kd:%d/%m}).")
             if not d_kd_range.empty:
                 # Vẽ theo từng ngày trong khoảng đã lọc. Khoảng ngày do bộ lọc "Chọn nhanh"
                 # quyết định nên không cần thêm ô "Gộp theo" nữa.
