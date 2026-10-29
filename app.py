@@ -2061,20 +2061,22 @@ về bảng xếp hạng tỷ lệ giao thành công (%GTC). {RANK_TONES.get(ton
 SỐ LIỆU THẬT (chỉ dùng đúng những số này):
 - Thời gian xếp hạng: {thoi_gian}. Phạm vi: {pham_vi}.
 - Có {n_total} nhân viên xếp hạng, {n_dat} người đạt mục tiêu %GTC từ 80%.
-- Top đầu bảng (xếp theo %GTC cao nhất):
+- Top 3 (xếp theo %GTC cao nhất):
 {top_txt}
 
-YÊU CẦU:
-- Tiếng Việt, tối đa 900 ký tự, VĂN BẢN THUẦN: không dùng markdown, không dấu * hay #.
-- Có thể dùng tối đa 6 emoji, đặt tự nhiên.
+YÊU CẦU — VIẾT NGẮN GỌN:
+- Tiếng Việt, TỐI ĐA 350 ký tự, tối đa 5 dòng ngắn, VĂN BẢN THUẦN: không markdown, không dấu * hay #.
+- Tối đa 4 emoji (tính cả 3 huy chương). Không rào đón, không câu sáo rỗng, không lặp ý.
 - Gọi thời gian đúng như ghi ở "Thời gian xếp hạng" (ví dụ "ngày 21/10/2026", "tuần 20/10–26/10/2026",
   "tháng 10/2026"). TUYỆT ĐỐI không dùng từ "kỳ"; khi nói về lần sau thì dùng "{tiep_theo}".
-- Thứ tự: lời chào ngắn kèm thời gian xếp hạng; vinh danh 3 người đứng đầu (ghi đúng tên và %GTC);
-  nhắc mục tiêu %GTC từ 80% và số người đã đạt; động viên chung các bạn chưa đạt mục tiêu;
-  một câu kêu gọi hành động cho {tiep_theo}; nhắc mọi người xem ảnh bảng xếp hạng đính kèm.
+- Đúng 4 ý, mỗi ý một dòng:
+  1) Tiêu đề ngắn kèm thời gian xếp hạng.
+  2) Top 3: tên và %GTC, viết gọn trên một dòng (ví dụ "🥇 Tên A 92,1% · 🥈 Tên B 90,5% · 🥉 Tên C 89,0%").
+  3) "{n_dat}/{n_total} bạn đạt mục tiêu %GTC ≥ 80%" và một lời động viên ngắn.
+  4) Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đính kèm.
 - TUYỆT ĐỐI không nêu tên hay số liệu của người xếp thấp, không chê trách ai cụ thể.
 - Giữ nguyên cách viết tên như trong số liệu. Không bịa thêm số liệu hay chính sách thưởng phạt.
-- Chỉ trả về nội dung thông báo, không giải thích, không tiêu đề."""
+- Chỉ trả về nội dung thông báo, không giải thích thêm."""
 
 
 # ── Cảnh báo nhân sự ────────────────────────────────────────────────────
@@ -3962,7 +3964,7 @@ if tab4.open:
                 top_txt = "\n".join(
                     f"  {i}. {staff_label(r[nv_col_gtc])} — %GTC {r['%GTC']:.2f}% "
                     f"({int(r[col_gtc]):,} GTC / {int(r[col_gan]):,} gán)"
-                    for i, (_, r) in enumerate(rank.head(10).iterrows(), start=1))
+                    for i, (_, r) in enumerate(rank.head(3).iterrows(), start=1))
                 with st.spinner("AI đang soạn thông báo..."):
                     tg_mo_ta, tg_tiep = describe_period(a_ns, b_ns)
                     ok_ai, ai_text = ask_ai_checked(rank_notice_prompt(
