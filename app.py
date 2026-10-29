@@ -2377,16 +2377,27 @@ SỐ LIỆU THẬT (chỉ dùng đúng những số này):
 - Mức Trung bình, gom theo loại cảnh báo:
 {nhom_txt}
 
-YÊU CẦU — NGẮN GỌN NHƯNG ĐỦ Ý:
-- VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 3 emoji. Mỗi dòng ngắn, không câu rào đón,
-  không giải thích lý thuyết, không lặp ý. Cố gắng dưới 700 ký tự (danh sách dài thì vẫn giữ mỗi dòng thật ngắn).
+YÊU CẦU — PHẦN ĐẦU NGẮN GỌN, PHẦN VIỆC CẦN LÀM CHI TIẾT:
+- VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 3 emoji. Không câu rào đón,
+  không giải thích lý thuyết, không lặp ý. Phần danh sách viết ngắn; phần "Việc NVXL cần làm" viết cụ thể.
+  Tổng cố gắng dưới 1.300 ký tự.
 - TUYỆT ĐỐI không dùng từ "kỳ". Không bịa nguyên nhân, số liệu hay hình thức kỷ luật. Giữ nguyên tên như trên.
 - Bố cục đúng như sau:
   Dòng 1: "⚠️ Cảnh báo nhân sự — dữ liệu đến {ngay_du_lieu}: {n_total} người cần chú ý ({n_cao} mức Cao)."
   "Mức Cao:" rồi mỗi người một dòng "- Tên — bưu cục: vấn đề + con số chính".
   "Theo dõi:" rồi mỗi loại cảnh báo một dòng "- Loại (số người): tên, tên…".
-  "Việc cần làm:" tối đa 3 dòng, mỗi dòng một việc cụ thể, chỉ cho loại cảnh báo đang có
-  (vắng → gọi hỏi thăm, xác nhận ngày đi làm; %GTC thấp/giảm → trao đổi 1:1, kèm tuyến; gán thấp → xem lại phân đơn).
+  "Việc NVXL cần làm:" chỉ cho các loại cảnh báo đang có, ưu tiên người mức Cao trước. Mỗi việc một dòng,
+  ghi rõ: LÀM GÌ — VỚI AI (tên) — KHI NÀO — KẾT QUẢ CẦN ĐẠT. Tổng 4–7 dòng. Gợi ý theo từng loại:
+    %GTC thấp liên tiếp: trao đổi 1:1 trong hôm nay, cùng xem lý do đơn thất bại các ngày gần nhất
+      (khách hẹn lại, không nghe máy, sai địa chỉ, không kịp giờ); kèm tuyến 1–2 buổi với bạn %GTC tốt;
+      nhắc gọi xác nhận khách trước khi giao; mục tiêu %GTC về trên ngưỡng trong 3 ngày làm tới.
+    %GTC giảm mạnh: hỏi thay đổi từ khi bắt đầu giảm (tuyến mới, loại đơn mới, xe, sức khỏe);
+      điều chỉnh tuyến/đơn nếu cần; theo dõi %GTC hằng ngày trong 1 tuần.
+    Vắng / không có đơn: gọi hỏi thăm trong hôm nay, xác nhận ngày đi làm lại; sắp người hỗ trợ tuyến;
+      nếu bạn có ý định nghỉ thì ghi nhận lý do và báo nhân sự.
+    Gán thấp: xem lại cách phân đơn so với các bạn cùng bưu cục; tăng dần đơn gán khoảng 10–15%/ngày
+      và theo dõi để %GTC không giảm.
+  Thêm một dòng: "Báo cáo kết quả trao đổi và cam kết của từng bạn mức Cao trước [hạn cụ thể, ví dụ 17h ngày mai]."
   Dòng cuối: "Chi tiết xem ảnh đính kèm."
 - Chỉ trả về nội dung tin nhắn."""
 
