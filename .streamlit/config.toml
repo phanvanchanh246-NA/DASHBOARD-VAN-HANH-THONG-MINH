@@ -1,0 +1,3 @@
+[server]
+# Phục vụ thư mục static/ tại /app/static/… (biểu tượng và manifest để cài dashboard thành app trên điện thoại)
+enableStaticServing = true
