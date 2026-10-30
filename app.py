@@ -4679,7 +4679,11 @@ if PAGE == "thi_dua":
         if not raw_now.empty and not raw_prev.empty:
             da_co = pd.MultiIndex.from_frame(raw_now[["MaNV", "Ngày"]])
             raw_prev = raw_prev[~pd.MultiIndex.from_frame(raw_prev[["MaNV", "Ngày"]]).isin(da_co)]
-        kho = pd.concat([raw_now, raw_prev], ignore_index=True)
+        # Bỏ khung rỗng trước khi gộp: khung rỗng có cột Ngày kiểu chữ sẽ kéo cả cột về kiểu chữ
+        # (ví dụ khi sheet "Năng Suất Tháng 07" đã xóa hết dữ liệu) và .dt báo lỗi.
+        _parts = [f for f in (raw_now, raw_prev) if not f.empty]
+        kho = (pd.concat(_parts, ignore_index=True) if _parts else raw_now.copy())
+        kho["Ngày"] = pd.to_datetime(kho["Ngày"], errors="coerce")
         kho["Kỳ"] = (kho["Ngày"].dt.to_period("M" if theo_thang else "W-SUN")
                      if not kho.empty else pd.Series(dtype="object"))
 
