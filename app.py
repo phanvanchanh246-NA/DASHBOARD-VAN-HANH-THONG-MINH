@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import html as html_lib
 import io
 import json
@@ -766,8 +767,48 @@ def _parse_num_col(col: pd.Series) -> pd.Series:
     return col.map(lookup).astype(float)
 
 
-@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+_SHEET_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
+_SHEET_REFRESHING: set[str] = set()
+_SHEET_LOCK = threading.Lock()
+
+
 def load_sheet(key: str) -> pd.DataFrame:
+    """Bộ nhớ đệm dùng chung cho mọi người xem. Dữ liệu quá CACHE_TTL giây thì vẫn trả ngay bản đang có
+    và tải bản mới ở luồng nền (lần sau đã có số mới), nên không ai phải chờ tải lại 14 sheet.
+    Chưa có bản nào thì tải trực tiếp. Tải nền lỗi thì giữ bản cũ."""
+    hit = _SHEET_CACHE.get(key)
+    if hit is None:
+        df = _fetch_sheet(key)
+        with _SHEET_LOCK:
+            _SHEET_CACHE[key] = (time.time(), df)
+        return df.copy()
+    t, df = hit
+    if time.time() - t > CACHE_TTL:
+        with _SHEET_LOCK:
+            start = key not in _SHEET_REFRESHING
+            if start:
+                _SHEET_REFRESHING.add(key)
+        if start:
+            def _refresh():
+                try:
+                    new = _fetch_sheet(key)
+                    with _SHEET_LOCK:
+                        _SHEET_CACHE[key] = (time.time(), new)
+                except Exception:  # noqa: BLE001  (giữ bản cũ, lần sau thử lại)
+                    pass
+                finally:
+                    with _SHEET_LOCK:
+                        _SHEET_REFRESHING.discard(key)
+            threading.Thread(target=_refresh, daemon=True).start()
+    return df.copy()
+
+
+def clear_sheet_cache() -> None:
+    with _SHEET_LOCK:
+        _SHEET_CACHE.clear()
+
+
+def _fetch_sheet(key: str) -> pd.DataFrame:
     """Đọc 1 sheet, chuẩn hóa cột Ngày / Bưu Cục, ép kiểu số cho các cột còn lại.
 
     Đọc toàn bộ sheet qua export CSV — không giới hạn range hay số dòng, nên khi
@@ -2830,6 +2871,44 @@ def logo_uri() -> str:
         return ""
 
 
+# ── Ghi nhớ đăng nhập (cookie ký HMAC) ──────────────────────────────────
+# Phiên Streamlit mất khi tải lại trang, mất mạng trên điện thoại, hoặc máy chủ Render ngủ / khởi động lại
+# → trước đây bị đá về màn đăng nhập. Nay lưu một mã đăng nhập đã ký vào cookie 7 ngày để tự vào lại.
+# Đổi mật khẩu (hoặc đặt biến AUTH_SECRET mới) là mọi mã cũ hết hiệu lực.
+AUTH_COOKIE = "ghn_auth"
+AUTH_DAYS = 7
+_AUTH_SECRET = (os.environ.get("AUTH_SECRET", "").strip()
+                or hashlib.sha256(f"ghn|{ADMIN_ID}|{ADMIN_PASS}|{USER_PASS}".encode()).hexdigest())
+
+
+def _auth_sig(uid: str, exp: int) -> str:
+    return hmac.new(_AUTH_SECRET.encode(), f"{uid}|{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def make_auth_token(uid: str) -> str:
+    exp = int(time.time()) + AUTH_DAYS * 86400
+    return f"{uid}.{exp}.{_auth_sig(uid, exp)}"
+
+
+def read_auth_token(tok: str | None) -> dict | None:
+    """Mã hợp lệ (đúng chữ ký, chưa hết hạn, tài khoản còn tồn tại) → thông tin đăng nhập; sai → None."""
+    try:
+        uid, exp, sig = str(tok).split(".")
+        exp = int(exp)
+    except (ValueError, AttributeError):
+        return None
+    if exp < time.time() or not hmac.compare_digest(sig, _auth_sig(uid, exp)) or uid not in ACCOUNTS:
+        return None
+    return {"id": uid, "role": ACCOUNTS[uid]["role"]}
+
+
+def _cookie_js(value: str, max_age: int) -> None:
+    st.html(f"""<script>/*{time.time()}*/
+    document.cookie = "{AUTH_COOKIE}={value}; max-age={max_age}; path=/; SameSite=Lax"
+      + (location.protocol === "https:" ? "; Secure" : "");
+    </script>""", unsafe_allow_javascript=True)
+
+
 def login_screen():
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
@@ -2845,11 +2924,14 @@ def login_screen():
         with st.form("login_form"):
             user_id = st.text_input("Mã nhân viên (ID)", placeholder="Nhập mã nhân viên")
             password = st.text_input("Mật khẩu", type="password")
+            remember = st.checkbox(f"Ghi nhớ đăng nhập trên máy này ({AUTH_DAYS} ngày)", value=True)
             submitted = st.form_submit_button("ĐĂNG NHẬP", width="stretch")
             if submitted:
                 info = ACCOUNTS.get(user_id.strip().upper())
                 if info and password == info["password"]:
                     st.session_state.auth = {"id": user_id.strip().upper(), "role": info["role"]}
+                    if remember:
+                        st.session_state["_set_auth_cookie"] = make_auth_token(user_id.strip().upper())
                     st.rerun()
                 else:
                     st.error("ID hoặc mật khẩu không chính xác.")
@@ -2858,9 +2940,16 @@ def login_screen():
             st.markdown(APP_INSTALL_GUIDE)
 
 
+if st.session_state.auth is None and not st.session_state.get("_logged_out"):
+    st.session_state.auth = read_auth_token(st.context.cookies.get(AUTH_COOKIE))
 if st.session_state.auth is None:
+    if st.session_state.pop("_clear_auth_cookie", None):
+        _cookie_js("", 0)
     login_screen()
     st.stop()
+if st.session_state.get("_set_auth_cookie"):
+    _cookie_js(st.session_state.pop("_set_auth_cookie"), AUTH_DAYS * 86400)
+    st.session_state.pop("_logged_out", None)
 
 AUTH = st.session_state.auth
 IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
@@ -3023,9 +3112,12 @@ with st.sidebar:
     st.divider()
     if st.button("Làm mới dữ liệu", width="stretch"):
         st.cache_data.clear()
+        clear_sheet_cache()
         st.rerun()
     if st.button("Đăng xuất", width="stretch"):
         st.session_state.auth = None
+        st.session_state["_logged_out"] = True        # không tự đăng nhập lại bằng cookie trong phiên này
+        st.session_state["_clear_auth_cookie"] = True
         st.rerun()
     with st.expander("📱 Cài lên điện thoại"):
         st.markdown(APP_INSTALL_GUIDE)
