@@ -4228,7 +4228,7 @@ if PAGE == "nang_suat":
                 return 0.0
             return float(d[cols].apply(pd.to_numeric, errors="coerce").sum().sum())
 
-        _sub_tab4 = st.tabs(['Kỳ lương', '%GTC theo kỳ', 'Biểu đồ', 'Xếp hạng & gửi thông báo', 'Nhận định AI'])
+        _sub_tab4 = st.tabs(['Kỳ lương', '%GTC theo kỳ', 'Xếp hạng & gửi thông báo', 'Nhận định AI'])
         with _sub_tab4[0]:
             section("1. So sánh kỳ lương hiện tại với kỳ trước")
             def ky_row(label, fn, fmt, d_cur, d_prev, suffix, decimals):
@@ -4257,53 +4257,7 @@ if PAGE == "nang_suat":
             st.caption("Tổng lương = LHH LTC + LHH GTC + LHH GTBTT · "
                        + " · ".join(f"**{k}**: {v}" for k, v in SALARY_PARTS.items()))
 
-        with _sub_tab4[1]:
-            section("2. %GTC theo Ngày, Tuần, Tháng")
-            if col_gan and col_gtc and not G.empty:
-                gm = pd.DataFrame({
-                    "Ngày": G["Ngày"],
-                    "Giá Trị": np.where(G[col_gan] > 0, G[col_gtc] / G[col_gan] * 100, np.nan),
-                    "Trọng Số": G[col_gan],
-                }).dropna(subset=["Ngày"])
-                period_cards(gm, REF_DATE, "%", True, "wavg", "%GTC")
-            else:
-                gm = pd.DataFrame(columns=["Ngày", "Giá Trị", "Trọng Số"])
-                note("Chưa đọc được cột 'Số đơn gán' hoặc 'Đơn giao tính lương' trong sheet năng suất.")
-
-        with _sub_tab4[2]:
-            section("3. Biểu đồ sản lượng gán, sản lượng GTC và %GTC")
-            if col_gan and col_gtc and not G_range.empty:
-                g_ns = G_range.groupby("Ngày", as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
-                g_ns["r"] = np.where(g_ns[col_gan] > 0, g_ns[col_gtc] / g_ns[col_gan] * 100, 0.0)
-                fig_ns = make_subplots(specs=[[{"secondary_y": True}]])
-                ns_angle = -90 if len(g_ns) > 10 else 0
-                fig_ns.add_trace(go.Bar(x=g_ns["Ngày"], y=g_ns[col_gan], name="Sản lượng gán",
-                                        marker_color=PRIMARY_SOFT, marker_line_width=0,
-                                        hoverinfo="x+y+name", text=point_labels(g_ns[col_gan], num_label), textposition="outside",
-                                        textangle=ns_angle, cliponaxis=False,
-                                        textfont=dict(color=PRIMARY, **LABEL_FONT)), secondary_y=False)
-                fig_ns.add_trace(go.Bar(x=g_ns["Ngày"], y=g_ns[col_gtc], name="Sản lượng GTC",
-                                        marker_color=PRIMARY, marker_line_width=0,
-                                        hoverinfo="x+y+name", text=point_labels(g_ns[col_gtc], num_label), textposition="inside",
-                                        insidetextanchor="end", textangle=ns_angle,
-                                        textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
-                fig_ns.add_trace(go.Scatter(x=g_ns["Ngày"], y=g_ns["r"], name="% GTC",
-                                            mode="lines+markers+text", line=dict(color=ACCENT, width=3),
-                                            marker=dict(size=7),
-                                            hoverinfo="x+y+name", text=point_labels(g_ns["r"], pct_label), textposition="top center",
-                                            cliponaxis=False, textfont=dict(color=ACCENT, **LABEL_FONT)),
-                                 secondary_y=True)
-                fig_ns.update_layout(barmode="overlay", height=470,
-                                     title="Sản lượng gán · GTC · tỷ lệ")
-                fig_ns.update_yaxes(title_text="Số đơn", secondary_y=False)
-                fig_ns.update_yaxes(title_text="% GTC", secondary_y=True, ticksuffix="%", showgrid=False)
-                band_axes(fig_ns, g_ns[col_gan].max())
-                fig_ns.update_xaxes(tickformat="%d/%m")
-                st.plotly_chart(fig_ns, width="stretch")
-            else:
-                note("Chưa đủ dữ liệu gán và giao để vẽ biểu đồ.")
-
-            section("4. Biểu đồ đơn giá và tổng lương theo ngày")
+            section("2. Biểu đồ đơn giá và tổng lương theo ngày")
             cK, cL = st.columns(2)
             with cK:
                 if col_price and not L_range.empty:
@@ -4342,7 +4296,52 @@ if PAGE == "nang_suat":
                 else:
                     note("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
 
-        with _sub_tab4[3]:
+        with _sub_tab4[1]:
+            section("3. %GTC theo Ngày, Tuần, Tháng")
+            if col_gan and col_gtc and not G.empty:
+                gm = pd.DataFrame({
+                    "Ngày": G["Ngày"],
+                    "Giá Trị": np.where(G[col_gan] > 0, G[col_gtc] / G[col_gan] * 100, np.nan),
+                    "Trọng Số": G[col_gan],
+                }).dropna(subset=["Ngày"])
+                period_cards(gm, REF_DATE, "%", True, "wavg", "%GTC")
+            else:
+                gm = pd.DataFrame(columns=["Ngày", "Giá Trị", "Trọng Số"])
+                note("Chưa đọc được cột 'Số đơn gán' hoặc 'Đơn giao tính lương' trong sheet năng suất.")
+
+            section("4. Biểu đồ sản lượng gán, sản lượng GTC và %GTC")
+            if col_gan and col_gtc and not G_range.empty:
+                g_ns = G_range.groupby("Ngày", as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
+                g_ns["r"] = np.where(g_ns[col_gan] > 0, g_ns[col_gtc] / g_ns[col_gan] * 100, 0.0)
+                fig_ns = make_subplots(specs=[[{"secondary_y": True}]])
+                ns_angle = -90 if len(g_ns) > 10 else 0
+                fig_ns.add_trace(go.Bar(x=g_ns["Ngày"], y=g_ns[col_gan], name="Sản lượng gán",
+                                        marker_color=PRIMARY_SOFT, marker_line_width=0,
+                                        hoverinfo="x+y+name", text=point_labels(g_ns[col_gan], num_label), textposition="outside",
+                                        textangle=ns_angle, cliponaxis=False,
+                                        textfont=dict(color=PRIMARY, **LABEL_FONT)), secondary_y=False)
+                fig_ns.add_trace(go.Bar(x=g_ns["Ngày"], y=g_ns[col_gtc], name="Sản lượng GTC",
+                                        marker_color=PRIMARY, marker_line_width=0,
+                                        hoverinfo="x+y+name", text=point_labels(g_ns[col_gtc], num_label), textposition="inside",
+                                        insidetextanchor="end", textangle=ns_angle,
+                                        textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
+                fig_ns.add_trace(go.Scatter(x=g_ns["Ngày"], y=g_ns["r"], name="% GTC",
+                                            mode="lines+markers+text", line=dict(color=ACCENT, width=3),
+                                            marker=dict(size=7),
+                                            hoverinfo="x+y+name", text=point_labels(g_ns["r"], pct_label), textposition="top center",
+                                            cliponaxis=False, textfont=dict(color=ACCENT, **LABEL_FONT)),
+                                 secondary_y=True)
+                fig_ns.update_layout(barmode="overlay", height=470,
+                                     title="Sản lượng gán · GTC · tỷ lệ")
+                fig_ns.update_yaxes(title_text="Số đơn", secondary_y=False)
+                fig_ns.update_yaxes(title_text="% GTC", secondary_y=True, ticksuffix="%", showgrid=False)
+                band_axes(fig_ns, g_ns[col_gan].max())
+                fig_ns.update_xaxes(tickformat="%d/%m")
+                st.plotly_chart(fig_ns, width="stretch")
+            else:
+                note("Chưa đủ dữ liệu gán và giao để vẽ biểu đồ.")
+
+        with _sub_tab4[2]:
             if col_gan and col_gtc and nv_col_gtc and not G_range.empty:
                 section("5. Xếp hạng nhân viên theo %GTC")
                 rank = G_range.groupby(nv_col_gtc, as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
@@ -4422,7 +4421,7 @@ if PAGE == "nang_suat":
                 notice_send_panel("rank", ctx_sig, "AI VIẾT THÔNG BÁO XẾP HẠNG", bc_ns, png,
                                   f"xep_hang_gtc_{b_ns:%Y%m%d}.png")
 
-        with _sub_tab4[4]:
+        with _sub_tab4[3]:
             ai_advisor(
                 "ns", "Năng suất & Lương",
                 f"""Bưu cục: {bc_ns}. Nhân viên: {nv_ns}.
