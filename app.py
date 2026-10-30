@@ -472,7 +472,8 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
 }}
 /* Menu đóng: chừa một hàng cho nút MENU. Menu mở: không cần hàng đó, kéo nội dung lên sát trên. */
 .block-container {{ padding-top: 3rem !important; }}
-.stApp:has(section[data-testid="stSidebar"][aria-expanded="true"]) .block-container {{
+.stApp:has(section[data-testid="stSidebar"][aria-expanded="true"]) .block-container,
+.stApp:has(section[data-testid="stSidebar"][data-collapsed="false"]) .block-container {{
     padding-top: 1rem !important;
 }}
 /* Thanh bên: bớt khoảng trắng phía trên chữ MENU */
@@ -767,9 +768,16 @@ def _parse_num_col(col: pd.Series) -> pd.Series:
     return col.map(lookup).astype(float)
 
 
-_SHEET_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
-_SHEET_REFRESHING: set[str] = set()
-_SHEET_LOCK = threading.Lock()
+@st.cache_resource
+def _sheet_store() -> dict:
+    """Kho dùng chung cho cả máy chủ. Phải nằm trong st.cache_resource: Streamlit chạy lại toàn bộ app.py
+    sau mỗi lần bấm nên biến toàn cục thường bị tạo mới, bộ nhớ đệm đặt ở đó sẽ mất sau mỗi lần bấm."""
+    return {"cache": {}, "refreshing": set(), "lock": threading.Lock()}
+
+
+_SHEET_CACHE: dict[str, tuple[float, pd.DataFrame]] = _sheet_store()["cache"]
+_SHEET_REFRESHING: set[str] = _sheet_store()["refreshing"]
+_SHEET_LOCK = _sheet_store()["lock"]
 
 
 def load_sheet(key: str) -> pd.DataFrame:
@@ -981,6 +989,39 @@ def agg(df: pd.DataFrame, a, b, how: str = "wavg") -> float:
     return float(pd.to_numeric(_as_series(s["Giá Trị"]), errors="coerce").sum())
 
 
+@st.cache_resource
+def _memo_store() -> dict:
+    return {}
+
+
+def memo(fn):
+    """Nhớ kết quả theo nội dung tham số (DataFrame băm theo giá trị), dùng chung cho mọi người xem.
+    Streamlit chạy lại toàn bộ app.py mỗi lần bấm; số liệu không đổi thì dùng lại kết quả cũ thay vì tính lại
+    (dựng biểu đồ plotly, gom số liệu theo ngày/tuần/tháng). DataFrame trả về là bản sao; figure plotly
+    trả về KHÔNG được sửa tiếp sau khi lấy ra."""
+    store = _memo_store()
+
+    def wrapper(*args, **kw):
+        h = hashlib.sha1(fn.__name__.encode())
+        for a in list(args) + [kw[k] for k in sorted(kw)]:
+            if isinstance(a, (pd.DataFrame, pd.Series)):
+                h.update(pd.util.hash_pandas_object(a, index=True).values.tobytes())
+                h.update(repr(list(a.columns) if isinstance(a, pd.DataFrame) else a.name).encode())
+            else:
+                h.update(repr(a).encode())
+        key = h.hexdigest()
+        out = store.get(key)
+        if out is None:
+            out = fn(*args, **kw)
+            if len(store) >= 600:
+                store.pop(next(iter(store)))
+            store[key] = out
+        return out.copy() if isinstance(out, (pd.DataFrame, dict)) else out
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
+@memo
 def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
     """So sánh N vs N-1, W vs W-1, M vs M-1.
 
@@ -1020,6 +1061,7 @@ def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
     }
 
 
+@memo
 def daily(df: pd.DataFrame, how: str = "wavg") -> pd.DataFrame:
     """Gộp theo ngày. Tỷ lệ % gộp bằng trung bình có trọng số, số lượng thì cộng."""
     if df is None or df.empty:
@@ -1182,6 +1224,9 @@ def pay_period(ref: pd.Timestamp):
 LABEL_FONT = dict(size=12)
 
 
+fig_cache = memo   # biểu đồ plotly: xem memo
+
+
 def point_labels(values, fmt, max_labels: int = 16, offset: int = 0) -> list[str]:
     """Nhãn dữ liệu cho từng điểm. Nhiều điểm quá thì cách vài điểm ghi một nhãn (luôn ghi điểm cuối)
     để nhãn không đè lên nhau; di chuột vẫn xem được số của mọi điểm.
@@ -1233,6 +1278,13 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
         note(f"Chưa có dữ liệu: {title}")
         return
     g = daily(df) if unit == "%" else daily(df, "sum")
+    st.plotly_chart(_line_fig(g, title, color, unit, target, y_title), width="stretch")
+    if len(g) < 2:
+        st.caption("Mới có 1 ngày dữ liệu nên chưa vẽ được đường diễn biến.")
+
+
+@fig_cache
+def _line_fig(g: pd.DataFrame, title: str, color: str, unit: str, target, y_title):
     fig = px.line(g, x="Ngày", y="Giá Trị", markers=True, title=title)
     fig.update_traces(line=dict(color=color, width=3),
                       marker=dict(size=7, color=color, line=dict(width=2, color="#FFF")),
@@ -1247,9 +1299,7 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
                      title_text=y_title or ("Tỷ lệ (%)" if unit == "%" else "Giá trị"))
     fig.update_xaxes(tickformat="%d/%m", title_text=None)
     fig.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
-    st.plotly_chart(fig, width="stretch")
-    if len(g) < 2:
-        st.caption("Mới có 1 ngày dữ liệu nên chưa vẽ được đường diễn biến.")
+    return fig
 
 
 def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_name="% GTC",
@@ -1259,6 +1309,12 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
         note(f"Chưa có dữ liệu: {title}")
         return
     g = daily(df)
+    gan = daily(gan_df) if gan_df is not None and not gan_df.empty else None
+    st.plotly_chart(_combo_fig(g, title, bar_name, line_name, target, gan, max_labels), width="stretch")
+
+
+@fig_cache
+def _combo_fig(g: pd.DataFrame, title, bar_name, line_name, target, gan, max_labels):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=g["Ngày"], y=g["Trọng Số"], name=bar_name,
                          marker_color=PRIMARY, marker_line_width=0,
@@ -1266,8 +1322,8 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
                          insidetextanchor="end", textangle=-90 if len(g) > 10 else 0,
                          textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
     lines = [(g, line_name, ACCENT, "circle")]
-    if gan_df is not None and not gan_df.empty:
-        lines.append((daily(gan_df), "% Gán đơn", "#00B4D8", "diamond"))
+    if gan is not None:
+        lines.append((gan, "% Gán đơn", "#00B4D8", "diamond"))
     # gap=40: đường %GTC nằm dưới đường % gán thì ghi nhãn phía dưới, tránh đè lên đường mốc KPI.
     pos = label_layout([d["Giá Trị"] for d, *_ in lines], gap=40)
     for (d, name, color, sym), (tpos, off) in zip(lines, pos):
@@ -1287,7 +1343,7 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
     fig.update_yaxes(title_text="Tỷ lệ (%)", secondary_y=True, ticksuffix="%", showgrid=False)
     band_axes(fig, g["Trọng Số"].max(), roomy=len(lines) > 1)
     fig.update_xaxes(tickformat="%d/%m")
-    st.plotly_chart(fig, width="stretch")
+    return fig
 
 
 def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, title=""):
@@ -1307,6 +1363,12 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
         return
     g["r"] = g["_p"] / g["w"]
     g = g.sort_values("r")
+    st.plotly_chart(_bc_bar_fig(g[["Bưu Cục", "r", "w"]].reset_index(drop=True), target, higher_is_better, title),
+                    width="stretch")
+
+
+@fig_cache
+def _bc_bar_fig(g: pd.DataFrame, target, higher_is_better, title):
     if target:
         colors = [SUCCESS if (v >= target) == higher_is_better else DANGER for v in g["r"]]
     else:
@@ -1328,7 +1390,7 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
                       height=max(300, 110 * len(g) + 130),
                       margin=dict(l=20, r=120, t=90, b=60),
                       showlegend=False, bargap=0.45)
-    st.plotly_chart(fig, width="stretch")
+    return fig
 
 
 def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
@@ -1391,7 +1453,12 @@ def _font(bold: bool, size: int):
         return ImageFont.load_default()
 
 
-_IMG_CACHE: dict[str, bytes] = {}
+@st.cache_resource
+def _img_store() -> dict:
+    return {}
+
+
+_IMG_CACHE: dict[str, bytes] = _img_store()   # giữ qua các lần chạy lại (xem _sheet_store)
 
 
 def img_cache(fn):
@@ -2958,8 +3025,12 @@ IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
 # ═══════════════════════════════════════════════════════════════════════
 # 8. NẠP TOÀN BỘ DỮ LIỆU
 # ═══════════════════════════════════════════════════════════════════════
-with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
-    prefetch_sheets()
+@st.cache_resource
+def _frames_store() -> dict:
+    return {"ver": None, "frames": {}}
+
+
+def _build_frames() -> dict:
     # Cột thật đã đối chiếu với sheet:
     #   File1_BuuCuc / File2_TTS: Ngày | Cấp Quản Lý | Bưu cục | Volume | % Gán | % GTC | % Chuyển trả | Leadtime
     #   File3_TheoCa            : thêm cột "Loại Hàng (Ca)"
@@ -2984,6 +3055,36 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     DF_LUONG = safe_load("ns_luong")
     DF_NSGTC = safe_load("ns_gtc")
     DF_NS_PREV = safe_load("ns_thang_truoc")   # năng suất tháng trước, cho tab Thi đua
+    return {"M_GTC": M_GTC, "M_GAN": M_GAN, "M_GAN_TTS": M_GAN_TTS, "M_LEAD": M_LEAD, "M_CA": M_CA, "M_TRA": M_TRA, "M_GTB": M_GTB, "M_TTS": M_TTS, "M_ODR": M_ODR, "M_OPR": M_OPR, "M_DT": M_DT, "DF_KPI": DF_KPI, "DF_KHM": DF_KHM, "DF_PHEU": DF_PHEU, "DF_LUONG": DF_LUONG, "DF_NSGTC": DF_NSGTC, "DF_NS_PREV": DF_NS_PREV}
+
+
+with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
+    prefetch_sheets()
+    # Dựng lại các bảng số liệu chỉ khi sheet có bản mới (hoặc lỗi đọc đổi); nếu không thì dùng lại,
+    # khỏi tốn CPU mỗi lần bấm. Bản sao nông để không lượt chạy nào sửa được bảng dùng chung.
+    _ver = (tuple(sorted((k, v[0]) for k, v in _SHEET_CACHE.items())),
+            tuple(sorted(st.session_state.get("load_errors", {}))))
+    _fs = _frames_store()
+    if _fs["ver"] != _ver:
+        _fs["frames"], _fs["ver"] = _build_frames(), _ver
+    _fr = {k: v.copy(deep=False) for k, v in _fs["frames"].items()}
+    M_GTC = _fr["M_GTC"]
+    M_GAN = _fr["M_GAN"]
+    M_GAN_TTS = _fr["M_GAN_TTS"]
+    M_LEAD = _fr["M_LEAD"]
+    M_CA = _fr["M_CA"]
+    M_TRA = _fr["M_TRA"]
+    M_GTB = _fr["M_GTB"]
+    M_TTS = _fr["M_TTS"]
+    M_ODR = _fr["M_ODR"]
+    M_OPR = _fr["M_OPR"]
+    M_DT = _fr["M_DT"]
+    DF_KPI = _fr["DF_KPI"]
+    DF_KHM = _fr["DF_KHM"]
+    DF_PHEU = _fr["DF_PHEU"]
+    DF_LUONG = _fr["DF_LUONG"]
+    DF_NSGTC = _fr["DF_NSGTC"]
+    DF_NS_PREV = _fr["DF_NS_PREV"]
 
 # Lưu vào session_state để tab AI cố vấn đọc được
 st.session_state["dataframes"] = {
