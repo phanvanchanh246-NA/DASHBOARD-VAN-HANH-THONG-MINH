@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import html as html_lib
 import io
 import json
@@ -471,7 +472,8 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
 }}
 /* Menu đóng: chừa một hàng cho nút MENU. Menu mở: không cần hàng đó, kéo nội dung lên sát trên. */
 .block-container {{ padding-top: 3rem !important; }}
-.stApp:has(section[data-testid="stSidebar"][aria-expanded="true"]) .block-container {{
+.stApp:has(section[data-testid="stSidebar"][aria-expanded="true"]) .block-container,
+.stApp:has(section[data-testid="stSidebar"][data-collapsed="false"]) .block-container {{
     padding-top: 1rem !important;
 }}
 /* Thanh bên: bớt khoảng trắng phía trên chữ MENU */
@@ -766,8 +768,55 @@ def _parse_num_col(col: pd.Series) -> pd.Series:
     return col.map(lookup).astype(float)
 
 
-@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+@st.cache_resource
+def _sheet_store() -> dict:
+    """Kho dùng chung cho cả máy chủ. Phải nằm trong st.cache_resource: Streamlit chạy lại toàn bộ app.py
+    sau mỗi lần bấm nên biến toàn cục thường bị tạo mới, bộ nhớ đệm đặt ở đó sẽ mất sau mỗi lần bấm."""
+    return {"cache": {}, "refreshing": set(), "lock": threading.Lock()}
+
+
+_SHEET_CACHE: dict[str, tuple[float, pd.DataFrame]] = _sheet_store()["cache"]
+_SHEET_REFRESHING: set[str] = _sheet_store()["refreshing"]
+_SHEET_LOCK = _sheet_store()["lock"]
+
+
 def load_sheet(key: str) -> pd.DataFrame:
+    """Bộ nhớ đệm dùng chung cho mọi người xem. Dữ liệu quá CACHE_TTL giây thì vẫn trả ngay bản đang có
+    và tải bản mới ở luồng nền (lần sau đã có số mới), nên không ai phải chờ tải lại 14 sheet.
+    Chưa có bản nào thì tải trực tiếp. Tải nền lỗi thì giữ bản cũ."""
+    hit = _SHEET_CACHE.get(key)
+    if hit is None:
+        df = _fetch_sheet(key)
+        with _SHEET_LOCK:
+            _SHEET_CACHE[key] = (time.time(), df)
+        return df.copy()
+    t, df = hit
+    if time.time() - t > CACHE_TTL:
+        with _SHEET_LOCK:
+            start = key not in _SHEET_REFRESHING
+            if start:
+                _SHEET_REFRESHING.add(key)
+        if start:
+            def _refresh():
+                try:
+                    new = _fetch_sheet(key)
+                    with _SHEET_LOCK:
+                        _SHEET_CACHE[key] = (time.time(), new)
+                except Exception:  # noqa: BLE001  (giữ bản cũ, lần sau thử lại)
+                    pass
+                finally:
+                    with _SHEET_LOCK:
+                        _SHEET_REFRESHING.discard(key)
+            threading.Thread(target=_refresh, daemon=True).start()
+    return df.copy()
+
+
+def clear_sheet_cache() -> None:
+    with _SHEET_LOCK:
+        _SHEET_CACHE.clear()
+
+
+def _fetch_sheet(key: str) -> pd.DataFrame:
     """Đọc 1 sheet, chuẩn hóa cột Ngày / Bưu Cục, ép kiểu số cho các cột còn lại.
 
     Đọc toàn bộ sheet qua export CSV — không giới hạn range hay số dòng, nên khi
@@ -940,6 +989,39 @@ def agg(df: pd.DataFrame, a, b, how: str = "wavg") -> float:
     return float(pd.to_numeric(_as_series(s["Giá Trị"]), errors="coerce").sum())
 
 
+@st.cache_resource
+def _memo_store() -> dict:
+    return {}
+
+
+def memo(fn):
+    """Nhớ kết quả theo nội dung tham số (DataFrame băm theo giá trị), dùng chung cho mọi người xem.
+    Streamlit chạy lại toàn bộ app.py mỗi lần bấm; số liệu không đổi thì dùng lại kết quả cũ thay vì tính lại
+    (dựng biểu đồ plotly, gom số liệu theo ngày/tuần/tháng). DataFrame trả về là bản sao; figure plotly
+    trả về KHÔNG được sửa tiếp sau khi lấy ra."""
+    store = _memo_store()
+
+    def wrapper(*args, **kw):
+        h = hashlib.sha1(fn.__name__.encode())
+        for a in list(args) + [kw[k] for k in sorted(kw)]:
+            if isinstance(a, (pd.DataFrame, pd.Series)):
+                h.update(pd.util.hash_pandas_object(a, index=True).values.tobytes())
+                h.update(repr(list(a.columns) if isinstance(a, pd.DataFrame) else a.name).encode())
+            else:
+                h.update(repr(a).encode())
+        key = h.hexdigest()
+        out = store.get(key)
+        if out is None:
+            out = fn(*args, **kw)
+            if len(store) >= 600:
+                store.pop(next(iter(store)))
+            store[key] = out
+        return out.copy() if isinstance(out, (pd.DataFrame, dict)) else out
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
+@memo
 def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
     """So sánh N vs N-1, W vs W-1, M vs M-1.
 
@@ -979,6 +1061,7 @@ def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
     }
 
 
+@memo
 def daily(df: pd.DataFrame, how: str = "wavg") -> pd.DataFrame:
     """Gộp theo ngày. Tỷ lệ % gộp bằng trung bình có trọng số, số lượng thì cộng."""
     if df is None or df.empty:
@@ -1141,6 +1224,9 @@ def pay_period(ref: pd.Timestamp):
 LABEL_FONT = dict(size=12)
 
 
+fig_cache = memo   # biểu đồ plotly: xem memo
+
+
 def point_labels(values, fmt, max_labels: int = 16, offset: int = 0) -> list[str]:
     """Nhãn dữ liệu cho từng điểm. Nhiều điểm quá thì cách vài điểm ghi một nhãn (luôn ghi điểm cuối)
     để nhãn không đè lên nhau; di chuột vẫn xem được số của mọi điểm.
@@ -1192,6 +1278,13 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
         note(f"Chưa có dữ liệu: {title}")
         return
     g = daily(df) if unit == "%" else daily(df, "sum")
+    st.plotly_chart(_line_fig(g, title, color, unit, target, y_title), width="stretch")
+    if len(g) < 2:
+        st.caption("Mới có 1 ngày dữ liệu nên chưa vẽ được đường diễn biến.")
+
+
+@fig_cache
+def _line_fig(g: pd.DataFrame, title: str, color: str, unit: str, target, y_title):
     fig = px.line(g, x="Ngày", y="Giá Trị", markers=True, title=title)
     fig.update_traces(line=dict(color=color, width=3),
                       marker=dict(size=7, color=color, line=dict(width=2, color="#FFF")),
@@ -1206,9 +1299,7 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
                      title_text=y_title or ("Tỷ lệ (%)" if unit == "%" else "Giá trị"))
     fig.update_xaxes(tickformat="%d/%m", title_text=None)
     fig.update_layout(height=320, showlegend=False, margin=dict(t=90, b=70))
-    st.plotly_chart(fig, width="stretch")
-    if len(g) < 2:
-        st.caption("Mới có 1 ngày dữ liệu nên chưa vẽ được đường diễn biến.")
+    return fig
 
 
 def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_name="% GTC",
@@ -1218,6 +1309,12 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
         note(f"Chưa có dữ liệu: {title}")
         return
     g = daily(df)
+    gan = daily(gan_df) if gan_df is not None and not gan_df.empty else None
+    st.plotly_chart(_combo_fig(g, title, bar_name, line_name, target, gan, max_labels), width="stretch")
+
+
+@fig_cache
+def _combo_fig(g: pd.DataFrame, title, bar_name, line_name, target, gan, max_labels):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=g["Ngày"], y=g["Trọng Số"], name=bar_name,
                          marker_color=PRIMARY, marker_line_width=0,
@@ -1225,8 +1322,8 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
                          insidetextanchor="end", textangle=-90 if len(g) > 10 else 0,
                          textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
     lines = [(g, line_name, ACCENT, "circle")]
-    if gan_df is not None and not gan_df.empty:
-        lines.append((daily(gan_df), "% Gán đơn", "#00B4D8", "diamond"))
+    if gan is not None:
+        lines.append((gan, "% Gán đơn", "#00B4D8", "diamond"))
     # gap=40: đường %GTC nằm dưới đường % gán thì ghi nhãn phía dưới, tránh đè lên đường mốc KPI.
     pos = label_layout([d["Giá Trị"] for d, *_ in lines], gap=40)
     for (d, name, color, sym), (tpos, off) in zip(lines, pos):
@@ -1246,7 +1343,7 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
     fig.update_yaxes(title_text="Tỷ lệ (%)", secondary_y=True, ticksuffix="%", showgrid=False)
     band_axes(fig, g["Trọng Số"].max(), roomy=len(lines) > 1)
     fig.update_xaxes(tickformat="%d/%m")
-    st.plotly_chart(fig, width="stretch")
+    return fig
 
 
 def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, title=""):
@@ -1266,6 +1363,12 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
         return
     g["r"] = g["_p"] / g["w"]
     g = g.sort_values("r")
+    st.plotly_chart(_bc_bar_fig(g[["Bưu Cục", "r", "w"]].reset_index(drop=True), target, higher_is_better, title),
+                    width="stretch")
+
+
+@fig_cache
+def _bc_bar_fig(g: pd.DataFrame, target, higher_is_better, title):
     if target:
         colors = [SUCCESS if (v >= target) == higher_is_better else DANGER for v in g["r"]]
     else:
@@ -1287,7 +1390,7 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
                       height=max(300, 110 * len(g) + 130),
                       margin=dict(l=20, r=120, t=90, b=60),
                       showlegend=False, bargap=0.45)
-    st.plotly_chart(fig, width="stretch")
+    return fig
 
 
 def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
@@ -1350,7 +1453,12 @@ def _font(bold: bool, size: int):
         return ImageFont.load_default()
 
 
-_IMG_CACHE: dict[str, bytes] = {}
+@st.cache_resource
+def _img_store() -> dict:
+    return {}
+
+
+_IMG_CACHE: dict[str, bytes] = _img_store()   # giữ qua các lần chạy lại (xem _sheet_store)
 
 
 def img_cache(fn):
@@ -2830,6 +2938,44 @@ def logo_uri() -> str:
         return ""
 
 
+# ── Ghi nhớ đăng nhập (cookie ký HMAC) ──────────────────────────────────
+# Phiên Streamlit mất khi tải lại trang, mất mạng trên điện thoại, hoặc máy chủ Render ngủ / khởi động lại
+# → trước đây bị đá về màn đăng nhập. Nay lưu một mã đăng nhập đã ký vào cookie 7 ngày để tự vào lại.
+# Đổi mật khẩu (hoặc đặt biến AUTH_SECRET mới) là mọi mã cũ hết hiệu lực.
+AUTH_COOKIE = "ghn_auth"
+AUTH_DAYS = 7
+_AUTH_SECRET = (os.environ.get("AUTH_SECRET", "").strip()
+                or hashlib.sha256(f"ghn|{ADMIN_ID}|{ADMIN_PASS}|{USER_PASS}".encode()).hexdigest())
+
+
+def _auth_sig(uid: str, exp: int) -> str:
+    return hmac.new(_AUTH_SECRET.encode(), f"{uid}|{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def make_auth_token(uid: str) -> str:
+    exp = int(time.time()) + AUTH_DAYS * 86400
+    return f"{uid}.{exp}.{_auth_sig(uid, exp)}"
+
+
+def read_auth_token(tok: str | None) -> dict | None:
+    """Mã hợp lệ (đúng chữ ký, chưa hết hạn, tài khoản còn tồn tại) → thông tin đăng nhập; sai → None."""
+    try:
+        uid, exp, sig = str(tok).split(".")
+        exp = int(exp)
+    except (ValueError, AttributeError):
+        return None
+    if exp < time.time() or not hmac.compare_digest(sig, _auth_sig(uid, exp)) or uid not in ACCOUNTS:
+        return None
+    return {"id": uid, "role": ACCOUNTS[uid]["role"]}
+
+
+def _cookie_js(value: str, max_age: int) -> None:
+    st.html(f"""<script>/*{time.time()}*/
+    document.cookie = "{AUTH_COOKIE}={value}; max-age={max_age}; path=/; SameSite=Lax"
+      + (location.protocol === "https:" ? "; Secure" : "");
+    </script>""", unsafe_allow_javascript=True)
+
+
 def login_screen():
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
@@ -2845,11 +2991,14 @@ def login_screen():
         with st.form("login_form"):
             user_id = st.text_input("Mã nhân viên (ID)", placeholder="Nhập mã nhân viên")
             password = st.text_input("Mật khẩu", type="password")
+            remember = st.checkbox(f"Ghi nhớ đăng nhập trên máy này ({AUTH_DAYS} ngày)", value=True)
             submitted = st.form_submit_button("ĐĂNG NHẬP", width="stretch")
             if submitted:
                 info = ACCOUNTS.get(user_id.strip().upper())
                 if info and password == info["password"]:
                     st.session_state.auth = {"id": user_id.strip().upper(), "role": info["role"]}
+                    if remember:
+                        st.session_state["_set_auth_cookie"] = make_auth_token(user_id.strip().upper())
                     st.rerun()
                 else:
                     st.error("ID hoặc mật khẩu không chính xác.")
@@ -2858,9 +3007,16 @@ def login_screen():
             st.markdown(APP_INSTALL_GUIDE)
 
 
+if st.session_state.auth is None and not st.session_state.get("_logged_out"):
+    st.session_state.auth = read_auth_token(st.context.cookies.get(AUTH_COOKIE))
 if st.session_state.auth is None:
+    if st.session_state.pop("_clear_auth_cookie", None):
+        _cookie_js("", 0)
     login_screen()
     st.stop()
+if st.session_state.get("_set_auth_cookie"):
+    _cookie_js(st.session_state.pop("_set_auth_cookie"), AUTH_DAYS * 86400)
+    st.session_state.pop("_logged_out", None)
 
 AUTH = st.session_state.auth
 IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
@@ -2869,8 +3025,12 @@ IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
 # ═══════════════════════════════════════════════════════════════════════
 # 8. NẠP TOÀN BỘ DỮ LIỆU
 # ═══════════════════════════════════════════════════════════════════════
-with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
-    prefetch_sheets()
+@st.cache_resource
+def _frames_store() -> dict:
+    return {"ver": None, "frames": {}}
+
+
+def _build_frames() -> dict:
     # Cột thật đã đối chiếu với sheet:
     #   File1_BuuCuc / File2_TTS: Ngày | Cấp Quản Lý | Bưu cục | Volume | % Gán | % GTC | % Chuyển trả | Leadtime
     #   File3_TheoCa            : thêm cột "Loại Hàng (Ca)"
@@ -2895,6 +3055,36 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     DF_LUONG = safe_load("ns_luong")
     DF_NSGTC = safe_load("ns_gtc")
     DF_NS_PREV = safe_load("ns_thang_truoc")   # năng suất tháng trước, cho tab Thi đua
+    return {"M_GTC": M_GTC, "M_GAN": M_GAN, "M_GAN_TTS": M_GAN_TTS, "M_LEAD": M_LEAD, "M_CA": M_CA, "M_TRA": M_TRA, "M_GTB": M_GTB, "M_TTS": M_TTS, "M_ODR": M_ODR, "M_OPR": M_OPR, "M_DT": M_DT, "DF_KPI": DF_KPI, "DF_KHM": DF_KHM, "DF_PHEU": DF_PHEU, "DF_LUONG": DF_LUONG, "DF_NSGTC": DF_NSGTC, "DF_NS_PREV": DF_NS_PREV}
+
+
+with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
+    prefetch_sheets()
+    # Dựng lại các bảng số liệu chỉ khi sheet có bản mới (hoặc lỗi đọc đổi); nếu không thì dùng lại,
+    # khỏi tốn CPU mỗi lần bấm. Bản sao nông để không lượt chạy nào sửa được bảng dùng chung.
+    _ver = (tuple(sorted((k, v[0]) for k, v in _SHEET_CACHE.items())),
+            tuple(sorted(st.session_state.get("load_errors", {}))))
+    _fs = _frames_store()
+    if _fs["ver"] != _ver:
+        _fs["frames"], _fs["ver"] = _build_frames(), _ver
+    _fr = {k: v.copy(deep=False) for k, v in _fs["frames"].items()}
+    M_GTC = _fr["M_GTC"]
+    M_GAN = _fr["M_GAN"]
+    M_GAN_TTS = _fr["M_GAN_TTS"]
+    M_LEAD = _fr["M_LEAD"]
+    M_CA = _fr["M_CA"]
+    M_TRA = _fr["M_TRA"]
+    M_GTB = _fr["M_GTB"]
+    M_TTS = _fr["M_TTS"]
+    M_ODR = _fr["M_ODR"]
+    M_OPR = _fr["M_OPR"]
+    M_DT = _fr["M_DT"]
+    DF_KPI = _fr["DF_KPI"]
+    DF_KHM = _fr["DF_KHM"]
+    DF_PHEU = _fr["DF_PHEU"]
+    DF_LUONG = _fr["DF_LUONG"]
+    DF_NSGTC = _fr["DF_NSGTC"]
+    DF_NS_PREV = _fr["DF_NS_PREV"]
 
 # Lưu vào session_state để tab AI cố vấn đọc được
 st.session_state["dataframes"] = {
@@ -3023,9 +3213,12 @@ with st.sidebar:
     st.divider()
     if st.button("Làm mới dữ liệu", width="stretch"):
         st.cache_data.clear()
+        clear_sheet_cache()
         st.rerun()
     if st.button("Đăng xuất", width="stretch"):
         st.session_state.auth = None
+        st.session_state["_logged_out"] = True        # không tự đăng nhập lại bằng cookie trong phiên này
+        st.session_state["_clear_auth_cookie"] = True
         st.rerun()
     with st.expander("📱 Cài lên điện thoại"):
         st.markdown(APP_INSTALL_GUIDE)
