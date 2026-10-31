@@ -112,6 +112,17 @@ GEMINI_MODEL = "gemini-3.6-flash"
 # Mô hình dự phòng khi mô hình chính quá tải/hết quota (để trống để tắt). Có thể đổi bằng biến môi trường.
 GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash").strip()
 CACHE_TTL = 300
+# Bỏ các nút của Plotly (zoom, kéo, chụp ảnh...), chỉ giữ nút phóng to toàn màn hình của Streamlit
+# (nút này nằm chung thanh công cụ nên không tắt hẳn thanh được).
+PLOTLY_CONFIG = {"displaylogo": False, "modeBarButtonsToRemove": [
+    "zoom2d", "pan2d", "select2d", "lasso2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d",
+    "toImage", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines",
+    "hoverClosestPie", "hoverClosestGl2d", "resetViews", "toggleHover", "sendDataToCloud"]}
+
+
+def plot_chart(fig, **kw):
+    return st.plotly_chart(fig, config=PLOTLY_CONFIG, **kw)
+
 
 # ── 12 nguồn dữ liệu Google Sheets ─────────────────────────────────────
 SHEET_LINKS: dict[str, str] = {
@@ -1277,7 +1288,7 @@ def line_chart(df: pd.DataFrame, title: str, color: str, unit="%", target: float
         note(f"Chưa có dữ liệu: {title}")
         return
     g = daily(df) if unit == "%" else daily(df, "sum")
-    st.plotly_chart(_line_fig(g, title, color, unit, target, y_title), width="stretch")
+    plot_chart(_line_fig(g, title, color, unit, target, y_title), width="stretch")
     if len(g) < 2:
         st.caption("Mới có 1 ngày dữ liệu nên chưa vẽ được đường diễn biến.")
 
@@ -1309,7 +1320,7 @@ def combo_chart(df: pd.DataFrame, title: str, bar_name="Sản lượng", line_na
         return
     g = daily(df)
     gan = daily(gan_df) if gan_df is not None and not gan_df.empty else None
-    st.plotly_chart(_combo_fig(g, title, bar_name, line_name, target, gan, max_labels), width="stretch")
+    plot_chart(_combo_fig(g, title, bar_name, line_name, target, gan, max_labels), width="stretch")
 
 
 @fig_cache
@@ -1362,7 +1373,7 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
         return
     g["r"] = g["_p"] / g["w"]
     g = g.sort_values("r")
-    st.plotly_chart(_bc_bar_fig(g[["Bưu Cục", "r", "w"]].reset_index(drop=True), target, higher_is_better, title),
+    plot_chart(_bc_bar_fig(g[["Bưu Cục", "r", "w"]].reset_index(drop=True), target, higher_is_better, title),
                     width="stretch")
 
 
@@ -1429,7 +1440,7 @@ def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
                              "thickness": 0.85, "value": target}}))
     fig.update_layout(height=360, margin=dict(l=40, r=40, t=90, b=30),
                       showlegend=False)
-    st.plotly_chart(fig, width="stretch")
+    plot_chart(fig, width="stretch")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -3586,7 +3597,7 @@ if PAGE == "tong_quan":
                 fig_ov.update_yaxes(ticksuffix="%")
                 fig_ov.update_xaxes(tickformat="%d/%m")
                 fig_ov.update_layout(height=480)
-                st.plotly_chart(fig_ov, width="stretch")
+                plot_chart(fig_ov, width="stretch")
                 if max(len(d) for _, d, _ in series) < 2:
                     st.caption("Mới có 1 ngày dữ liệu — biểu đồ sẽ đầy đủ khi sheet tích lũy thêm ngày.")
             else:
@@ -3724,7 +3735,7 @@ if PAGE == "van_hanh":
                                                  textfont=dict(color="#FFFFFF", **LABEL_FONT)))
                     fig_ca1.update_layout(barmode="stack", title="Sản lượng theo ca", height=430)
                     fig_ca1.update_xaxes(tickformat="%d/%m")
-                    st.plotly_chart(fig_ca1, width="stretch")
+                    plot_chart(fig_ca1, width="stretch")
                 with cD:
                     fig_ca2 = go.Figure()
                     ca_list = sorted(g_ca_chart["Chiều"].unique())
@@ -3742,7 +3753,7 @@ if PAGE == "van_hanh":
                     fig_ca2.update_layout(title="%GTC theo ca", height=430)
                     fig_ca2.update_yaxes(ticksuffix="%", range=[0, 100])
                     fig_ca2.update_xaxes(tickformat="%d/%m")
-                    st.plotly_chart(fig_ca2, width="stretch")
+                    plot_chart(fig_ca2, width="stretch")
             else:
                 note("Chưa đọc được cột ca hoặc loại hàng trong sheet Sản lượng theo ca.")
 
@@ -3863,21 +3874,17 @@ if PAGE == "kinh_doanh":
 
             section("2. Tiến độ doanh thu tháng so với KPI")
             kpi_dt_sheet = kpi_target([["doanh thu"]], 0.0, bc=bc_kd)
-            default_dt = kpi_dt_sheet if kpi_dt_sheet > 0 else 71_000_000.0
-            st.session_state.kpi_manual.setdefault(f"dt_{bc_kd}", float(default_dt))
+            # Mục tiêu cố định, chỉ hiển thị (không cho chỉnh trên dashboard); muốn đổi thì sửa sheet KPI.
+            target_dt = kpi_dt_sheet if kpi_dt_sheet > 0 else 71_000_000.0
 
             d1, d2 = st.columns([1, 2.2])
             with d1:
-                st.session_state.kpi_manual[f"dt_{bc_kd}"] = st.number_input(
-                    "Mục tiêu doanh thu tháng (đ)", min_value=0.0,
-                    value=float(st.session_state.kpi_manual[f"dt_{bc_kd}"]), step=1_000_000.0,
-                    key=f"num_dt_{bc_kd}")
-            target_dt = float(st.session_state.kpi_manual[f"dt_{bc_kd}"])
-            if kpi_dt_sheet > 0:
-                st.caption(f"Mốc lấy từ sheet KPI: {fmt_money(kpi_dt_sheet)}. Có thể chỉnh tay ở trên.")
-            else:
-                st.caption("Sheet KPI chưa có số doanh thu — đang dùng mốc nhập tay. "
-                           "Điền vào sheet là dashboard tự nhận.")
+                st.markdown(metric_card("Mục tiêu doanh thu tháng", fmt_money(target_dt), None,
+                                        sub="theo sheet KPI" if kpi_dt_sheet > 0 else "mốc mặc định"),
+                            unsafe_allow_html=True)
+            if kpi_dt_sheet <= 0:
+                st.caption("Sheet KPI chưa có số doanh thu nên đang dùng mốc mặc định. "
+                           "Điền vào sheet KPI là dashboard tự nhận.")
 
             m_start = REF_DATE.replace(day=1)
             days_done = max((REF_DATE - m_start).days + 1, 1)
@@ -3918,7 +3925,7 @@ if PAGE == "kinh_doanh":
                 fig_kd.update_xaxes(tickformat="%d/%m", title_text=None)
                 fig_kd.update_yaxes(tickformat=",.0f", title_text="Doanh thu (đ)")
                 fig_kd.update_layout(height=380, showlegend=False, margin=dict(t=90, b=70))
-                st.plotly_chart(fig_kd, width="stretch")
+                plot_chart(fig_kd, width="stretch")
             else:
                 note("Chưa có doanh thu trong khoảng đã chọn.")
 
@@ -3945,7 +3952,7 @@ if PAGE == "kinh_doanh":
                     fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=380, funnelgap=0.12, margin=dict(l=20, r=20),
                                              showlegend=False,
                                              hovermode="closest")
-                    st.plotly_chart(fig_funnel, width="stretch")
+                    plot_chart(fig_funnel, width="stretch")
                 else:
                     note("Chưa đọc được cột Trạng thái trong sheet phễu khách hàng.")
             with fB:
@@ -4103,7 +4110,7 @@ if PAGE == "canh_bao_ns":
                             st.markdown(metric_card("Mức cảnh báo", str(r_nv["Mức"]), None,
                                                     sub=r_nv["_tags"].replace("|", " · "), accent=r_nv["Mức"] == "Cao"),
                                         unsafe_allow_html=True)
-                        st.plotly_chart(fig_nv, width="stretch", key="chart_hr_staff")
+                        plot_chart(fig_nv, width="stretch", key="chart_hr_staff")
 
                         section("Hướng dẫn NVXL trao đổi 1:1")
                         def hr_prompt() -> str:
@@ -4339,7 +4346,7 @@ if PAGE == "nang_suat":
                     fig_price.update_yaxes(title_text="VNĐ")
                     fig_price.update_xaxes(tickformat="%d/%m")
                     fig_price.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
-                    st.plotly_chart(fig_price, width="stretch")
+                    plot_chart(fig_price, width="stretch")
                 else:
                     note("Chưa đọc được cột Đơn giá.")
             with cL:
@@ -4358,7 +4365,7 @@ if PAGE == "nang_suat":
                     fig_pay.update_yaxes(title_text="VNĐ")
                     fig_pay.update_xaxes(tickformat="%d/%m")
                     fig_pay.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
-                    st.plotly_chart(fig_pay, width="stretch")
+                    plot_chart(fig_pay, width="stretch")
                 else:
                     note("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
 
@@ -4403,7 +4410,7 @@ if PAGE == "nang_suat":
                 fig_ns.update_yaxes(title_text="% GTC", secondary_y=True, ticksuffix="%", showgrid=False)
                 band_axes(fig_ns, g_ns[col_gan].max())
                 fig_ns.update_xaxes(tickformat="%d/%m")
-                st.plotly_chart(fig_ns, width="stretch")
+                plot_chart(fig_ns, width="stretch")
             else:
                 note("Chưa đủ dữ liệu gán và giao để vẽ biểu đồ.")
 
@@ -4612,7 +4619,7 @@ if PAGE == "kpi":
                 fig_kpi.update_yaxes(ticksuffix="%")
                 fig_kpi.update_xaxes(tickformat="%d/%m")
                 fig_kpi.update_layout(height=470)
-                st.plotly_chart(fig_kpi, width="stretch")
+                plot_chart(fig_kpi, width="stretch")
 
                 tbl_kpi = daily(sl(scope(M_GTC, bc_kpi), a_kpi, b_kpi)).rename(
                     columns={"Giá Trị": "%GTC", "Trọng Số": "Sản lượng"})
@@ -5028,7 +5035,7 @@ if PAGE == "thi_dua":
                     fig_td.update_yaxes(automargin=True, tickfont=dict(size=15))
                     fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
                                          margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
-                    st.plotly_chart(fig_td, width="stretch")
+                    plot_chart(fig_td, width="stretch")
 
                     # ── Thể lệ ─────────────────────────────────────────────────────
                 with _sub_tab7[3]:
