@@ -164,13 +164,6 @@ def _kiem_tra_nguon() -> list[str]:
     return loi
 
 
-SALARY_PARTS = {
-    "LHH LTC": "Lương hoa hồng lấy thành công",
-    "LHH GTC": "Lương hoa hồng giao thành công",
-    "LHH GTBTT": "Lương hoa hồng giao thất bại thu tiền",
-}
-
-
 # ═══════════════════════════════════════════════════════════════════════
 # 1. GIAO DIỆN — CSS TÙY CHỈNH
 # ═══════════════════════════════════════════════════════════════════════
@@ -4233,14 +4226,6 @@ if PAGE == "nang_suat":
         anchor = b_ns if b_ns is not None else REF_DATE
         cur_a, cur_b, cur_name, prev_a, prev_b, prev_name = pay_period(anchor)
 
-        st.info(
-            f"**Kỳ lương đang xét:** {cur_name} — dữ liệu {cur_a:%d/%m/%Y} đến {cur_b:%d/%m/%Y}, "
-            f"chi lương ngày {'20' if cur_name.startswith('Kỳ 20') else '05'}.  \n"
-            f"**So với kỳ liền trước:** {prev_name} — dữ liệu {prev_a:%d/%m/%Y} đến {prev_b:%d/%m/%Y}.  \n"
-            f"Quy ước: Kỳ 20 tháng M gồm dữ liệu ngày 01–15 tháng M, chi lương ngày 20 tháng M. "
-            f"Kỳ 05 tháng M+1 gồm dữ liệu ngày 16 đến hết tháng M, chi lương ngày 05 tháng M+1. "
-            f"Mốc kỳ chạy theo ngày kết thúc của bộ lọc ({anchor:%d/%m/%Y})."
-        )
 
         col_price = pick_col(L, [["don gia"]])
         col_gan = pick_col(G, [["gan giao"], ["so don gan"], ["gan"]])
@@ -4324,11 +4309,6 @@ if PAGE == "nang_suat":
             ]
             st.markdown(html_table(["Chỉ tiêu", cur_name, prev_name, "Chênh lệch"], rows_ky),
                         unsafe_allow_html=True)
-            st.caption("Sản lượng GTC = Đơn GTC + Đơn GTBTT (sheet Đơn Giá - Lương) · "
-                       "%GTC lấy từ cột %GTC của sheet Năng suất nhân viên, bình quân có trọng số "
-                       "theo sản lượng gán.")
-            st.caption("Tổng lương = LHH LTC + LHH GTC + LHH GTBTT · "
-                       + " · ".join(f"**{k}**: {v}" for k, v in SALARY_PARTS.items()))
 
             section("2. Biểu đồ đơn giá và tổng lương theo ngày")
             cK, cL = st.columns(2)
