@@ -2950,9 +2950,23 @@ for _k, _v in {"auth": None, "ai_cache": {}, "chat": [], "kpi_manual": {}}.items
     st.session_state.setdefault(_k, _v)
 
 ACCOUNTS = {
-    ADMIN_ID: {"password": ADMIN_PASS, "role": "Giám Đốc.AM"},
+    ADMIN_ID: {"password": ADMIN_PASS, "role": "Giám Đốc.AM",
+               "name": os.environ.get("ADMIN_NAME", "Phan Văn Chánh").strip(), "title": "Quản Lý khu vực"},
     "USER": {"password": USER_PASS, "role": "Nhân Viên"},
 }
+
+# ── Nhân viên xử lý (NVXL): chỉ xem dữ liệu bưu cục mình phụ trách ─────
+ROLE_NVXL = "NVXL"
+NVXL_STAFF = {   # ID: (Họ tên, Bưu cục — viết đúng như trên sheet)
+    "3066050": ("Phạm Thị Hoa", "(QBI) Phong Nha"),
+    "3110495": ("Đỗ Thị Thảo Vân", "(QBI) Đồng Hới"),
+    "3185980": ("Trần Hữu Đức", "(QBI) Đồng Thuận"),
+}
+
+
+# NVXL đăng nhập chỉ bằng ID, không cần mật khẩu (password=None).
+for _uid, (_ten, _bc) in NVXL_STAFF.items():
+    ACCOUNTS[_uid] = {"password": None, "role": ROLE_NVXL, "name": _ten, "bc": _bc}
 
 
 @lru_cache(maxsize=1)
@@ -3018,12 +3032,12 @@ def login_screen():
 
         with st.form("login_form"):
             user_id = st.text_input("Mã nhân viên (ID)", placeholder="Nhập mã nhân viên")
-            password = st.text_input("Mật khẩu", type="password")
+            password = st.text_input("Mật khẩu", type="password", placeholder="NVXL không cần nhập mật khẩu")
             remember = st.checkbox(f"Ghi nhớ đăng nhập trên máy này ({AUTH_DAYS} ngày)", value=True)
             submitted = st.form_submit_button("ĐĂNG NHẬP", width="stretch")
             if submitted:
                 info = ACCOUNTS.get(user_id.strip().upper())
-                if info and password == info["password"]:
+                if info and (info["password"] is None or password == info["password"]):
                     st.session_state.auth = {"id": user_id.strip().upper(), "role": info["role"]}
                     if remember:
                         st.session_state["_set_auth_cookie"] = make_auth_token(user_id.strip().upper())
@@ -3048,6 +3062,9 @@ if st.session_state.get("_set_auth_cookie"):
 
 AUTH = st.session_state.auth
 IS_ADMIN = AUTH["role"] == "Giám Đốc.AM"
+# Bưu cục được phép xem: None = tất cả; NVXL chỉ bưu cục của mình (lấy từ danh sách tài khoản,
+# không tin vào dữ liệu phiên).
+USER_BC = ACCOUNTS.get(AUTH["id"], {}).get("bc") if AUTH["role"] == ROLE_NVXL else None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -3114,6 +3131,23 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     DF_NSGTC = _fr["DF_NSGTC"]
     DF_NS_PREV = _fr["DF_NS_PREV"]
 
+
+def only_bc(df: pd.DataFrame, bc: str) -> pd.DataFrame:
+    """Giữ đúng các dòng của một bưu cục. Bảng không có cột bưu cục (hoặc là số liệu chung toàn vùng)
+    thì trả bảng rỗng: thà thiếu còn hơn lộ dữ liệu bưu cục khác."""
+    col = next((c for c in df.columns if norm(c) == "buu cuc"), None)
+    if col is None:
+        return df.iloc[0:0]
+    return df[df[col].map(norm) == norm(bc)]
+
+
+if USER_BC:
+    M_GTC, M_GAN, M_GAN_TTS, M_LEAD, M_CA, M_TRA, M_GTB, M_TTS, M_ODR, M_OPR, M_DT = (
+        only_bc(f, USER_BC) for f in (M_GTC, M_GAN, M_GAN_TTS, M_LEAD, M_CA, M_TRA, M_GTB,
+                                      M_TTS, M_ODR, M_OPR, M_DT))
+    DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV = (
+        only_bc(f, USER_BC) for f in (DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV))
+
 # Lưu vào session_state để tab AI cố vấn đọc được
 st.session_state["dataframes"] = {
     "GTC tổng": M_GTC, "Tỷ lệ trả hàng": M_TRA, "GTB thu tiền": M_GTB,
@@ -3122,7 +3156,7 @@ st.session_state["dataframes"] = {
     "Lương nhân viên": DF_LUONG, "Năng suất GTC": DF_NSGTC, "KPI": DF_KPI,
 }
 
-ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC)
+ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC) if not USER_BC else [USER_BC]
 
 def today_vn() -> pd.Timestamp:
     """Ngày hiện tại theo giờ Việt Nam (UTC+7), không phụ thuộc múi giờ máy chủ.
@@ -3221,6 +3255,8 @@ NAV_PAGES = [
     ("thi_dua", "Thi đua", ":material/emoji_events:"),
     ("ai", "AI cố vấn", ":material/smart_toy:"),
 ]
+if USER_BC:   # số liệu kinh doanh là của cả vùng, không tách theo bưu cục
+    NAV_PAGES = [x for x in NAV_PAGES if x[0] != "kinh_doanh"]
 _nav_keys = [k for k, _, _ in NAV_PAGES]
 _nav_label = {k: f"{i} {t}" for k, t, i in NAV_PAGES}
 # Mở lại đúng mục đang xem khi tải lại trang (lưu trên địa chỉ ?p=...)
@@ -3237,7 +3273,12 @@ with st.sidebar:
         st.query_params["p"] = PAGE
     st.divider()
     st.markdown(f"### {AUTH['id']}")
-    st.caption(f"Vai trò: {AUTH['role']}")
+    if USER_BC:
+        st.caption(f"{ACCOUNTS[AUTH['id']]['name']} · NVXL {USER_BC}")
+    elif ACCOUNTS.get(AUTH["id"], {}).get("name"):
+        st.caption(f"{ACCOUNTS[AUTH['id']]['name']} · {ACCOUNTS[AUTH['id']]['title']}")
+    else:
+        st.caption(f"Vai trò: {AUTH['role']}")
     st.divider()
     if st.button("Làm mới dữ liệu", width="stretch"):
         st.cache_data.clear()
