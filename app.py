@@ -21,8 +21,7 @@ Biến môi trường (KHÔNG fix cứng key vào code):
     GTALK_CHANNELS      — các nhóm GTalk nhận tin, JSON {"Tên nhóm": "channelId"} hoặc "Tên=channelId;Tên2=id2"
     GTALK_API_BASE      — mặc định https://mbff.ghn.vn (thật); thử trước ở https://test-api.mbff.ghn.tech
     ADMIN_ID            — tên đăng nhập tài khoản quản trị (mặc định: 3032156)
-    ADMIN_PASS          — mật khẩu tài khoản quản trị (mặc định: ghn@admin)
-    USER_PASS           — mật khẩu tài khoản USER  (mặc định: ghn@user)
+    AUTH_SECRET         — khóa ký cookie ghi nhớ đăng nhập (nên đặt; nếu không thì suy ra từ ADMIN_PASS/USER_PASS)
 """
 
 from __future__ import annotations
@@ -2950,10 +2949,10 @@ for _k, _v in {"auth": None, "ai_cache": {}, "chat": [], "kpi_manual": {}}.items
     st.session_state.setdefault(_k, _v)
 
 ACCOUNTS = {
-    ADMIN_ID: {"password": ADMIN_PASS, "role": "Giám Đốc.AM",
+    ADMIN_ID: {"role": "Giám Đốc.AM",
                "name": os.environ.get("ADMIN_NAME", "Phan Văn Chánh").strip(), "title": "Quản Lý khu vực"},
-    "USER": {"password": USER_PASS, "role": "Nhân Viên"},
 }
+# Đăng nhập chỉ bằng ID (không có ô mật khẩu); tài khoản chung "USER" đã bỏ.
 
 # ── Nhân viên xử lý (NVXL): chỉ xem dữ liệu bưu cục mình phụ trách ─────
 ROLE_NVXL = "NVXL"
@@ -2964,9 +2963,8 @@ NVXL_STAFF = {   # ID: (Họ tên, Bưu cục — viết đúng như trên sheet
 }
 
 
-# NVXL đăng nhập chỉ bằng ID, không cần mật khẩu (password=None).
 for _uid, (_ten, _bc) in NVXL_STAFF.items():
-    ACCOUNTS[_uid] = {"password": None, "role": ROLE_NVXL, "name": _ten, "bc": _bc}
+    ACCOUNTS[_uid] = {"role": ROLE_NVXL, "name": _ten, "bc": _bc}
 
 
 @lru_cache(maxsize=1)
@@ -3032,18 +3030,17 @@ def login_screen():
 
         with st.form("login_form"):
             user_id = st.text_input("Mã nhân viên (ID)", placeholder="Nhập mã nhân viên")
-            password = st.text_input("Mật khẩu", type="password", placeholder="NVXL không cần nhập mật khẩu")
             remember = st.checkbox(f"Ghi nhớ đăng nhập trên máy này ({AUTH_DAYS} ngày)", value=True)
             submitted = st.form_submit_button("ĐĂNG NHẬP", width="stretch")
             if submitted:
                 info = ACCOUNTS.get(user_id.strip().upper())
-                if info and (info["password"] is None or password == info["password"]):
+                if info:
                     st.session_state.auth = {"id": user_id.strip().upper(), "role": info["role"]}
                     if remember:
                         st.session_state["_set_auth_cookie"] = make_auth_token(user_id.strip().upper())
                     st.rerun()
                 else:
-                    st.error("ID hoặc mật khẩu không chính xác.")
+                    st.error("ID không có quyền truy cập.")
 
         with st.expander("📱 Cài dashboard lên điện thoại"):
             st.markdown(APP_INSTALL_GUIDE)
