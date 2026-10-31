@@ -1840,15 +1840,18 @@ def claude_client():
         return None
 
 
-def _ask_claude(prompt: str) -> tuple[bool, str]:
-    """Gọi Claude (Anthropic). Trả (True, nội dung) hoặc (False, lý do lỗi bằng tiếng Việt)."""
+def _ask_claude(prompt: str, quick: bool = False) -> tuple[bool, str]:
+    """Gọi Claude (Anthropic). Trả (True, nội dung) hoặc (False, lý do lỗi bằng tiếng Việt).
+
+    quick=True dùng cho văn bản ngắn (thông báo): suy luận mức thấp nên trả lời nhanh hơn nhiều."""
     if not ANTHROPIC_AVAILABLE:
         return False, "Thiếu thư viện. Chạy: pip install anthropic"
     client = claude_client()
     if client is None:
         return False, "Chưa cấu hình ANTHROPIC_API_KEY."
     # Không gửi `thinking`: các mô hình Claude mới tự suy luận; độ sâu điều khiển bằng effort.
-    kwargs = dict(model=CLAUDE_MODEL, max_tokens=16000, output_config={"effort": CLAUDE_EFFORT},
+    kwargs = dict(model=CLAUDE_MODEL, max_tokens=4000 if quick else 16000,
+                  output_config={"effort": "low" if quick else CLAUDE_EFFORT},
                   messages=[{"role": "user", "content": prompt}])
     try:
         if CLAUDE_MODEL.startswith(("claude-opus-5", "claude-sonnet-5-5", "claude-fable")):
@@ -1890,12 +1893,13 @@ def _ask_claude(prompt: str) -> tuple[bool, str]:
     return (True, text) if text else (False, "AI trả về nội dung rỗng.")
 
 
-def ask_ai_checked(prompt: str) -> tuple[bool, str]:
+def ask_ai_checked(prompt: str, quick: bool = False) -> tuple[bool, str]:
     """Hỏi AI. Trả (True, nội dung) nếu thành công, (False, lý do lỗi) nếu không — để chỗ nào cần gửi
     ra ngoài (Telegram, GTalk) không nhầm câu báo lỗi với nội dung AI viết.
 
-    Dùng AI nào có khóa: Claude được ưu tiên (đổi bằng AI_PROVIDER). Nếu AI ưu tiên lỗi thì tự thử AI còn lại."""
-    available = {"claude": (ANTHROPIC_API_KEY, _ask_claude, "Claude"),
+    Dùng AI nào có khóa: Claude được ưu tiên (đổi bằng AI_PROVIDER). Nếu AI ưu tiên lỗi thì tự thử AI còn lại.
+    quick=True: văn bản ngắn như thông báo, ưu tiên tốc độ."""
+    available = {"claude": (ANTHROPIC_API_KEY, lambda q: _ask_claude(q, quick), "Claude"),
                  "gemini": (GEMINI_API_KEY, _ask_gemini, "Gemini")}
     prefer = AI_PROVIDER if AI_PROVIDER in available else "claude"
     order = [prefer] + [k for k in available if k != prefer]
@@ -2270,18 +2274,42 @@ SỐ LIỆU THẬT (chỉ dùng đúng những số này):
 {top_txt}
 
 YÊU CẦU — VIẾT NGẮN GỌN:
-- Tiếng Việt, TỐI ĐA 350 ký tự, tối đa 5 dòng ngắn, VĂN BẢN THUẦN: không markdown, không dấu * hay #.
+- Tiếng Việt, TỐI ĐA 400 ký tự, VĂN BẢN THUẦN: không markdown, không dấu * hay #.
 - Tối đa 4 emoji (tính cả 3 huy chương). Không rào đón, không câu sáo rỗng, không lặp ý.
 - Gọi thời gian đúng như ghi ở "Thời gian xếp hạng" (ví dụ "ngày 21/10/2026", "tuần 20/10–26/10/2026",
   "tháng 10/2026"). TUYỆT ĐỐI không dùng từ "kỳ"; khi nói về lần sau thì dùng "{tiep_theo}".
-- Đúng 4 ý, mỗi ý một dòng:
-  1) Tiêu đề ngắn kèm thời gian xếp hạng.
-  2) Top 3: tên và %GTC, viết gọn trên một dòng (ví dụ "🥇 Tên A 92,1% · 🥈 Tên B 90,5% · 🥉 Tên C 89,0%").
-  3) "{n_dat}/{n_total} bạn đạt mục tiêu %GTC ≥ 80%" và một lời động viên ngắn.
-  4) Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đính kèm.
+- Bố cục đúng như mẫu dưới, MỖI NGƯỜI TOP 3 MỘT DÒNG RIÊNG, có MỘT DÒNG TRỐNG giữa các phần:
+Tiêu đề ngắn kèm thời gian xếp hạng
+
+🥇 Tên A — 92,1%
+🥈 Tên B — 90,5%
+🥉 Tên C — 89,0%
+
+"{n_dat}/{n_total} bạn đạt mục tiêu %GTC ≥ 80%" và một lời động viên ngắn.
+Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đính kèm.
 - TUYỆT ĐỐI không nêu tên hay số liệu của người xếp thấp, không chê trách ai cụ thể.
 - Giữ nguyên cách viết tên như trong số liệu. Không bịa thêm số liệu hay chính sách thưởng phạt.
 - Chỉ trả về nội dung thông báo, không giải thích thêm."""
+
+
+_MEDALS = ("🥇", "🥈", "🥉")
+
+
+def format_rank_notice(text: str) -> str:
+    """Đảm bảo thông báo xếp hạng dễ đọc dù AI viết dồn: mỗi huy chương một dòng,
+    một dòng trống trước và sau khối top 3."""
+    for m in _MEDALS:
+        text = re.sub(rf"\s*[·•|,;-]?\s*{m}", f"\n{m}", text)
+    lines = [ln.strip() for ln in text.strip().splitlines()]
+    out: list[str] = []
+    for i, ln in enumerate(lines):
+        medal = ln.startswith(_MEDALS)
+        prev = out[-1] if out else ""
+        if ln and out and prev and (medal != prev.startswith(_MEDALS)):
+            out.append("")                      # tách khối top 3 với phần trước/sau
+        if ln or (out and out[-1]):
+            out.append(ln)
+    return "\n".join(out).strip()
 
 
 # ── Cảnh báo nhân sự ────────────────────────────────────────────────────
@@ -4091,7 +4119,7 @@ if PAGE == "canh_bao_ns":
                             ok_ai, ai_text = ask_ai_checked(hr_notice_prompt(
                                 tg_mo_ta, f"{hr_ref:%d/%m/%Y}",
                                 "toàn bộ các bưu cục" if bc_hr == "Tất cả" else f"bưu cục {bc_hr}",
-                                hr_nguong, cao_txt, nhom_txt, len(hr), n_cao))
+                                hr_nguong, cao_txt, nhom_txt, len(hr), n_cao), quick=True)
                         if ok_ai:
                             st.session_state["hr_msg"] = clean_tele_text(ai_text)
                             st.session_state["hr_msg_ctx"] = hr_ctx
@@ -4411,9 +4439,9 @@ if PAGE == "nang_suat":
                         tg_mo_ta, tg_tiep = describe_period(a_ns, b_ns)
                         ok_ai, ai_text = ask_ai_checked(rank_notice_prompt(
                             tone, tg_mo_ta, tg_tiep, "toàn bộ các bưu cục" if bc_ns == "Tất cả" else f"bưu cục {bc_ns}",
-                            top_txt, len(rank), n_dat_rank))
+                            top_txt, len(rank), n_dat_rank), quick=True)
                     if ok_ai:
-                        st.session_state["rank_msg"] = clean_tele_text(ai_text)
+                        st.session_state["rank_msg"] = format_rank_notice(clean_tele_text(ai_text))
                         st.session_state["rank_msg_ctx"] = ctx_sig
                     else:
                         st.error(ai_text)
