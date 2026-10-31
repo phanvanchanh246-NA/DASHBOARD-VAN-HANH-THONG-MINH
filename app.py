@@ -164,6 +164,13 @@ def _kiem_tra_nguon() -> list[str]:
     return loi
 
 
+SALARY_PARTS = {
+    "LHH LTC": "Lương hoa hồng lấy thành công",
+    "LHH GTC": "Lương hoa hồng giao thành công",
+    "LHH GTBTT": "Lương hoa hồng giao thất bại thu tiền",
+}
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 1. GIAO DIỆN — CSS TÙY CHỈNH
 # ═══════════════════════════════════════════════════════════════════════
