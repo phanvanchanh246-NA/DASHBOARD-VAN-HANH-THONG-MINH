@@ -143,6 +143,9 @@ SHEET_LINKS: dict[str, str] = {
     # Năng suất & Lương
     "ns_luong": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=2000227799",
     "ns_gtc": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=1695228663",
+    # Lương theo ngày từng nhân viên: Nhân viên | Bưu cục | Thâm niên | Thời gian | Số đơn gán Giao/Lấy |
+    # Đơn giao/lấy tính lương | Số ngày đi làm | Lương HH/ ngày | Tổng lương | Lương đảm bảo
+    "luong": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=1747603664",
     # Năng suất tháng trước (tab "Năng Suất Tháng 07") — dùng cho tab Thi đua
     "ns_thang_truoc": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=1826894473",
 }
@@ -721,13 +724,15 @@ DATE_KEYS = [["ngay"], ["thoi gian"], ["date"]]
 # app sẽ lấy ngày vào làm (2018, 2020, 2022...) làm mốc thời gian và mọi so sánh
 # theo tháng đều sai.
 DATE_EXCLUDE = ["vao lam", "sinh", "nghi viec", "thu viec", "ky hop dong",
-                "bat dau", "ket thuc", "cap nhat", "tao"]
+                "bat dau", "ket thuc", "cap nhat", "tao",
+                # sheet Lương: "Giao TB/ngày", "Số ngày đi làm", "Lương HH/ ngày" không phải cột ngày
+                "tb ngay", "di lam", "luong"]
 # Sheet doanh thu dùng cột "Vùng" (giá trị TTB) thay vì "Bưu cục" — đã kiểm chứng
 # trực tiếp trong sheet. Thiếu từ khóa này thì mọi dòng bị gán "Chưa phân loại"
 # và lọc theo bưu cục sẽ luôn trả về 0.
 BC_KEYS = [["buu cuc"], ["buu"], ["khu vuc"], ["vung"], ["tram"], ["station"], ["cum"]]
 VOL_KEYS = [["san luong"], ["volume"], ["tong don"], ["so don"], ["don"]]
-TEXT_HINTS = ("loai hang", "ca", "nhan vien", "trang thai", "ten", "ma", "tuyen", "cap quan ly")
+TEXT_HINTS = ("loai hang", "ca", "nhan vien", "trang thai", "ten", "ma", "tuyen", "cap quan ly", "tham nien")
 
 
 def parse_dates(raw: pd.Series) -> pd.Series:
@@ -846,7 +851,9 @@ def _fetch_sheet(key: str) -> pd.DataFrame:
     dcol = pick_col(df, DATE_KEYS, exclude=DATE_EXCLUDE)
     bcol = pick_col(df, BC_KEYS)
     df["Ngày"] = parse_dates(df[dcol]) if dcol else pd.NaT
-    df["Bưu Cục"] = df[bcol].astype(str).str.strip() if bcol else "Chưa phân loại"
+    # Sheet Lương ghi kèm mã bưu cục ('21419000 - (QBI) Đồng Thuận'): bỏ mã để khớp tên ở các sheet khác.
+    df["Bưu Cục"] = (df[bcol].astype(str).str.strip().str.replace(r"^\d+\s*-\s*", "", regex=True)
+                     if bcol else "Chưa phân loại")
 
     keep_text = {pick_col(df, [[h]]) for h in TEXT_HINTS}
     for col in df.columns:
@@ -2302,6 +2309,82 @@ Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đí
 - Chỉ trả về nội dung thông báo, không giải thích thêm."""
 
 
+def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
+    """Tab Lương: số liệu từ sheet Lương (mỗi dòng là lương 1 nhân viên trong 1 ngày)."""
+    section(f"Lương nhân viên {a:%d/%m/%Y} – {b:%d/%m/%Y}")
+    c = {k: pick_col(LN, keys) for k, keys in {
+        "nv": [["nhan vien"]], "tn": [["tham nien"]], "tong": [["tong luong"]],
+        "ngay": [["so ngay di lam"]], "gan_giao": [["so don gan giao"]], "gan_lay": [["so don gan lay"]],
+        "giao": [["don giao tinh luong"]], "lay": [["don lay tinh luong"]], "db": [["luong dam bao"]],
+    }.items()}
+    if LN.empty or not (c["nv"] and c["tong"]):
+        note("Chưa có dữ liệu lương trong khoảng ngày đã chọn (sheet Lương).")
+        return
+
+    d = LN.copy()
+    d["MaNV"] = d[c["nv"]].map(staff_id)
+    num = lambda k: d[c[k]] if c[k] else 0      # noqa: E731
+    d["_tong"], d["_ngay"] = num("tong"), (num("ngay") if c["ngay"] else 1)
+    d["_gan"], d["_giao"], d["_lay"], d["_db"] = num("gan_giao"), num("giao"), num("lay"), num("db")
+
+    tong, ngay_cong = float(d["_tong"].sum()), float(d["_ngay"].sum())
+    k1, k2, k3, k4 = st.columns(4)
+    for col, (t, v, sub) in zip((k1, k2, k3, k4), (
+            ("Tổng lương", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu"),
+            ("Số nhân viên", f"{d['MaNV'].nunique():,}", f"{ngay_cong:,.0f} ngày công"),
+            ("Lương TB / ngày công", fmt_money(tong / ngay_cong if ngay_cong else 0), "Tổng lương ÷ ngày công"),
+            ("Đơn giao tính lương", f"{d['_giao'].sum():,.0f}", f"đơn lấy tính lương {d['_lay'].sum():,.0f}"))):
+        with col:
+            st.markdown(metric_card(t, v, None, sub=sub, accent=(t == "Tổng lương")), unsafe_allow_html=True)
+
+    g_day = d.groupby("Ngày", as_index=False)["_tong"].sum()
+    by_day = px.bar(g_day, x="Ngày", y="_tong", title="Tổng lương theo ngày")
+    by_day.update_traces(marker_color=PRIMARY, text=point_labels(g_day["_tong"], money_label),
+                         textposition="outside", cliponaxis=False)
+    by_day.update_yaxes(title_text="VNĐ")
+    by_day.update_xaxes(title_text="", tickformat="%d/%m")
+    by_day.update_layout(height=340, showlegend=False, margin=dict(t=80, b=60))
+    if all_bc:
+        cA, cB = st.columns([1.6, 1])
+        with cA:
+            plot_chart(by_day, width="stretch")
+        with cB:
+            g_bc = d.groupby("Bưu Cục", as_index=False)["_tong"].sum().sort_values("_tong")
+            fig_bc = px.bar(g_bc, x="_tong", y="Bưu Cục", orientation="h", title="Tổng lương theo bưu cục")
+            fig_bc.update_traces(marker_color=SUCCESS, text=[money_label(v) for v in g_bc["_tong"]],
+                                 textposition="outside", cliponaxis=False)
+            fig_bc.update_xaxes(title_text="VNĐ")
+            fig_bc.update_yaxes(title_text="")
+            fig_bc.update_layout(height=340, showlegend=False, margin=dict(t=80, b=60, r=80))
+            plot_chart(fig_bc, width="stretch")
+    else:
+        plot_chart(by_day, width="stretch")
+
+    section("Bảng lương theo nhân viên")
+    agg_cols = {"Nhân viên": (c["nv"], "last"), "Bưu cục": ("Bưu Cục", "last"),
+                "Ngày công": ("_ngay", "sum"), "Đơn gán giao": ("_gan", "sum"),
+                "Đơn giao tính lương": ("_giao", "sum"), "Đơn lấy tính lương": ("_lay", "sum"),
+                "Tổng lương": ("_tong", "sum"), "Lương đảm bảo": ("_db", "sum")}
+    if c["tn"]:
+        agg_cols["Thâm niên"] = (c["tn"], "last")
+    t = d.sort_values("Ngày").groupby("MaNV").agg(**agg_cols).reset_index(drop=True)
+    t["Nhân viên"] = t["Nhân viên"].map(staff_label)
+    t["Giao TB/ngày"] = np.where(t["Ngày công"] > 0, t["Đơn giao tính lương"] / t["Ngày công"], 0)
+    t["Lương TB/ngày"] = np.where(t["Ngày công"] > 0, t["Tổng lương"] / t["Ngày công"], 0)
+    t = t.sort_values("Tổng lương", ascending=False).reset_index(drop=True)
+    t.insert(0, "Hạng", range(1, len(t) + 1))
+    order = ["Hạng", "Nhân viên", "Bưu cục"] + (["Thâm niên"] if c["tn"] else []) + [
+        "Ngày công", "Đơn gán giao", "Đơn giao tính lương", "Giao TB/ngày", "Đơn lấy tính lương",
+        "Tổng lương", "Lương TB/ngày", "Lương đảm bảo"]
+    t = t[order].rename(columns={k: f"{k} (đ)" for k in ("Tổng lương", "Lương TB/ngày", "Lương đảm bảo")})
+    for k in ("Tổng lương (đ)", "Lương TB/ngày (đ)", "Lương đảm bảo (đ)"):
+        t[k] = t[k].round(0)
+    so = st.column_config.NumberColumn(format="localized")
+    st.dataframe(t, hide_index=True, width="stretch", column_config={
+        k: so for k in t.columns if k not in ("Hạng", "Nhân viên", "Bưu cục", "Thâm niên", "Giao TB/ngày")}
+        | {"Giao TB/ngày": st.column_config.NumberColumn(format="%.1f")})
+
+
 _MEDALS = ("🥇", "🥈", "🥉")
 
 
@@ -3108,7 +3191,8 @@ def _build_frames() -> dict:
     DF_LUONG = safe_load("ns_luong")
     DF_NSGTC = safe_load("ns_gtc")
     DF_NS_PREV = safe_load("ns_thang_truoc")   # năng suất tháng trước, cho tab Thi đua
-    return {"M_GTC": M_GTC, "M_GAN": M_GAN, "M_GAN_TTS": M_GAN_TTS, "M_LEAD": M_LEAD, "M_CA": M_CA, "M_TRA": M_TRA, "M_GTB": M_GTB, "M_TTS": M_TTS, "M_ODR": M_ODR, "M_OPR": M_OPR, "M_DT": M_DT, "DF_KPI": DF_KPI, "DF_KHM": DF_KHM, "DF_PHEU": DF_PHEU, "DF_LUONG": DF_LUONG, "DF_NSGTC": DF_NSGTC, "DF_NS_PREV": DF_NS_PREV}
+    DF_LUONG_NGAY = safe_load("luong")           # lương theo ngày từng nhân viên, cho tab Lương
+    return {"M_GTC": M_GTC, "M_GAN": M_GAN, "M_GAN_TTS": M_GAN_TTS, "M_LEAD": M_LEAD, "M_CA": M_CA, "M_TRA": M_TRA, "M_GTB": M_GTB, "M_TTS": M_TTS, "M_ODR": M_ODR, "M_OPR": M_OPR, "M_DT": M_DT, "DF_KPI": DF_KPI, "DF_KHM": DF_KHM, "DF_PHEU": DF_PHEU, "DF_LUONG": DF_LUONG, "DF_NSGTC": DF_NSGTC, "DF_NS_PREV": DF_NS_PREV, "DF_LUONG_NGAY": DF_LUONG_NGAY}
 
 
 with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
@@ -3138,12 +3222,14 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     DF_LUONG = _fr["DF_LUONG"]
     DF_NSGTC = _fr["DF_NSGTC"]
     DF_NS_PREV = _fr["DF_NS_PREV"]
+    DF_LUONG_NGAY = _fr["DF_LUONG_NGAY"]
 
 
 def only_bc(df: pd.DataFrame, bc: str) -> pd.DataFrame:
     """Giữ đúng các dòng của một bưu cục. Bảng không có cột bưu cục (hoặc là số liệu chung toàn vùng)
     thì trả bảng rỗng: thà thiếu còn hơn lộ dữ liệu bưu cục khác."""
-    col = next((c for c in df.columns if norm(c) == "buu cuc"), None)
+    # Ưu tiên cột "Bưu Cục" đã chuẩn hóa (bỏ mã bưu cục); cột gốc của sheet có thể còn kèm mã.
+    col = "Bưu Cục" if "Bưu Cục" in df.columns else next((c for c in df.columns if norm(c) == "buu cuc"), None)
     if col is None:
         return df.iloc[0:0]
     return df[df[col].map(norm) == norm(bc)]
@@ -3153,15 +3239,16 @@ if USER_BC:
     M_GTC, M_GAN, M_GAN_TTS, M_LEAD, M_CA, M_TRA, M_GTB, M_TTS, M_ODR, M_OPR, M_DT = (
         only_bc(f, USER_BC) for f in (M_GTC, M_GAN, M_GAN_TTS, M_LEAD, M_CA, M_TRA, M_GTB,
                                       M_TTS, M_ODR, M_OPR, M_DT))
-    DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV = (
-        only_bc(f, USER_BC) for f in (DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV))
+    DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV, DF_LUONG_NGAY = (
+        only_bc(f, USER_BC) for f in (DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV,
+                                      DF_LUONG_NGAY))
 
 # Lưu vào session_state để tab AI cố vấn đọc được
 st.session_state["dataframes"] = {
     "GTC tổng": M_GTC, "Tỷ lệ trả hàng": M_TRA, "GTB thu tiền": M_GTB,
     "GTC TikTok": M_TTS, "ODR TikTok": M_ODR, "OPR TikTok": M_OPR, "Sản lượng theo ca": M_CA,
     "Doanh thu": M_DT, "Khách hàng mới": DF_KHM, "Phễu khách hàng": DF_PHEU,
-    "Lương nhân viên": DF_LUONG, "Năng suất GTC": DF_NSGTC, "KPI": DF_KPI,
+    "Lương nhân viên": DF_LUONG, "Lương theo ngày": DF_LUONG_NGAY, "Năng suất GTC": DF_NSGTC, "KPI": DF_KPI,
 }
 
 ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC) if not USER_BC else [USER_BC]
@@ -3209,6 +3296,7 @@ SHEET_LABELS = {
     "opr_tts": "OPR TikTok",
     "kpi": "Mốc KPI", "doanh_thu": "Doanh thu", "kh_moi": "Khách hàng mới",
     "pheu_kh": "Phễu khách hàng", "ns_luong": "Lương nhân viên", "ns_gtc": "Năng suất GTC",
+    "luong": "Lương theo ngày",
     "ns_thang_truoc": "Năng suất tháng trước",
 }
 
@@ -4181,6 +4269,7 @@ if PAGE == "nang_suat":
     with st.container():
         nv_col_luong = pick_col(DF_LUONG, [["nhan vien"]])
         nv_col_gtc = pick_col(DF_NSGTC, [["nhan vien"]])
+        nv_col_ln = pick_col(DF_LUONG_NGAY, [["nhan vien"]])
 
         n1, n2, n3 = st.columns([1.1, 1.3, 1.3])
         with n1:
@@ -4188,7 +4277,7 @@ if PAGE == "nang_suat":
 
         # Gom danh sách nhân viên từ CẢ HAI sheet, gộp theo mã để không bị trùng dòng.
         staff_map: dict[str, str] = {}
-        for _df, _col in ((DF_LUONG, nv_col_luong), (DF_NSGTC, nv_col_gtc)):
+        for _df, _col in ((DF_LUONG, nv_col_luong), (DF_NSGTC, nv_col_gtc), (DF_LUONG_NGAY, nv_col_ln)):
             if _col and not _df.empty:
                 _scoped = _df if bc_ns == "Tất cả" else _df[_df["Bưu Cục"].map(norm) == norm(bc_ns)]
                 for raw in _scoped[_col].dropna().astype(str).str.strip().unique():
@@ -4232,7 +4321,6 @@ if PAGE == "nang_suat":
         # bảng so sánh bên dưới cũng đổi kỳ theo, không còn cố định theo REF_DATE.
         anchor = b_ns if b_ns is not None else REF_DATE
         cur_a, cur_b, cur_name, prev_a, prev_b, prev_name = pay_period(anchor)
-
 
         col_price = pick_col(L, [["don gia"]])
         col_gan = pick_col(G, [["gan giao"], ["so don gan"], ["gan"]])
@@ -4293,7 +4381,7 @@ if PAGE == "nang_suat":
                 return 0.0
             return float(d[cols].apply(pd.to_numeric, errors="coerce").sum().sum())
 
-        _sub_tab4 = st.tabs(['Kỳ lương', '%GTC theo kỳ', 'Xếp hạng & gửi thông báo', 'Nhận định AI'])
+        _sub_tab4 = st.tabs(['Kỳ lương', 'Lương', '%GTC theo kỳ', 'Xếp hạng & gửi thông báo', 'Nhận định AI'])
         with _sub_tab4[0]:
             section("1. So sánh kỳ lương hiện tại với kỳ trước")
             def ky_row(label, fn, fmt, d_cur, d_prev, suffix, decimals):
@@ -4357,6 +4445,10 @@ if PAGE == "nang_suat":
                     note("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
 
         with _sub_tab4[1]:
+            luong_tab(cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), a_ns, b_ns), a_ns, b_ns,
+                      bc_ns == "Tất cả")
+
+        with _sub_tab4[2]:
             section("3. %GTC theo Ngày, Tuần, Tháng")
             if col_gan and col_gtc and not G.empty:
                 gm = pd.DataFrame({
@@ -4401,7 +4493,7 @@ if PAGE == "nang_suat":
             else:
                 note("Chưa đủ dữ liệu gán và giao để vẽ biểu đồ.")
 
-        with _sub_tab4[2]:
+        with _sub_tab4[3]:
             if col_gan and col_gtc and nv_col_gtc and not G_range.empty:
                 section("5. Xếp hạng nhân viên theo %GTC")
                 rank = G_range.groupby(nv_col_gtc, as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
@@ -4481,7 +4573,7 @@ if PAGE == "nang_suat":
                 notice_send_panel("rank", ctx_sig, "AI VIẾT THÔNG BÁO XẾP HẠNG", bc_ns, png,
                                   f"xep_hang_gtc_{b_ns:%Y%m%d}.png")
 
-        with _sub_tab4[3]:
+        with _sub_tab4[4]:
             ai_advisor(
                 "ns", "Năng suất & Lương",
                 f"""Bưu cục: {bc_ns}. Nhân viên: {nv_ns}.
