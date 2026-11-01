@@ -3061,6 +3061,27 @@ for _uid, (_ten, _bc) in NVXL_STAFF.items():
     ACCOUNTS[_uid] = {"role": ROLE_NVXL, "name": _ten, "bc": _bc}
 
 
+def _app_version() -> str:
+    """Mã commit đang chạy (7 ký tự) để biết máy chủ đã cập nhật bản mới chưa.
+    Render tự đặt biến RENDER_GIT_COMMIT; chạy ở máy khác thì đọc từ thư mục .git."""
+    sha = os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    if not sha:
+        try:
+            git = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".git")
+            with open(os.path.join(git, "HEAD")) as fh:
+                head = fh.read().strip()
+            if head.startswith("ref: "):
+                with open(os.path.join(git, head[5:])) as fh:
+                    head = fh.read().strip()
+            sha = head
+        except OSError:
+            sha = ""
+    return sha[:7]
+
+
+APP_VERSION = _app_version()
+
+
 @lru_cache(maxsize=1)
 def logo_uri() -> str:
     """Logo công ty dạng data-URI (nhúng thẳng vào HTML). Trả về '' nếu chưa có file."""
@@ -3387,6 +3408,8 @@ with st.sidebar:
         st.rerun()
     with st.expander("📱 Cài lên điện thoại"):
         st.markdown(APP_INSTALL_GUIDE)
+    if APP_VERSION:
+        st.caption(f"Phiên bản: {APP_VERSION}")
     cau_hinh_loi = _kiem_tra_nguon()
     if cau_hinh_loi:
         st.divider()
