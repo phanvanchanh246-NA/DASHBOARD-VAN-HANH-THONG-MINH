@@ -1696,6 +1696,110 @@ def render_podium_image(cards: list, title: str, subtitle: str, footer: str) -> 
 
 
 @img_cache
+def render_improve_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str,
+                         now_label: str, prev_label: str) -> bytes:
+    """Ảnh mức cải thiện %GTC. `rows` gồm cột: Hạng, Nhân viên, Bưu cục, Prev (None nếu chưa có kỳ trước),
+    Now, Cải thiện (điểm phần trăm, None nếu chưa có kỳ trước). Đã sắp theo cải thiện giảm dần."""
+    S = 2
+    W, PAD = 1400 * S, 40 * S
+    HEAD_H, TH_H, ROW_H, FOOT_H = 170 * S, 66 * S, 72 * S, 70 * S
+    H = HEAD_H + 24 * S + TH_H + ROW_H * len(rows) + FOOT_H
+    img = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    _draw_header(img, d, W, title, subtitle, S, HEAD_H)
+
+    c_primary, c_text, c_muted, c_line = _rgb(PRIMARY), _rgb(TEXT), _rgb(MUTED), _rgb(LINE)
+    c_ok, c_bad = _rgb(SUCCESS), _rgb(DANGER)
+    f_th, f_td, f_tdb = _font(True, 21 * S), _font(False, 25 * S), _font(True, 25 * S)
+    f_small = _font(False, 19 * S)
+    x_rank, x_name = PAD + 30 * S, PAD + 80 * S
+    r_prev, r_now = 715 * S, 865 * S
+    bar_c, bar_half = 1075 * S, 140 * S
+    r_val = W - PAD - 14 * S
+    vals = [float(v) for v in rows["Cải thiện"].dropna()]
+    scale = max([abs(v) for v in vals] + [1.0])
+
+    y = HEAD_H + 24 * S
+    d.rectangle([PAD, y, W - PAD, y + TH_H], fill=(232, 243, 250))
+    mid = y + TH_H // 2
+    d.text((x_rank, mid), "#", font=f_th, fill=c_primary, anchor="mm")
+    d.text((x_name, mid), "NHÂN VIÊN · BƯU CỤC", font=f_th, fill=c_primary, anchor="lm")
+    d.text((r_prev, mid), prev_label.upper(), font=f_th, fill=c_primary, anchor="rm")
+    d.text((r_now, mid), now_label.upper(), font=f_th, fill=c_primary, anchor="rm")
+    d.text((bar_c - 12 * S, mid), "GIẢM", font=f_th, fill=c_bad, anchor="rm")
+    d.text((bar_c + 12 * S, mid), "TĂNG", font=f_th, fill=c_ok, anchor="lm")
+    d.text((r_val, mid), "CẢI THIỆN", font=f_th, fill=c_primary, anchor="rm")
+    y += TH_H
+
+    for i, r in enumerate(rows.itertuples(index=False)):
+        rank_no, name, bc, prev, now, imp = r[0], r[1], r[2], r[3], r[4], r[5]
+        top = rank_no in MEDAL_RGB and imp is not None and pd.notna(imp) and imp > 0
+        d.rectangle([PAD, y, W - PAD, y + ROW_H],
+                    fill=MEDAL_BG[rank_no] if top else ((247, 250, 252) if i % 2 else (255, 255, 255)))
+        d.line([PAD, y + ROW_H, W - PAD, y + ROW_H], fill=c_line, width=S)
+        cy = y + ROW_H // 2
+        if top:
+            rad = 20 * S
+            d.ellipse([x_rank - rad, cy - rad, x_rank + rad, cy + rad], fill=MEDAL_RGB[rank_no])
+            d.text((x_rank, cy), str(rank_no), font=f_tdb, fill=(255, 255, 255), anchor="mm")
+        else:
+            d.text((x_rank, cy), str(rank_no), font=f_td, fill=c_muted, anchor="mm")
+        max_name = r_prev - x_name - 170 * S
+        d.text((x_name, cy - 14 * S), _fit_text(d, str(name), f_tdb if top else f_td, max_name),
+               font=f_tdb if top else f_td, fill=c_text, anchor="lm")
+        d.text((x_name, cy + 18 * S), _fit_text(d, str(bc), f_small, max_name), font=f_small,
+               fill=c_muted, anchor="lm")
+        has_prev = prev is not None and pd.notna(prev)
+        d.text((r_prev, cy), f"{float(prev):.2f}%" if has_prev else "—", font=f_td, fill=c_muted, anchor="rm")
+        d.text((r_now, cy), f"{float(now):.2f}%", font=f_tdb, fill=c_text, anchor="rm")
+        d.line([bar_c, y + 10 * S, bar_c, y + ROW_H - 10 * S], fill=(206, 212, 218), width=2 * S)
+        if imp is not None and pd.notna(imp):
+            v = float(imp)
+            w = max(4 * S, round(bar_half * min(abs(v) / scale, 1.0)))
+            bh = 22 * S
+            box = ([bar_c, cy - bh // 2, bar_c + w, cy + bh // 2] if v >= 0
+                   else [bar_c - w, cy - bh // 2, bar_c, cy + bh // 2])
+            d.rounded_rectangle(box, radius=6 * S, fill=c_ok if v >= 0 else c_bad)
+            d.text((r_val, cy), f"{v:+.2f} pp", font=f_tdb, fill=c_ok if v >= 0 else c_bad, anchor="rm")
+        else:
+            d.text((r_val, cy), "Mới", font=f_td, fill=c_muted, anchor="rm")
+        y += ROW_H
+
+    d.text((PAD, y + FOOT_H // 2), _fit_text(d, footer, f_small, W - 2 * PAD), font=f_small,
+           fill=c_muted, anchor="lm")
+    d.rectangle([PAD, y + FOOT_H - 4 * S, W - PAD, y + FOOT_H - 1 * S], fill=c_primary)
+    return _png_bytes(img)
+
+
+def improve_notice_prompt(ky: str, ky_truoc: str, pham_vi: str, n_total: int, n_up: int, n_down: int,
+                          avg: float, tang_txt: str, giam_txt: str, moi_txt: str) -> str:
+    return f"""Bạn là Quản lý khu vực của GHN, viết ĐÁNH GIÁ, NHẬN XÉT về mức cải thiện tỷ lệ giao thành công
+(%GTC) của nhân viên giao hàng để gửi vào nhóm chat của bưu cục.
+
+SỐ LIỆU THẬT (chỉ dùng đúng những số này):
+- Kỳ đánh giá: {ky}, so với {ky_truoc}. Phạm vi: {pham_vi}.
+- {n_total} nhân viên có số liệu cả hai kỳ: {n_up} người tăng, {n_down} người giảm.
+  Mức thay đổi trung bình: {avg:+.2f} điểm phần trăm.
+- Cải thiện nhiều nhất:
+{tang_txt or "  (không có ai tăng)"}
+- Giảm nhiều nhất:
+{giam_txt or "  (không có ai giảm)"}
+{("- Nhân viên mới, chưa có số kỳ trước (không xét cải thiện): " + moi_txt) if moi_txt else ""}
+
+YÊU CẦU:
+- Tiếng Việt, VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 900 ký tự, tối đa 4 emoji.
+- Bố cục, giữa các phần có MỘT DÒNG TRỐNG:
+  1) Tiêu đề ngắn kèm kỳ đánh giá.
+  2) Nhận xét chung 1–2 câu: bao nhiêu người tăng/giảm, xu hướng chung.
+  3) Tuyên dương: mỗi người cải thiện tốt một dòng "▲ Tên: +x,xx pp (a% → b%)".
+  4) Cần cố gắng: mỗi người giảm một dòng "▼ Tên: -x,xx pp (a% → b%)" kèm MỘT gợi ý ngắn, cụ thể
+     (ví dụ gọi khách trước khi giao, sắp tuyến hợp lý, báo NVXL đơn khó). Giọng xây dựng, không chê bai.
+  5) Một câu chốt động viên cả đội cho kỳ tới.
+- Giữ nguyên cách viết tên như trong số liệu (bỏ mã số). Không bịa thêm số liệu hay thưởng phạt.
+- Chỉ trả về nội dung, không giải thích thêm."""
+
+
+@img_cache
 def render_td_table_image(rows: pd.DataFrame, title: str, subtitle: str, footer: str,
                           now_label: str, prev_label: str, prize_header: str = "THƯỞNG") -> bytes:
     """Ảnh bảng xếp hạng thi đua chi tiết.
@@ -4932,6 +5036,7 @@ if PAGE == "thi_dua":
                 col_now = f"%GTC {ten_n}"
                 col_prev = f"%GTC {ten_n1}"
                 bxh = bxh.rename(columns={"%GTC": col_now})
+                bxh["Có Kỳ Trước"] = bxh[col_prev].notna()
                 bxh[col_prev] = bxh[col_prev].fillna(0.0)
                 bxh["Tỷ Lệ Cải Thiện"] = bxh[col_now] - bxh[col_prev]
 
@@ -5138,6 +5243,74 @@ if PAGE == "thi_dua":
                     fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
                                          margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
                     plot_chart(fig_td, width="stretch")
+
+                    # ── Ảnh mức cải thiện ──────────────────────────────────────────
+                    section("Ảnh mức cải thiện & AI đánh giá, nhận xét")
+                    ci = bxh.assign(_imp=np.where(bxh["Có Kỳ Trước"], bxh["Tỷ Lệ Cải Thiện"], np.nan))
+                    ci = ci.sort_values("_imp", ascending=False, na_position="last").reset_index(drop=True)
+                    img_ci = pd.DataFrame({
+                        "Hạng": np.arange(1, len(ci) + 1),
+                        "Nhân viên": ci["Nhân Viên"].map(staff_label),
+                        "Bưu cục": ci["Bưu Cục"].astype(str),
+                        "Prev": ci[col_prev].astype(object).where(ci["Có Kỳ Trước"], None),
+                        "Now": ci[col_now],
+                        "Cải thiện": ci["_imp"].astype(object).where(ci["_imp"].notna(), None),
+                    })
+                    ci_up = int((ci["_imp"] > 0).sum())
+                    ci_down = int((ci["_imp"] < 0).sum())
+
+                    def improve_png() -> bytes:
+                        return render_improve_image(
+                            img_ci, f"MỨC CẢI THIỆN %GTC — {ten_n.upper()}",
+                            f"{pham_vi}  ·  Kỳ này: {ten_n_th}  ·  Kỳ trước: {ten_n1_th}",
+                            f"{ci_up} người tăng · {ci_down} người giảm  ·  pp = điểm phần trăm  ·  "
+                            f"Dữ liệu đến {kho['Ngày'].max():%d/%m/%Y}",
+                            now_label="Kỳ này", prev_label="Kỳ trước")
+
+                    ci1, ci2 = st.columns(2, vertical_alignment="bottom")
+                    with ci1:
+                        st.download_button("TẢI ẢNH MỨC CẢI THIỆN", improve_png,
+                                           f"muc_cai_thien_{ky_slug}.png", "image/png",
+                                           key="dl_ci_img", width="stretch", on_click="ignore")
+                    with ci2:
+                        show_ci = st.session_state.get("show_ci_img", False)
+                        st.button("ẨN ẢNH XEM TRƯỚC" if show_ci else "XEM TRƯỚC ẢNH MỨC CẢI THIỆN",
+                                  key="btn_ci_prev", width="stretch",
+                                  on_click=lambda: st.session_state.update(
+                                      show_ci_img=not st.session_state.get("show_ci_img", False)))
+                    if st.session_state.get("show_ci_img", False):
+                        with st.spinner("Đang vẽ ảnh..."):
+                            st.image(improve_png(), width="stretch")
+
+                    # ── AI viết đánh giá, nhận xét ─────────────────────────────────
+                    st.session_state.setdefault("ci_msg", "")
+                    ci_ctx = f"{ky_slug}|{bc_td}|{len(ci)}|{ci_up}|{ci_down}|{ci['_imp'].sum():.4f}"
+                    if st.button("AI VIẾT ĐÁNH GIÁ, NHẬN XÉT", key="btn_ai_ci", width="stretch"):
+                        def ten_ci(x):
+                            return re.sub(r"^\d+\s*·\s*", "", staff_label(x))
+
+                        def dong(r):
+                            return (f"  - {ten_ci(r['Nhân Viên'])} ({r['Bưu Cục']}): {r['_imp']:+.2f} pp "
+                                    f"({r[col_prev]:.2f}% → {r[col_now]:.2f}%)")
+                        co = ci[ci["_imp"].notna()]
+                        tang = co[co["_imp"] > 0].head(5)
+                        giam = co[co["_imp"] < 0].sort_values("_imp").head(5)
+                        moi = ci[ci["_imp"].isna()]
+                        with st.spinner("AI đang viết đánh giá..."):
+                            ok_ai, ai_text = ask_ai_checked(improve_notice_prompt(
+                                ten_n_th, ten_n1_th,
+                                "toàn bộ các bưu cục" if bc_td == "Tất cả" else f"bưu cục {bc_td}",
+                                len(co), ci_up, ci_down, float(co["_imp"].mean()) if len(co) else 0.0,
+                                "\n".join(dong(r) for _, r in tang.iterrows()),
+                                "\n".join(dong(r) for _, r in giam.iterrows()),
+                                ", ".join(ten_ci(x) for x in moi["Nhân Viên"])), quick=True)
+                        if ok_ai:
+                            st.session_state["ci_msg"] = clean_tele_text(ai_text)
+                            st.session_state["ci_msg_ctx"] = ci_ctx
+                        else:
+                            st.error(ai_text)
+                    notice_send_panel("ci", ci_ctx, "AI VIẾT ĐÁNH GIÁ, NHẬN XÉT", bc_td, improve_png,
+                                      f"muc_cai_thien_{ky_slug}.png")
 
                     # ── Thể lệ ─────────────────────────────────────────────────────
                 with _sub_tab7[3]:
