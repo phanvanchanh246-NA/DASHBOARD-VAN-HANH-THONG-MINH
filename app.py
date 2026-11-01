@@ -2512,6 +2512,28 @@ def format_rank_notice(text: str) -> str:
 # ── Cảnh báo nhân sự ────────────────────────────────────────────────────
 HR_DEFAULTS = {"low": 70.0, "streak": 3, "drop": 10.0, "absent": 3, "ratio": 50}
 HR_QUIT_DAYS = 7     # không phát sinh đơn từ 7 ngày trở lên: coi như đã nghỉ việc, không hiển thị
+# Thi đua và Xếp hạng & gửi thông báo: không có đơn gán QUÁ 5 ngày (tính tới ngày mới nhất của sheet
+# năng suất) thì coi như nghỉ việc / không làm, tự loại khỏi bảng xếp hạng.
+RANK_INACTIVE_DAYS = 5
+
+
+def inactive_staff(daily: pd.DataFrame) -> dict[str, str]:
+    """Mã NV -> tên của người không có đơn gán quá RANK_INACTIVE_DAYS ngày (daily lấy từ hr_daily)."""
+    if daily is None or daily.empty:
+        return {}
+    ref = daily["Ngày"].max()
+    last = daily[daily["Gán"] > 0].groupby("MaNV")["Ngày"].max()
+    names = daily.groupby("MaNV")["Nhân viên"].last()
+    off = [ma for ma in names.index
+           if ma not in last.index or (ref - last[ma]).days > RANK_INACTIVE_DAYS]
+    return {ma: names[ma] for ma in off}
+
+
+def inactive_note(removed: list[str]) -> None:
+    if removed:
+        with st.expander(f"Đã tự loại {len(removed)} nhân viên nghỉ việc hoặc không có đơn quá "
+                         f"{RANK_INACTIVE_DAYS} ngày"):
+            st.markdown("\n".join(f"- {esc(n)}" for n in sorted(removed)))
 HR_FLAG_COLORS = {"low": DANGER, "drop": ACCENT, "absent": "#6C757D", "gan": "#00B4D8"}
 
 
@@ -3377,6 +3399,7 @@ st.session_state["dataframes"] = {
 }
 
 ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC) if not USER_BC else [USER_BC]
+NGHI_VIEC = inactive_staff(hr_daily(DF_NSGTC))
 
 def today_vn() -> pd.Timestamp:
     """Ngày hiện tại theo giờ Việt Nam (UTC+7), không phụ thuộc múi giờ máy chủ.
@@ -4624,6 +4647,9 @@ if PAGE == "nang_suat":
             if col_gan and col_gtc and nv_col_gtc and not G_range.empty:
                 section("5. Xếp hạng nhân viên theo %GTC")
                 rank = G_range.groupby(nv_col_gtc, as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
+                _nghi = rank[nv_col_gtc].map(staff_id).isin(NGHI_VIEC)
+                inactive_note(list(rank.loc[_nghi, nv_col_gtc].map(staff_label)))
+                rank = rank[~_nghi]
                 rank["%GTC"] = np.where(rank[col_gan] > 0, rank[col_gtc] / rank[col_gan] * 100, 0.0)
                 rank = rank.sort_values("%GTC", ascending=False).reset_index(drop=True)
                 medals = ["🥇", "🥈", "🥉"]
@@ -4975,6 +5001,10 @@ if PAGE == "thi_dua":
         co_du_lieu_goc = not kho.empty
         if bc_td != "Tất cả" and not kho.empty:
             kho = kho[kho["Bưu Cục"].map(norm) == norm(bc_td)]
+        if not kho.empty:
+            _nghi = kho["MaNV"].isin(NGHI_VIEC)
+            inactive_note([NGHI_VIEC[m] for m in kho.loc[_nghi, "MaNV"].unique()])
+            kho = kho[~_nghi]
         chi_thieu_buu_cuc = co_du_lieu_goc and kho.empty
 
         if chi_thieu_buu_cuc:
