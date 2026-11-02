@@ -2142,9 +2142,6 @@ tuyệt đối không suy đoán hay bịa số. Viết ngắn gọn. Kết thú
         if st.button("GỬI LÊN NHÓM TELEGRAM", key=f"tele_adv_{key}"):
             ok, msg = send_telegram(f"[{tab_label.upper()}]\n\n" + result.replace("*", ""))
             (st.success if ok else st.error)(msg)
-    else:
-        note("Chọn góc nhìn rồi bấm nút phía trên để AI đọc số liệu đang hiển thị "
-             "và đưa ra nhận định kèm đề xuất hành động.")
 
 
 def _tele_enabled() -> bool:
@@ -3742,7 +3739,6 @@ if PAGE == "tong_quan":
                     f"{'CẦN XỬ LÝ' if n_cao_bc else 'THEO DÕI'}</span>"
                     f"<b>{len(bw)}</b> bưu cục có %GTC dưới mốc từ {int(bcw_days)} ngày liên tiếp, "
                     f"<b>{n_cao_bc}</b> bưu cục mức Cao.</div>", unsafe_allow_html=True)
-                st.caption("👆 Bấm vào ô vuông đầu dòng để xem số liệu GTC và hướng dẫn trao đổi 1:1 với NVXL bưu cục đó.")
                 chon_bc = st.dataframe(
                     bw.drop(columns=["_tu_ngay", "_score"]), width="stretch", hide_index=True,
                     on_select="rerun", selection_mode="single-row", key="tbl_bc_warn",
@@ -3912,10 +3908,6 @@ if PAGE == "van_hanh":
         def cs(frame):
             return sl(scope(frame, bc_vh), chart_a, b_vh)
 
-        st.caption(f"Đang xem {a_vh:%d/%m/%Y} – {b_vh:%d/%m/%Y} · Bưu cục: {bc_vh}. "
-                   "Mọi tỷ lệ % tính bằng trung bình có trọng số theo sản lượng."
-                   + (f" Biểu đồ theo ngày hiển thị 7 ngày gần nhất ({chart_a:%d/%m} – {b_vh:%d/%m}) để thấy diễn biến."
-                      if chart_a != a_vh else ""))
 
         t_gtc_vh = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
                               exclude=["tts", "tiktok"], bc=bc_vh)
@@ -4141,9 +4133,6 @@ if PAGE == "kinh_doanh":
                 st.markdown(metric_card("Mục tiêu doanh thu tháng", fmt_money(target_dt), None,
                                         sub="theo sheet KPI" if kpi_dt_sheet > 0 else "mốc mặc định"),
                             unsafe_allow_html=True)
-            if kpi_dt_sheet <= 0:
-                st.caption("Sheet KPI chưa có số doanh thu nên đang dùng mốc mặc định. "
-                           "Điền vào sheet KPI là dashboard tự nhận.")
 
             # Tiến độ tính theo tháng chứa ngày cuối của bộ lọc (khớp ô "Tháng" ở trên).
             m_start = b_kd.replace(day=1)
@@ -4170,8 +4159,6 @@ if PAGE == "kinh_doanh":
             # Lọc 1 ngày / vài ngày thì biểu đồ vẫn vẽ 7 ngày gần nhất để thấy diễn biến.
             kd_chart_a = a_kd if (b_kd - a_kd).days >= 6 else b_kd - timedelta(days=6)
             d_kd_range = sl(dt_scope, kd_chart_a, b_kd)
-            if kd_chart_a != a_kd:
-                st.caption(f"Biểu đồ hiển thị 7 ngày gần nhất ({kd_chart_a:%d/%m} – {b_kd:%d/%m}).")
             if not d_kd_range.empty:
                 # Vẽ theo từng ngày trong khoảng đã lọc. Khoảng ngày do bộ lọc "Chọn nhanh"
                 # quyết định nên không cần thêm ô "Gộp theo" nữa.
@@ -4227,7 +4214,6 @@ if PAGE == "kinh_doanh":
                     note("Không có dữ liệu phễu.")
 
             section("5. Danh sách khách hàng tiềm năng")
-            st.caption("Chỉ hiển thị các dòng có cột trạng thái ghi 'Khách hàng tiềm năng'.")
             kh_src = DF_KHM if not DF_KHM.empty else pheu_df
             kh_status = pick_col(kh_src, [["trang thai"]])
             if not kh_src.empty and kh_status:
@@ -4290,10 +4276,6 @@ if PAGE == "canh_bao_ns":
             with h5:
                 hr_ratio = st.number_input("Gán dưới (% trung vị BC)", 5, 100, HR_DEFAULTS["ratio"], 5,
                                            key="hr_ratio")
-            st.caption("So 7 ngày gần nhất với 7 ngày trước đó. %GTC giảm chỉ xét người có từ 30 đơn gán mỗi bên; "
-                       "gán thấp so với trung vị đơn gán/ngày của nhân viên cùng bưu cục (làm từ 2 ngày). "
-                       f"Vắng: không có đơn từ số ngày trên. Người không có đơn từ {HR_QUIT_DAYS} ngày trở lên "
-                       "coi như đã nghỉ việc nên không hiển thị.")
 
         hr_day = hr_daily(DF_NSGTC)
         if bc_hr != "Tất cả" and not hr_day.empty:
@@ -4304,8 +4286,6 @@ if PAGE == "canh_bao_ns":
             hr_ref = hr_day["Ngày"].max()
             hr_a = hr_ref - timedelta(days=6)
             hr = hr_warnings(hr_day, hr_ref, hr_low, int(hr_streak), hr_drop, int(hr_absent), hr_ratio)
-            st.caption(f"Dữ liệu năng suất đến **{hr_ref:%d/%m/%Y}** · 7 ngày gần nhất "
-                       f"{hr_a:%d/%m}–{hr_ref:%d/%m/%Y} so với 7 ngày trước đó.")
             n_flag = {k: int(hr["_flags"].map(lambda f, k=k: k in f.split("|")).sum()) if not hr.empty else 0
                       for k in HR_FLAG_COLORS}
             k1, k2, k3, k4 = st.columns(4)
@@ -4333,7 +4313,6 @@ if PAGE == "canh_bao_ns":
                         f"{'CẦN XỬ LÝ' if n_cao else 'THEO DÕI'}</span>"
                         f"<b>{len(hr)}</b> nhân viên cần chú ý, trong đó <b>{n_cao}</b> người mức Cao "
                         f"(nhiều cảnh báo cùng lúc hoặc lệch nặng).</div>", unsafe_allow_html=True)
-                    st.caption("👆 Bấm vào ô vuông đầu dòng để xem biểu đồ GTC và hướng dẫn trao đổi 1:1 với nhân viên đó.")
                     # Khóa không bắt đầu bằng "hr_": bảng có chọn dòng không cho gán lại giá trị qua session_state.
                     chon = st.dataframe(
                         hr.drop(columns=["_tags", "_flags", "_score", "_ma"]), width="stretch", hide_index=True,
@@ -4414,8 +4393,6 @@ if PAGE == "canh_bao_ns":
                             st.image(hr_png(), width="stretch")
 
                     st.markdown("**Thông báo cảnh báo gửi quản lý bưu cục (Telegram / GTalk)**")
-                    st.caption("Danh sách có tên từng nhân viên — nên gửi vào nhóm quản lý / trưởng bưu cục, "
-                               "không gửi vào nhóm chung của toàn bộ nhân viên.")
                     st.session_state.setdefault("hr_msg", "")
                     hr_ctx = f"{hr_ref:%Y%m%d}|{bc_hr}|{hr_nguong}|{len(hr)}|{n_cao}"
                     if st.button("AI VIẾT THÔNG BÁO CẢNH BÁO NHÂN SỰ", key="btn_ai_hr_notice", width="stretch"):
@@ -4469,10 +4446,6 @@ if PAGE == "nang_suat":
         with n3:
             ns_pa, ns_pb, _, _, _, _ = pay_period(REF_DATE)
             a_ns, b_ns = date_range_picker("Khoảng ngày (theo kỳ lương)", ns_pa, ns_pb, "date_ns")
-
-        if nv_ns != "Tất cả":
-            st.caption(f"Đang lọc theo mã nhân viên **{nv_id}** — gộp mọi cách ghi tên của người này "
-                       "ở cả sheet lương và sheet năng suất.")
 
         def filter_staff(df, col):
             if df is None or df.empty:
@@ -5046,9 +5019,6 @@ if PAGE == "thi_dua":
                 ky_now = st.selectbox("Kỳ thi đua", ky_list, format_func=ten_ky,
                                       key=f"td_ky_{td_mode}")
             ky_prev = ky_now - 1
-            ngay_cuoi = kho["Ngày"].max()
-            if not theo_thang and ky_now.end_time.normalize() > ngay_cuoi:
-                st.caption(f"{ten_ky(ky_now)} chưa kết thúc — dữ liệu mới đến {ngay_cuoi:%d/%m/%Y}.")
 
             def gom_ky(ky) -> pd.DataFrame:
                 """Gộp theo nhân viên trong một kỳ (tuần hoặc tháng).
@@ -5078,9 +5048,6 @@ if PAGE == "thi_dua":
                     + nguon_loi_td(), icon="⚠️")
             else:
                 khop = cur_td["MaNV"].isin(prev_td["MaNV"]).sum()
-                st.caption(f"Đối chiếu {ten_n_th} với {ten_n1_th} · "
-                           f"{len(cur_td)} nhân viên kỳ này, {len(prev_td)} nhân viên kỳ trước, "
-                           f"{khop} người khớp mã ở cả hai kỳ.")
 
             if cur_td.empty:
                 note("Chưa đọc được dữ liệu năng suất kỳ này. " + nguon_loi_td())
@@ -5582,9 +5549,6 @@ if PAGE == "truy_thu":
 
 if PAGE == "ai":
     with st.container():
-        st.markdown("Hỏi bằng tiếng Việt thường ngày. AI đọc trực tiếp các bảng dữ liệu "
-                    "đã tải trong phiên làm việc này.")
-
         z1, z2 = st.columns([1, 2])
         with z1:
             bc_ai = st.selectbox("Bưu cục", ALL_BC, key="bc_ai")
@@ -5601,57 +5565,81 @@ if PAGE == "ai":
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        if not st.session_state.chat:
-            note("Ví dụ: bưu cục nào %GTC thấp nhất tuần qua? "
-                 "Ai giao nhiều đơn nhất? Doanh thu tuần này so với tuần trước ra sao?")
+        AI_MAX_ROWS = 5000   # mỗi bảng; đủ cho cả tháng của mọi sheet hiện có
 
         def build_context(a, b) -> str:
-            """Ghép dữ liệu thật từ st.session_state['dataframes'] thành ngữ cảnh cho AI."""
+            """Ghép dữ liệu thật của MỌI nguồn Google Sheet trong SHEET_LINKS thành ngữ cảnh cho AI.
+            Phạm vi 'Tất cả' giữ đủ từng bưu cục (kèm dòng tổng) để AI so sánh được giữa các bưu cục."""
             parts = []
+
+            def theo_bc(df):
+                if bc_ai == "Tất cả" or "Bưu Cục" not in df.columns:
+                    return df
+                return df[df["Bưu Cục"].map(norm) == norm(bc_ai)]
+
             metric_specs = [
-                ("GTC TONG", M_GTC, "wavg"), ("TRA HANG", M_TRA, "wavg"),
-                ("GTB THU TIEN", M_GTB, "wavg"), ("GTC TIKTOK", M_TTS, "wavg"),
-                ("ODR TIKTOK", M_ODR, "wavg"), ("OPR TIKTOK", M_OPR, "wavg"), ("DOANH THU", M_DT, "sum"),
+                ("GTC TONG (%GTC)", M_GTC, "wavg"), ("% GAN DON", M_GAN, "wavg"),
+                ("LEADTIME (giờ)", M_LEAD, "wavg"), ("GTC THEO CA / LOAI HANG", M_CA, "wavg"),
+                ("TRA HANG (%)", M_TRA, "wavg"), ("GTB THU TIEN (%)", M_GTB, "wavg"),
+                ("GTC TIKTOK (%)", M_TTS, "wavg"), ("% GAN DON TIKTOK", M_GAN_TTS, "wavg"),
+                ("ODR TIKTOK (%)", M_ODR, "wavg"), ("OPR TIKTOK (%)", M_OPR, "wavg"),
+                ("DOANH THU (VNĐ)", M_DT, "sum"),
             ]
             for name, frame, how in metric_specs:
-                s = sl(scope(frame, bc_ai), a, b)
+                if frame is None or frame.empty:
+                    continue
+                s = sl(theo_bc(frame), a, b)
                 if s.empty:
                     continue
+                keys = ["Ngày", "Bưu Cục"] + (["Chiều"] if "Chiều" in s.columns
+                                               and s["Chiều"].nunique() > 1 else [])
                 if how == "wavg":
                     g = (s.assign(_p=s["Giá Trị"].fillna(0) * s["Trọng Số"])
-                          .groupby(["Ngày", "Bưu Cục"], as_index=False)
+                          .groupby(keys, as_index=False)
                           .agg(_p=("_p", "sum"), SanLuong=("Trọng Số", "sum")))
-                    g[name] = np.where(g["SanLuong"] > 0, g["_p"] / g["SanLuong"], np.nan)
+                    g["Giá trị"] = np.where(g["SanLuong"] > 0, g["_p"] / g["SanLuong"], np.nan)
                     g = g.drop(columns=["_p"]).round(2)
                 else:
-                    g = (s.groupby(["Ngày", "Bưu Cục"], as_index=False)["Giá Trị"].sum()
-                          .rename(columns={"Giá Trị": name}).round(0))
+                    g = (s.groupby(keys, as_index=False)["Giá Trị"].sum()
+                          .rename(columns={"Giá Trị": "Giá trị"}).round(0))
                 g["Ngày"] = g["Ngày"].dt.strftime("%d/%m/%Y")
                 parts.append(f"\n--- {name} ---\n{g.to_csv(index=False)}")
 
-            for label, df in (("NANG SUAT NHAN VIEN", DF_NSGTC), ("LUONG NHAN VIEN", DF_LUONG)):
-                if df is None or df.empty or "Ngày" not in df.columns:
+            # Bảng gốc: giữ ĐỦ cột (chỉ bỏ cột rỗng hoàn toàn). Bảng có ngày thì lọc theo khoảng ngày.
+            raw_specs = [
+                ("NANG SUAT NHAN VIEN THEO NGAY", DF_NSGTC, True),
+                ("DON GIA - LUONG THEO NGAY", DF_LUONG, True),
+                ("LUONG THEO NGAY (sheet Lương)", DF_LUONG_NGAY, True),
+                ("TRUY THU (theo ngày kết luận)", DF_TRUY_THU, True),
+                ("KHACH HANG MOI", DF_KHM, True),
+                ("PHEU KHACH HANG", DF_PHEU, True),
+                ("MOC KPI THEO THANG", DF_KPI, False),
+            ]
+            for label, df, by_date in raw_specs:
+                if df is None or df.empty:
                     continue
-                s = df[(df["Ngày"] >= a) & (df["Ngày"] <= b)]
-                if bc_ai != "Tất cả" and "Bưu Cục" in s.columns:
-                    s = s[s["Bưu Cục"].map(norm) == norm(bc_ai)]
+                s = theo_bc(df)
+                co_ngay = by_date and "Ngày" in s.columns and s["Ngày"].notna().any()
+                if co_ngay:
+                    s = s[(s["Ngày"] >= a) & (s["Ngày"] <= b)]
                 if s.empty:
                     continue
+                keep = [c for c in s.columns if c != "Ngày" and not s[c].isna().all()
+                        and not (s[c].astype(str).isin(["nan", "", "Chưa phân loại"]).all())]
+                o = s[(["Ngày"] if co_ngay else []) + keep].copy()
+                if co_ngay:
+                    o["Ngày"] = o["Ngày"].dt.strftime("%d/%m/%Y")
+                parts.append(f"\n--- {label} ({len(o):,} dòng, {len(keep)} cột) ---\n"
+                             f"{o.head(AI_MAX_ROWS).to_csv(index=False)}")
+                if len(o) > AI_MAX_ROWS:
+                    parts.append(f"(Đã cắt bớt, chỉ gửi {AI_MAX_ROWS:,}/{len(o):,} dòng.)\n")
 
-                # LỖI CŨ: cắt còn 8 cột đầu ([:8]) làm mất các cột nằm sau, trong đó có
-                # "Đơn giá" (cột thứ 14 của sheet lương). AI vì thế không thấy đơn giá
-                # và trả lời là không có dữ liệu. Nay giữ ĐỦ cột, chỉ bỏ cột rỗng hoàn toàn.
-                keep = [c for c in s.columns if c != "Ngày" and not s[c].isna().all()]
-                o = s[["Ngày"] + keep].copy()
-                o["Ngày"] = o["Ngày"].dt.strftime("%d/%m/%Y")
-                parts.append(f"\n--- {label} (đủ {len(keep)} cột) ---\n"
-                             f"{o.head(600).to_csv(index=False)}")
-                if len(o) > 600:
-                    parts.append(f"(Đã cắt bớt, tổng cộng {len(o):,} dòng trong kỳ này.)\n")
-
+            loi = st.session_state.get("load_errors", {})
+            if loi:
+                parts.append("\n(Nguồn không đọc được: " + ", ".join(SHEET_LABELS.get(k, k) for k in loi) + ")")
             return "".join(parts) or "(Không có dữ liệu trong khoảng thời gian đã chọn.)"
 
-        if question := st.chat_input("Nhập câu hỏi về số liệu..."):
+        if question := st.chat_input("Ví dụ: bưu cục nào %GTC thấp nhất tuần qua? Ai bị truy thu nhiều nhất?"):
             st.session_state.chat.append({"role": "user", "content": question})
             with st.chat_message("user"):
                 st.markdown(question)
@@ -5667,7 +5655,10 @@ GHI CHÚ VỀ CHỈ SỐ:
 - %GTC là tỷ lệ giao thành công, càng cao càng tốt.
 - ODR là cam kết giao đúng hạn với sàn TikTok Shop, càng cao càng tốt, thấp là bị phạt.
 - %Trả hàng là đơn quay đầu về kho, càng thấp càng tốt.
-- Mọi tỷ lệ đã được tính trung bình có trọng số theo sản lượng.
+- Mọi tỷ lệ đã được tính trung bình có trọng số theo sản lượng (cột SanLuong).
+- Dòng có Bưu Cục là "Grand Total" hoặc "Tổng số" là dòng tổng của cả vùng, không phải một bưu cục.
+- "% GAN DON" là tỷ lệ đơn đã gán cho nhân viên đi giao; "LEADTIME" là thời gian giao, càng thấp càng tốt.
+- "OPR" là tỷ lệ lấy hàng đúng hạn cho TikTok Shop, càng cao càng tốt.
 
 GHI CHÚ VỀ BẢNG LUONG NHAN VIEN (đơn vị tiền là VNĐ):
 - "Đơn giá" là đơn giá bình quân mỗi đơn của nhân viên trong ngày đó.
@@ -5680,6 +5671,12 @@ GHI CHÚ VỀ BẢNG LUONG NHAN VIEN (đơn vị tiền là VNĐ):
 - Cột "Nhân Viên" ghi theo dạng "mã_họ tên" hoặc "mã-họ tên". Cùng một mã là cùng một người,
   kể cả khi tên viết khác nhau giữa các bảng.
 - Khi tính đơn giá bình quân cho nhiều dòng, hãy nói rõ là trung bình cộng của các dòng nào.
+
+GHI CHÚ VỀ CÁC BẢNG KHÁC:
+- LUONG THEO NGAY: mỗi dòng là lương 1 nhân viên trong 1 ngày; "Tổng lương" là tiền lương ngày đó.
+- TRUY THU: phải truy thu = "Số tiền ban đầu" + "Điều chỉnh (+|-)" = "Đã truy thu" + "Cần truy thu thêm".
+  "Loại truy thu" là lý do bị truy thu, "Nơi vi phạm" là bưu cục.
+- MOC KPI THEO THANG: mốc mục tiêu từng chỉ số theo tháng và bưu cục.
 
 Câu hỏi của người quản lý: {question}
 
