@@ -5529,6 +5529,11 @@ def truy_thu_page() -> None:
     t = d.groupby("MaNV").agg(**agg_cols)
     t.insert(0, "Nhân viên", t.index.map(lambda m: ten_nv.get(m, m)))
     t["Loại nhiều nhất"] = t.index.map(loai_chinh)
+    if c["ma_don"]:
+        ma_don = d[c["ma_don"]].astype(str).str.strip()
+        t["Mã đơn hàng"] = (d.assign(_ma=ma_don)[~ma_don.isin(["", "nan", "-"])]
+                            .groupby("MaNV")["_ma"].agg(lambda x: ", ".join(dict.fromkeys(x))))
+        t["Mã đơn hàng"] = t["Mã đơn hàng"].fillna("")
     t = t.sort_values("Phải truy thu (đ)", ascending=False).reset_index(drop=True)
     if "Ngày nghỉ việc" in t.columns:
         t["Ngày nghỉ việc"] = t["Ngày nghỉ việc"].replace({"-": "", "nan": ""})
@@ -5548,16 +5553,16 @@ def truy_thu_page() -> None:
                  column_config={**{k: so for k in bl.columns if k.endswith("(đ)") or k == "Số khoản"},
                                 "Tỷ trọng": st.column_config.NumberColumn(format="%.1f%%")})
 
-    with st.expander(f"Chi tiết {len(d)} khoản truy thu"):
-        cols = ["Ngày", c["nv"], "Bưu Cục", c["loai"], c["hinh_thuc"], c["ma_don"],
-                "_phai", "_da", "_con"]
-        ct = (d[[x for x in cols if x]].sort_values("Ngày", ascending=False)
-              .rename(columns={"Ngày": "Ngày kết luận", "Bưu Cục": "Bưu cục", "_phai": "Phải truy thu (đ)",
-                               "_da": "Đã truy thu (đ)", "_con": "Còn phải thu (đ)"}))
-        ct[c["nv"]] = ct[c["nv"]].map(staff_label)
-        st.dataframe(ct, hide_index=True, width="stretch",
-                     column_config={"Ngày kết luận": st.column_config.DateColumn(format="DD/MM/YYYY"),
-                                    **{k: so for k in ct.columns if k.endswith("(đ)")}})
+    section(f"Chi tiết {len(d)} khoản truy thu")
+    cols = ["Ngày", c["ma_don"], c["nv"], "Bưu Cục", c["loai"], c["hinh_thuc"],
+            "_phai", "_da", "_con"]
+    ct = (d[[x for x in cols if x]].sort_values("Ngày", ascending=False)
+          .rename(columns={"Ngày": "Ngày kết luận", "Bưu Cục": "Bưu cục", "_phai": "Phải truy thu (đ)",
+                           "_da": "Đã truy thu (đ)", "_con": "Còn phải thu (đ)"}))
+    ct[c["nv"]] = ct[c["nv"]].map(staff_label)
+    st.dataframe(ct, hide_index=True, width="stretch",
+                 column_config={"Ngày kết luận": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                **{k: so for k in ct.columns if k.endswith("(đ)")}})
 
 
 if PAGE == "truy_thu":
