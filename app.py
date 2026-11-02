@@ -255,6 +255,10 @@ h1, h2, h3, h4 {{
     margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px;
 }}
 .ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: calc(17.75px * var(--fs)); font-weight: 600; margin: 0; }}
+.ghn-banner .ghn-slogan {{
+    color: #FFD166; font-size: calc(19px * var(--fs)); font-weight: 800; letter-spacing: 2px;
+    margin: 0 0 8px 0; text-transform: uppercase;
+}}
 .ghn-banner-row {{ display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }}
 .ghn-banner-text {{ flex: 1 1 320px; min-width: 0; }}
 .ghn-logo-plate {{
@@ -3496,6 +3500,7 @@ st.markdown(f"""
   <div class="ghn-banner-row">{_logo_html}
     <div class="ghn-banner-text">
       <h1>Trung Tâm Vận Hành — GHN</h1>
+      <div class="ghn-slogan">Kỷ luật là sức mạnh</div>
       <p>Hiệu suất thực · Quyết định nhanh · AI cố vấn &nbsp;|&nbsp;
          Dữ liệu đến {REF_DATE:%d/%m/%Y} · Đồng bộ {datetime.now():%H:%M}</p>
     </div>
