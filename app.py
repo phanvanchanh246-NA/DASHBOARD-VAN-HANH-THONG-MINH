@@ -258,11 +258,12 @@ h1, h2, h3, h4 {{
 .ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: calc(17.75px * var(--fs)); font-weight: 600; margin: 0; }}
 .ghn-banner .ghn-slogan {{
     color: #FFD166; font-size: calc(15.5px * var(--fs)); font-weight: 800; letter-spacing: 2px;
-    margin: 2px 0 0 0; text-transform: uppercase;
+    margin: 0; text-transform: uppercase;
 }}
-/* Nhãn trạng thái dữ liệu ở góc phải banner; dữ liệu cũ từ 2 ngày thì chuyển cam để nhắc cập nhật sheet */
+/* Hàng dưới tiêu đề: khẩu hiệu + nhãn trạng thái dữ liệu (dữ liệu cũ từ 2 ngày thì nhãn chuyển cam) */
+.ghn-sub {{ display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin-top: 6px; }}
 .ghn-status {{
-    margin-left: auto; flex: 0 0 auto; white-space: nowrap;
+    flex: 0 0 auto; white-space: nowrap;
     background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.4);
     color: #FFFFFF; border-radius: 999px; padding: 5px 12px;
     font-size: calc(13.5px * var(--fs)); font-weight: 700;
@@ -285,7 +286,7 @@ h1, h2, h3, h4 {{
     .ghn-banner {{ padding: 12px 14px; }}
     .ghn-banner-row {{ gap: 10px; }}
     .ghn-banner-row h1 {{ white-space: normal; }}
-    .ghn-status {{ margin-left: 0; white-space: normal; font-size: calc(12.5px * var(--fs)); padding: 4px 10px; }}
+    .ghn-status {{ white-space: normal; font-size: calc(12.5px * var(--fs)); padding: 4px 10px; }}
     .ghn-banner-row h1 {{ font-size: calc(22px * var(--fs)); }}
     .ghn-banner p {{ font-size: calc(13.5px * var(--fs)); }}
     .ghn-logo-plate {{ width: 100%; padding: 8px 12px; }}
@@ -3291,7 +3292,7 @@ def login_screen():
                         unsafe_allow_html=True)
         st.markdown("""
         <div class="ghn-banner" style="text-align:center;">
-            <h1>Trung Tâm Vận Hành</h1>
+            <h1>Trung Tâm Vận Hành - Kinh Doanh</h1>
             <p>GIAO HÀNG NHANH — Hệ thống báo cáo nội bộ</p>
         </div>""", unsafe_allow_html=True)
 
@@ -3518,12 +3519,14 @@ st.markdown(f"""
 <div class="ghn-banner">
   <div class="ghn-banner-row">{_logo_html}
     <div class="ghn-banner-text">
-      <h1>Trung Tâm Vận Hành</h1>
-      <div class="ghn-slogan">Kỷ luật là sức mạnh</div>
-    </div>
-    <div class="ghn-status{' stale' if _stale else ''}"
-         title="{'Dữ liệu chưa cập nhật từ 2 ngày trở lên' if _stale else 'Dữ liệu mới nhất'}">
-      📅 Dữ liệu đến {REF_DATE:%d/%m} · Đồng bộ {_sync_vn:%H:%M}
+      <h1>Trung Tâm Vận Hành - Kinh Doanh</h1>
+      <div class="ghn-sub">
+        <div class="ghn-slogan">Kỷ luật là sức mạnh</div>
+        <div class="ghn-status{' stale' if _stale else ''}"
+             title="{'Dữ liệu chưa cập nhật từ 2 ngày trở lên' if _stale else 'Dữ liệu mới nhất'}">
+          📅 Dữ liệu đến {REF_DATE:%d/%m} · Đồng bộ {_sync_vn:%H:%M}
+        </div>
+      </div>
     </div>
   </div>
 </div>""", unsafe_allow_html=True)
