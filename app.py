@@ -1138,20 +1138,14 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
 
 
 def period_cards(df: pd.DataFrame, ref, unit="%", higher_is_better=True,
-                 how="wavg", label="", rng=None):
-    """3 ô: Ngày vs N-1, Tuần vs W-1, Tháng vs M-1, tính theo ngày `ref` (ngày cuối của bộ lọc).
-    `rng`=(a, b) nhiều ngày thì thêm ô đầu "Khoảng đã chọn" so với khoảng liền trước dài bằng nhau."""
+                 how="wavg", label=""):
+    """3 ô: Ngày vs N-1, Tuần vs W-1, Tháng vs M-1, tính theo ngày `ref` (ngày cuối của bộ lọc)."""
     p = get_period_data(df, ref, how)
     fmt = (lambda v: f"{v:,.2f}%") if unit == "%" else (
         fmt_money if unit == "đ" else (lambda v: f"{v:,.0f}"))
     specs = [("Ngày (N vs N-1)", p["n"], p["n"] - p["n1"], p["has_n1"]),
              ("Tuần (W vs W-1)", p["w"], p["w"] - p["w1"], p["has_w1"]),
              ("Tháng (M vs M-1)", p["m"], p["m"] - p["m1"], p["has_m1"])]
-    if rng is not None and pd.Timestamp(rng[1]) > pd.Timestamp(rng[0]):
-        a, b = pd.Timestamp(rng[0]), pd.Timestamp(rng[1])
-        pa, pb = a - (b - a) - timedelta(days=1), a - timedelta(days=1)
-        v, v1 = agg(df, a, b, how), agg(df, pa, pb, how)
-        specs.insert(0, (f"{a:%d/%m}–{b:%d/%m} (vs khoảng trước)", v, v - v1, not sl(df, pa, pb).empty))
     cols = st.columns(len(specs))
     for col, (t, v, d, hp) in zip(cols, specs):
         with col:
@@ -3925,7 +3919,7 @@ if PAGE == "van_hanh":
         with _sub_tab2[0]:
             # 2.1 GTC tổng
             section("1. Báo cáo GTC tổng")
-            period_cards(scope(M_GTC, bc_vh), b_vh, "%", True, "wavg", "%GTC", rng=(a_vh, b_vh))
+            period_cards(scope(M_GTC, bc_vh), b_vh, "%", True, "wavg", "%GTC")
             cA, cB = st.columns([1.6, 1])
             with cA:
                 combo_chart(cs(M_GTC), "Sản lượng, %GTC và % gán đơn theo ngày", "Sản lượng", "% GTC", t_gtc_vh,
@@ -4002,7 +3996,7 @@ if PAGE == "van_hanh":
         with _sub_tab2[2]:
             # 2.3 GTC TTS
             section("3. GTC TikTok Shop")
-            period_cards(scope(M_TTS, bc_vh), b_vh, "%", True, "wavg", "%GTC TTS", rng=(a_vh, b_vh))
+            period_cards(scope(M_TTS, bc_vh), b_vh, "%", True, "wavg", "%GTC TTS")
             cG, cH = st.columns([1.6, 1])
             with cG:
                 combo_chart(cs(M_TTS), "Sản lượng, %GTC và % gán đơn TikTok Shop", "Sản lượng TTS", "% GTC TTS",
@@ -4012,12 +4006,12 @@ if PAGE == "van_hanh":
 
             # 2.4 ODR TTS
             section("4. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
-            period_cards(scope(M_ODR, bc_vh), b_vh, "%", True, "wavg", "ODR", rng=(a_vh, b_vh))
+            period_cards(scope(M_ODR, bc_vh), b_vh, "%", True, "wavg", "ODR")
             line_chart(cs(M_ODR), "Tỷ lệ ODR theo ngày", ACCENT, "%", t_odr_vh)
 
             # 2.4b OPR TTS
             section("5. OPR TikTok Shop — lấy hàng đúng hạn")
-            period_cards(scope(M_OPR, bc_vh), b_vh, "%", True, "wavg", "OPR", rng=(a_vh, b_vh))
+            period_cards(scope(M_OPR, bc_vh), b_vh, "%", True, "wavg", "OPR")
             cO, cP = st.columns([1.6, 1])
             with cO:
                 combo_chart(cs(M_OPR), "Đơn lấy thành công và %OPR TikTok Shop", "Đơn lấy thành công", "% OPR",
@@ -4028,7 +4022,7 @@ if PAGE == "van_hanh":
         with _sub_tab2[3]:
             # 2.5 Trả hàng
             section("6. Tỷ lệ trả hàng (càng thấp càng tốt)")
-            period_cards(scope(M_TRA, bc_vh), b_vh, "%", False, "wavg", "%Trả hàng", rng=(a_vh, b_vh))
+            period_cards(scope(M_TRA, bc_vh), b_vh, "%", False, "wavg", "%Trả hàng")
             cE, cF = st.columns([1.6, 1])
             with cE:
                 line_chart(cs(M_TRA), "Tỷ lệ trả hàng theo ngày", DANGER, "%", t_tra_vh)
@@ -4037,7 +4031,7 @@ if PAGE == "van_hanh":
 
             # 2.6 GTB thu tiền
             section("7. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
-            period_cards(scope(M_GTB, bc_vh), b_vh, "%", True, "wavg", "%GTB", rng=(a_vh, b_vh))
+            period_cards(scope(M_GTB, bc_vh), b_vh, "%", True, "wavg", "%GTB")
             cQ, cR = st.columns([1.6, 1])
             with cQ:
                 line_chart(cs(M_GTB), "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
@@ -4113,7 +4107,7 @@ if PAGE == "kinh_doanh":
                             key="tabs_kd")
         with _sub_tab3[0]:
             section("1. Doanh thu — so sánh N-1, W-1, M-1")
-            p_kd = period_cards(dt_scope, b_kd, "đ", True, "sum", "Doanh thu", rng=(a_kd, b_kd))
+            p_kd = period_cards(dt_scope, b_kd, "đ", True, "sum", "Doanh thu")
 
             section("2. Tiến độ doanh thu tháng so với KPI")
             kpi_dt_sheet = kpi_target([["doanh thu"]], 0.0, bc=bc_kd)
@@ -4615,7 +4609,7 @@ if PAGE == "nang_suat":
                     "Giá Trị": np.where(G[col_gan] > 0, G[col_gtc] / G[col_gan] * 100, np.nan),
                     "Trọng Số": G[col_gan],
                 }).dropna(subset=["Ngày"])
-                period_cards(gm, b_ns, "%", True, "wavg", "%GTC", rng=(a_ns, b_ns))
+                period_cards(gm, b_ns, "%", True, "wavg", "%GTC")
             else:
                 gm = pd.DataFrame(columns=["Ngày", "Giá Trị", "Trọng Số"])
                 note("Chưa đọc được cột 'Số đơn gán' hoặc 'Đơn giao tính lương' trong sheet năng suất.")
