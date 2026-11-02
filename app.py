@@ -117,7 +117,9 @@ CACHE_TTL = 300
 PLOTLY_CONFIG = {"displaylogo": False, "modeBarButtonsToRemove": [
     "zoom2d", "pan2d", "select2d", "lasso2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d",
     "toImage", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines",
-    "hoverClosestPie", "hoverClosestGl2d", "resetViews", "toggleHover", "sendDataToCloud"]}
+    "hoverClosestPie", "hoverClosestGl2d", "resetViews", "toggleHover", "sendDataToCloud"],
+    # Chạm/kéo/cuộn/bấm đúp vào biểu đồ không làm đổi khung nhìn (trục cố định ở template "ghn").
+    "scrollZoom": False, "doubleClick": False, "showAxisDragHandles": False}
 
 
 def plot_chart(fig, **kw):
@@ -181,6 +183,8 @@ SALARY_PARTS = {
 pio.templates["ghn"] = go.layout.Template(layout=dict(
     font=dict(family="Montserrat, sans-serif", size=15, color=TEXT),
     plot_bgcolor=BG, paper_bgcolor=BG, hovermode="x unified",
+    # Không cho kéo/thu phóng: chạm nhầm vào biểu đồ trên điện thoại không làm đổi khung nhìn.
+    dragmode=False,
     colorway=[PRIMARY, ACCENT, SUCCESS, DANGER, "#00B4D8", "#6C757D"],
     # t=90 chừa chỗ cho tiêu đề; b=120 chừa chỗ cho legend nằm dưới.
     margin=dict(l=70, r=30, t=90, b=120),
@@ -188,13 +192,14 @@ pio.templates["ghn"] = go.layout.Template(layout=dict(
                font=dict(family="Montserrat, sans-serif", size=18, color=PRIMARY)),
     xaxis=dict(showgrid=False, linecolor=LINE, linewidth=1,
                ticks="outside", tickcolor=LINE, tickfont=dict(size=17),
-               automargin=True),
+               automargin=True, fixedrange=True),
     yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=17),
-               automargin=True),
+               automargin=True, fixedrange=True),
     # Legend nằm DƯỚI biểu đồ. Trước đây đặt y=1.02 (phía trên) nên đè lên tiêu đề.
     # orientation="h" giúp legend tự xuống dòng khi màn hình hẹp, không tràn chữ.
     legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0,
-                font=dict(size=15), itemwidth=30),
+                font=dict(size=15), itemwidth=30,
+                itemclick=False, itemdoubleclick=False),   # bấm vào chú thích không ẩn/hiện đường
     hoverlabel=dict(bgcolor=PRIMARY, bordercolor=PRIMARY,
                     font=dict(family="Montserrat, sans-serif", size=15, color="#FFFFFF")),
 ))
