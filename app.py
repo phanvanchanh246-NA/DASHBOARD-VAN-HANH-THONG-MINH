@@ -5518,6 +5518,12 @@ def truy_thu_page() -> None:
         fig_nv.update_yaxes(automargin=True)
         plot_chart(fig_nv, width="stretch")
 
+    def ds_ma_don(by: str) -> pd.Series:
+        """Các mã đơn hàng (không lặp) của từng nhóm, nối bằng dấu phẩy."""
+        ma = d[c["ma_don"]].astype(str).str.strip()
+        return (d.assign(_ma=ma)[~ma.isin(["", "nan", "-"])]
+                .groupby(by)["_ma"].agg(lambda x: ", ".join(dict.fromkeys(x))))
+
     section("Số tiền truy thu theo nhân viên")
     loai_nv = d.groupby(["MaNV", "_loai"])["_phai"].sum().reset_index().sort_values("_phai")
     loai_chinh = loai_nv.groupby("MaNV")["_loai"].last()
@@ -5530,10 +5536,7 @@ def truy_thu_page() -> None:
     t.insert(0, "Nhân viên", t.index.map(lambda m: ten_nv.get(m, m)))
     t["Loại nhiều nhất"] = t.index.map(loai_chinh)
     if c["ma_don"]:
-        ma_don = d[c["ma_don"]].astype(str).str.strip()
-        t["Mã đơn hàng"] = (d.assign(_ma=ma_don)[~ma_don.isin(["", "nan", "-"])]
-                            .groupby("MaNV")["_ma"].agg(lambda x: ", ".join(dict.fromkeys(x))))
-        t["Mã đơn hàng"] = t["Mã đơn hàng"].fillna("")
+        t["Mã đơn hàng"] = ds_ma_don("MaNV").reindex(t.index).fillna("")
     t = t.sort_values("Phải truy thu (đ)", ascending=False).reset_index(drop=True)
     if "Ngày nghỉ việc" in t.columns:
         t["Ngày nghỉ việc"] = t["Ngày nghỉ việc"].replace({"-": "", "nan": ""})
@@ -5548,6 +5551,8 @@ def truy_thu_page() -> None:
     bl = by_loai.rename(columns={"so_vu": "Số khoản", "tien": "Phải truy thu (đ)"})
     bl["Tỷ trọng"] = bl["Phải truy thu (đ)"] / bl["Phải truy thu (đ)"].sum() * 100
     bl = bl.join(hinh.add_prefix("Hình thức: ").add_suffix(" (đ)"))
+    if c["ma_don"]:
+        bl["Mã đơn hàng"] = ds_ma_don("_loai").reindex(bl.index).fillna("")
     bl.insert(0, "Loại truy thu", bl.index)
     st.dataframe(bl.reset_index(drop=True), hide_index=True, width="stretch",
                  column_config={**{k: so for k in bl.columns if k.endswith("(đ)") or k == "Số khoản"},
