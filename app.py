@@ -146,8 +146,9 @@ SHEET_LINKS: dict[str, str] = {
     # Lương theo ngày từng nhân viên: Nhân viên | Bưu cục | Thâm niên | Thời gian | Số đơn gán Giao/Lấy |
     # Đơn giao/lấy tính lương | Số ngày đi làm | Lương HH/ ngày | Tổng lương | Lương đảm bảo
     "luong": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=1747603664",
-    # Năng suất tháng trước (tab "Năng Suất Tháng 07") — dùng cho tab Thi đua
-    "ns_thang_truoc": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=1826894473",
+    # Truy thu: Ngày kết luận truy thu | Mã truy thu | Nhân viên | Chức vụ | Nơi vi phạm | Mã đơn hàng |
+    # Loại truy thu | Hình thức truy thu | Số tiền ban đầu | Điều chỉnh (+|-) | Đã truy thu | Cần truy thu thêm | Cần hoàn
+    "truy_thu": "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid=254567767",
 }
 
 # Chốt chặn: mọi nguồn có nhãn thì phải có link, và ngược lại.
@@ -732,7 +733,9 @@ DATE_EXCLUDE = ["vao lam", "sinh", "nghi viec", "thu viec", "ky hop dong",
 # và lọc theo bưu cục sẽ luôn trả về 0.
 BC_KEYS = [["buu cuc"], ["buu"], ["khu vuc"], ["vung"], ["tram"], ["station"], ["cum"]]
 VOL_KEYS = [["san luong"], ["volume"], ["tong don"], ["so don"], ["don"]]
-TEXT_HINTS = ("loai hang", "ca", "nhan vien", "trang thai", "ten", "ma", "tuyen", "cap quan ly", "tham nien")
+TEXT_HINTS = ("loai hang", "ca", "nhan vien", "trang thai", "ten", "ma", "tuyen", "cap quan ly", "tham nien",
+              # sheet Truy thu
+              "loai truy thu", "hinh thuc", "chuc vu", "noi vi pham", "ma don hang", "ma ticket", "nghi viec")
 
 
 def parse_dates(raw: pd.Series) -> pd.Series:
@@ -751,6 +754,10 @@ def parse_dates(raw: pd.Series) -> pd.Series:
     format %y-%m-%d trước.
     """
     s = raw.astype(str).str.strip().replace({"": None, "nan": None, "None": None})
+    # Kiểu Google Sheets tiếng Việt: '00:00:00 31 thg 10, 2026' -> '2026-10-31'
+    vn = s.str.extract(r"(\d{1,2}) thg (\d{1,2}), (\d{4})")
+    if vn[0].notna().any():
+        s = (vn[2] + "-" + vn[1].str.zfill(2) + "-" + vn[0].str.zfill(2)).where(vn[0].notna(), s)
 
     target = int(s.notna().sum())
     # Kiểu nào đọc được TOÀN BỘ dòng có giá trị thì dừng ngay (kết quả y hệt việc
@@ -859,7 +866,9 @@ def _fetch_sheet(key: str) -> pd.DataFrame:
     for col in df.columns:
         if col in {dcol, bcol, "Ngày", "Bưu Cục"} or df[col].dtype.kind in "if":
             continue
-        if col in keep_text:
+        # pick_col chỉ trả cột ĐẦU TIÊN khớp; cột tên đúng bằng từ gợi ý (vd. "Nơi vi phạm" đứng sau
+        # "ID Nơi vi phạm") cũng phải giữ dạng chữ.
+        if col in keep_text or norm(col) in TEXT_HINTS:
             df[col] = df[col].astype(str).str.strip()
         else:
             df[col] = _parse_num_col(df[col])
@@ -3332,9 +3341,16 @@ def _build_frames() -> dict:
     DF_PHEU = safe_load("pheu_kh")
     DF_LUONG = safe_load("ns_luong")
     DF_NSGTC = safe_load("ns_gtc")
-    DF_NS_PREV = safe_load("ns_thang_truoc")   # năng suất tháng trước, cho tab Thi đua
+    # Tab "Năng Suất Tháng 07" đã xóa khỏi sheet; sheet Năng suất nhân viên giữ đủ các tháng nên Thi đua
+    # đối chiếu tháng trước từ đó. Giữ khung rỗng để phần gộp hai nguồn của Thi đua vẫn chạy.
+    DF_NS_PREV = pd.DataFrame()
     DF_LUONG_NGAY = safe_load("luong")           # lương theo ngày từng nhân viên, cho tab Lương
-    return {"M_GTC": M_GTC, "M_GAN": M_GAN, "M_GAN_TTS": M_GAN_TTS, "M_LEAD": M_LEAD, "M_CA": M_CA, "M_TRA": M_TRA, "M_GTB": M_GTB, "M_TTS": M_TTS, "M_ODR": M_ODR, "M_OPR": M_OPR, "M_DT": M_DT, "DF_KPI": DF_KPI, "DF_KHM": DF_KHM, "DF_PHEU": DF_PHEU, "DF_LUONG": DF_LUONG, "DF_NSGTC": DF_NSGTC, "DF_NS_PREV": DF_NS_PREV, "DF_LUONG_NGAY": DF_LUONG_NGAY}
+    DF_TRUY_THU = safe_load("truy_thu")
+    if not DF_TRUY_THU.empty:                    # sheet ghi bưu cục ở cột "Nơi vi phạm"
+        _noi = pick_col(DF_TRUY_THU, [["noi vi pham"]], exclude=["id"])
+        if _noi:
+            DF_TRUY_THU["Bưu Cục"] = DF_TRUY_THU[_noi].astype(str).str.strip().map(lambda v: _BC_CANON.get(norm(v), v))
+    return {"M_GTC": M_GTC, "M_GAN": M_GAN, "M_GAN_TTS": M_GAN_TTS, "M_LEAD": M_LEAD, "M_CA": M_CA, "M_TRA": M_TRA, "M_GTB": M_GTB, "M_TTS": M_TTS, "M_ODR": M_ODR, "M_OPR": M_OPR, "M_DT": M_DT, "DF_KPI": DF_KPI, "DF_KHM": DF_KHM, "DF_PHEU": DF_PHEU, "DF_LUONG": DF_LUONG, "DF_NSGTC": DF_NSGTC, "DF_NS_PREV": DF_NS_PREV, "DF_LUONG_NGAY": DF_LUONG_NGAY, "DF_TRUY_THU": DF_TRUY_THU}
 
 
 with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
@@ -3365,6 +3381,7 @@ with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
     DF_NSGTC = _fr["DF_NSGTC"]
     DF_NS_PREV = _fr["DF_NS_PREV"]
     DF_LUONG_NGAY = _fr["DF_LUONG_NGAY"]
+    DF_TRUY_THU = _fr["DF_TRUY_THU"]
 
 
 def only_bc(df: pd.DataFrame, bc: str) -> pd.DataFrame:
@@ -3381,16 +3398,16 @@ if USER_BC:
     M_GTC, M_GAN, M_GAN_TTS, M_LEAD, M_CA, M_TRA, M_GTB, M_TTS, M_ODR, M_OPR, M_DT = (
         only_bc(f, USER_BC) for f in (M_GTC, M_GAN, M_GAN_TTS, M_LEAD, M_CA, M_TRA, M_GTB,
                                       M_TTS, M_ODR, M_OPR, M_DT))
-    DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV, DF_LUONG_NGAY = (
+    DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV, DF_LUONG_NGAY, DF_TRUY_THU = (
         only_bc(f, USER_BC) for f in (DF_KPI, DF_KHM, DF_PHEU, DF_LUONG, DF_NSGTC, DF_NS_PREV,
-                                      DF_LUONG_NGAY))
+                                      DF_LUONG_NGAY, DF_TRUY_THU))
 
 # Lưu vào session_state để tab AI cố vấn đọc được
 st.session_state["dataframes"] = {
     "GTC tổng": M_GTC, "Tỷ lệ trả hàng": M_TRA, "GTB thu tiền": M_GTB,
     "GTC TikTok": M_TTS, "ODR TikTok": M_ODR, "OPR TikTok": M_OPR, "Sản lượng theo ca": M_CA,
     "Doanh thu": M_DT, "Khách hàng mới": DF_KHM, "Phễu khách hàng": DF_PHEU,
-    "Lương nhân viên": DF_LUONG, "Lương theo ngày": DF_LUONG_NGAY, "Năng suất GTC": DF_NSGTC, "KPI": DF_KPI,
+    "Lương nhân viên": DF_LUONG, "Lương theo ngày": DF_LUONG_NGAY, "Truy thu": DF_TRUY_THU, "Năng suất GTC": DF_NSGTC, "KPI": DF_KPI,
 }
 
 ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC) if not USER_BC else [USER_BC]
@@ -3439,8 +3456,7 @@ SHEET_LABELS = {
     "opr_tts": "OPR TikTok",
     "kpi": "Mốc KPI", "doanh_thu": "Doanh thu", "kh_moi": "Khách hàng mới",
     "pheu_kh": "Phễu khách hàng", "ns_luong": "Lương nhân viên", "ns_gtc": "Năng suất GTC",
-    "luong": "Lương theo ngày",
-    "ns_thang_truoc": "Năng suất tháng trước",
+    "luong": "Lương theo ngày", "truy_thu": "Truy thu",
 }
 
 
@@ -3492,6 +3508,7 @@ NAV_PAGES = [
     ("nang_suat", "Năng suất & Lương", ":material/badge:"),
     ("canh_bao_ns", "Cảnh báo nhân sự", ":material/notification_important:"),
     ("thi_dua", "Thi đua", ":material/emoji_events:"),
+    ("truy_thu", "Truy thu", ":material/receipt_long:"),
     ("ai", "AI cố vấn", ":material/smart_toy:"),
 ]
 if USER_BC:   # số liệu kinh doanh là của cả vùng, không tách theo bưu cục
@@ -5413,6 +5430,141 @@ NHÓM CUỐI BẢNG:
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 6 — AI CỐ VẤN
 # ═══════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
+# TRUY THU
+# ═══════════════════════════════════════════════════════════════════════
+def truy_thu_page() -> None:
+    """Trang Truy thu: số tiền truy thu từng nhân viên và loại truy thu nhiều nhất (sheet Truy thu)."""
+    tt = DF_TRUY_THU
+    c = {k: pick_col(tt, keys, exclude=ex) for k, (keys, ex) in {
+        "nv": ([["nhan vien"]], ()), "loai": ([["loai truy thu"]], ()),
+        "hinh_thuc": ([["hinh thuc"]], ()), "ban_dau": ([["so tien ban dau"]], ()),
+        "dieu_chinh": ([["dieu chinh"]], ()), "da": ([["da truy thu"]], ()),
+        "con": ([["can truy thu them"]], ()), "hoan": ([["can hoan"]], ()),
+        "ma_don": ([["ma don hang"]], ()), "nghi": ([["ngay nghi viec"]], ()),
+    }.items()}
+    if tt.empty or not (c["nv"] and c["loai"] and c["ban_dau"]):
+        note("Chưa đọc được sheet Truy thu (cần các cột Nhân viên, Loại truy thu, Số tiền ban đầu).")
+        return
+
+    r1, r2, r3 = st.columns([1.1, 1.3, 1.3])
+    with r1:
+        bc_tt = st.selectbox("Bưu cục", ALL_BC, key="bc_tt")
+    d = tt if bc_tt == "Tất cả" else tt[tt["Bưu Cục"].map(norm) == norm(bc_tt)]
+    d = d.assign(MaNV=d[c["nv"]].map(staff_id))
+    ten_nv = d.groupby("MaNV")[c["nv"]].last().map(staff_label)
+    with r2:
+        nv_tt = st.selectbox("Nhân viên", ["Tất cả"] + sorted(ten_nv), key="nv_tt")
+    with r3:
+        tt_max = tt["Ngày"].max() if tt["Ngày"].notna().any() else REF_DATE
+        a_tt, b_tt = date_range_picker("Khoảng ngày kết luận truy thu", tt_max.replace(day=1), tt_max,
+                                       "date_tt")
+    if nv_tt != "Tất cả":
+        d = d[d["MaNV"].map(ten_nv) == nv_tt]
+    d = d[(d["Ngày"] >= a_tt) & (d["Ngày"] <= b_tt)]
+
+    num = lambda k: (pd.to_numeric(d[c[k]], errors="coerce").fillna(0) if c[k]   # noqa: E731
+                     else pd.Series(0.0, index=d.index))
+    d = d.assign(_phai=num("ban_dau") + num("dieu_chinh"), _da=num("da"), _con=num("con"),
+                 _loai=d[c["loai"]].astype(str).str.strip())
+    if d.empty:
+        note(f"Không có khoản truy thu nào từ {a_tt:%d/%m/%Y} đến {b_tt:%d/%m/%Y}.")
+        return
+
+    section(f"Tổng quan truy thu {a_tt:%d/%m/%Y} – {b_tt:%d/%m/%Y}")
+    by_loai = (d.groupby("_loai").agg(so_vu=("_phai", "size"), tien=("_phai", "sum"))
+               .sort_values(["tien", "so_vu"], ascending=False))
+    top_loai = by_loai.index[0]
+    k1, k2, k3, k4 = st.columns(4)
+    for col, (t, v, sub, acc) in zip((k1, k2, k3, k4), (
+            ("Tổng phải truy thu", fmt_money(d["_phai"].sum()),
+             f"{len(d)} khoản · {d['MaNV'].nunique()} nhân viên", True),
+            ("Đã truy thu", fmt_money(d["_da"].sum()),
+             f"{d['_da'].sum() / d['_phai'].sum() * 100:.0f}% số phải thu" if d["_phai"].sum() else "", False),
+            ("Còn phải truy thu", fmt_money(d["_con"].sum()),
+             f"{int((d['_con'] > 0).sum())} khoản chưa thu đủ", False),
+            ("Loại truy thu nhiều tiền nhất",
+             f"<span style='font-size:calc(22px * var(--fs));line-height:1.25'>{esc(top_loai)}</span>",
+             f"{fmt_money(by_loai['tien'].iloc[0])} · {int(by_loai['so_vu'].iloc[0])} khoản. "
+             f"Nhiều khoản nhất: {by_loai['so_vu'].idxmax()} ({int(by_loai['so_vu'].max())} khoản)", False))):
+        with col:
+            st.markdown(metric_card(t, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+
+    cL, cR = st.columns([1.3, 1])
+    with cL:
+        g = by_loai.sort_values("tien")
+        fig_loai = go.Figure(go.Bar(
+            x=g["tien"], y=g.index, orientation="h", marker_color=DANGER,
+            text=[f"{money_label(v)} · {n} khoản" for v, n in zip(g["tien"], g["so_vu"])],
+            textposition="outside", cliponaxis=False,
+            hovertemplate="%{y}<br>%{x:,.0f} đ<extra></extra>"))
+        fig_loai.update_layout(title="Số tiền truy thu theo loại", height=max(340, 42 * len(g) + 120),
+                               margin=dict(l=10, r=130, t=60, b=40), showlegend=False)
+        fig_loai.update_xaxes(title_text="VNĐ")
+        fig_loai.update_yaxes(automargin=True)
+        plot_chart(fig_loai, width="stretch")
+    with cR:
+        g_nv = (d.groupby("MaNV")["_phai"].sum().sort_values(ascending=False).head(10)
+                .sort_values())
+        fig_nv = go.Figure(go.Bar(
+            x=g_nv.values, y=[ten_nv.get(m, m) for m in g_nv.index], orientation="h",
+            marker_color=ACCENT, text=[money_label(v) for v in g_nv.values],
+            textposition="outside", cliponaxis=False,
+            hovertemplate="%{y}<br>%{x:,.0f} đ<extra></extra>"))
+        fig_nv.update_layout(title="Top 10 nhân viên bị truy thu nhiều nhất",
+                             height=max(340, 42 * len(g_nv) + 120),
+                             margin=dict(l=10, r=90, t=60, b=40), showlegend=False)
+        fig_nv.update_xaxes(title_text="VNĐ")
+        fig_nv.update_yaxes(automargin=True)
+        plot_chart(fig_nv, width="stretch")
+
+    section("Số tiền truy thu theo nhân viên")
+    loai_nv = d.groupby(["MaNV", "_loai"])["_phai"].sum().reset_index().sort_values("_phai")
+    loai_chinh = loai_nv.groupby("MaNV")["_loai"].last()
+    agg_cols = {"Bưu cục": ("Bưu Cục", "last"), "Số khoản": ("_phai", "size"),
+                "Phải truy thu (đ)": ("_phai", "sum"), "Đã truy thu (đ)": ("_da", "sum"),
+                "Còn phải thu (đ)": ("_con", "sum")}
+    if c["nghi"]:
+        agg_cols["Ngày nghỉ việc"] = (c["nghi"], "last")
+    t = d.groupby("MaNV").agg(**agg_cols)
+    t.insert(0, "Nhân viên", t.index.map(lambda m: ten_nv.get(m, m)))
+    t["Loại nhiều nhất"] = t.index.map(loai_chinh)
+    t = t.sort_values("Phải truy thu (đ)", ascending=False).reset_index(drop=True)
+    if "Ngày nghỉ việc" in t.columns:
+        t["Ngày nghỉ việc"] = t["Ngày nghỉ việc"].replace({"-": "", "nan": ""})
+    so = st.column_config.NumberColumn(format="localized")
+    st.dataframe(t, hide_index=True, width="stretch",
+                 column_config={k: so for k in ("Số khoản", "Phải truy thu (đ)", "Đã truy thu (đ)",
+                                                "Còn phải thu (đ)")})
+
+    section("Theo loại truy thu")
+    hinh = (d.pivot_table(index="_loai", columns=c["hinh_thuc"], values="_phai", aggfunc="sum",
+                          fill_value=0) if c["hinh_thuc"] else pd.DataFrame(index=by_loai.index))
+    bl = by_loai.rename(columns={"so_vu": "Số khoản", "tien": "Phải truy thu (đ)"})
+    bl["Tỷ trọng"] = bl["Phải truy thu (đ)"] / bl["Phải truy thu (đ)"].sum() * 100
+    bl = bl.join(hinh.add_prefix("Hình thức: ").add_suffix(" (đ)"))
+    bl.insert(0, "Loại truy thu", bl.index)
+    st.dataframe(bl.reset_index(drop=True), hide_index=True, width="stretch",
+                 column_config={**{k: so for k in bl.columns if k.endswith("(đ)") or k == "Số khoản"},
+                                "Tỷ trọng": st.column_config.NumberColumn(format="%.1f%%")})
+
+    with st.expander(f"Chi tiết {len(d)} khoản truy thu"):
+        cols = ["Ngày", c["nv"], "Bưu Cục", c["loai"], c["hinh_thuc"], c["ma_don"],
+                "_phai", "_da", "_con"]
+        ct = (d[[x for x in cols if x]].sort_values("Ngày", ascending=False)
+              .rename(columns={"Ngày": "Ngày kết luận", "Bưu Cục": "Bưu cục", "_phai": "Phải truy thu (đ)",
+                               "_da": "Đã truy thu (đ)", "_con": "Còn phải thu (đ)"}))
+        ct[c["nv"]] = ct[c["nv"]].map(staff_label)
+        st.dataframe(ct, hide_index=True, width="stretch",
+                     column_config={"Ngày kết luận": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                    **{k: so for k in ct.columns if k.endswith("(đ)")}})
+
+
+if PAGE == "truy_thu":
+    with st.container():
+        truy_thu_page()
+
+
 if PAGE == "ai":
     with st.container():
         st.markdown("Hỏi bằng tiếng Việt thường ngày. AI đọc trực tiếp các bảng dữ liệu "
