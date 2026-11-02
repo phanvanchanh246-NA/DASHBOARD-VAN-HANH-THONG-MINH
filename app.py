@@ -246,8 +246,9 @@ h1, h2, h3, h4 {{
 
 /* ── Banner đầu trang ───────────────────────────────────────────────── */
 .ghn-banner {{
-    background: linear-gradient(120deg, {PRIMARY} 0%, #00B4D8 65%, {ACCENT} 100%);
-    border-radius: 10px; padding: 22px 28px; margin-bottom: 22px;
+    background: linear-gradient(120deg, {PRIMARY} 0%, #0096C7 55%, #00B4D8 100%);
+    border-bottom: 5px solid {ACCENT};
+    border-radius: 10px; padding: 14px 22px; margin-bottom: 18px;
     box-shadow: 0 4px 14px rgba(0,119,182,0.25);
 }}
 .ghn-banner h1 {{
@@ -256,24 +257,35 @@ h1, h2, h3, h4 {{
 }}
 .ghn-banner p {{ color: rgba(255,255,255,0.92); font-size: calc(17.75px * var(--fs)); font-weight: 600; margin: 0; }}
 .ghn-banner .ghn-slogan {{
-    color: #FFD166; font-size: calc(19px * var(--fs)); font-weight: 800; letter-spacing: 2px;
-    margin: 0 0 8px 0; text-transform: uppercase;
+    color: #FFD166; font-size: calc(15.5px * var(--fs)); font-weight: 800; letter-spacing: 2px;
+    margin: 2px 0 0 0; text-transform: uppercase;
 }}
-.ghn-banner-row {{ display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }}
-.ghn-banner-text {{ flex: 1 1 320px; min-width: 0; }}
+/* Nhãn trạng thái dữ liệu ở góc phải banner; dữ liệu cũ từ 2 ngày thì chuyển cam để nhắc cập nhật sheet */
+.ghn-status {{
+    margin-left: auto; flex: 0 0 auto; white-space: nowrap;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.4);
+    color: #FFFFFF; border-radius: 999px; padding: 5px 12px;
+    font-size: calc(13.5px * var(--fs)); font-weight: 700;
+}}
+.ghn-status.stale {{ background: {ACCENT}; border-color: {ACCENT}; }}
+.ghn-banner-row {{ display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }}
+.ghn-banner-text {{ flex: 1 1 auto; }}
 .ghn-logo-plate {{
-    background: #FFFFFF; border-radius: 12px; padding: 10px 18px; flex: 0 0 auto;
+    background: #FFFFFF; border-radius: 10px; padding: 7px 14px; flex: 0 0 auto;
     box-shadow: 0 2px 10px rgba(0,0,0,0.18);
 }}
 .ghn-logo-plate {{ max-width: 100%; box-sizing: border-box; }}
-.ghn-logo-plate img {{ height: 50px; width: auto; max-width: 100%; object-fit: contain; display: block; }}
-.ghn-banner-row h1 {{ font-size: calc(30.5px * var(--fs)); }}
+.ghn-logo-plate img {{ height: 40px; width: auto; max-width: 100%; object-fit: contain; display: block; }}
+.ghn-banner-row h1 {{ font-size: calc(28px * var(--fs)); margin: 0; padding: 0 !important; line-height: 1.15;
+                      white-space: nowrap; }}
 .ghn-login-logo {{ text-align: center; margin: 40px 0 20px 0; }}
 .ghn-login-logo img {{ width: min(360px, 85%); height: auto; }}
 @media (max-width: 640px) {{
     .block-container {{ padding-top: 3.2rem; }}
-    .ghn-banner {{ padding: 16px 16px; }}
-    .ghn-banner-row {{ gap: 14px; }}
+    .ghn-banner {{ padding: 12px 14px; }}
+    .ghn-banner-row {{ gap: 10px; }}
+    .ghn-banner-row h1 {{ white-space: normal; }}
+    .ghn-status {{ margin-left: 0; white-space: normal; font-size: calc(12.5px * var(--fs)); padding: 4px 10px; }}
     .ghn-banner-row h1 {{ font-size: calc(22px * var(--fs)); }}
     .ghn-banner p {{ font-size: calc(13.5px * var(--fs)); }}
     .ghn-logo-plate {{ width: 100%; padding: 8px 12px; }}
@@ -521,13 +533,13 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
 @media (min-width: 1800px) {{
     html {{ font-size: 22px; }}
     :root {{ --fs: 1.12; }}
-    .ghn-logo-plate img {{ height: 58px; }}
+    .ghn-logo-plate img {{ height: 46px; }}
 }}
 @media (min-width: 2400px) {{
     html {{ font-size: 24px; }}
     :root {{ --fs: 1.25; }}
     .block-container {{ padding-left: 2.4rem; padding-right: 2.4rem; }}
-    .ghn-logo-plate img {{ height: 66px; }}
+    .ghn-logo-plate img {{ height: 52px; }}
 }}
 @media (max-width: 1100px) {{
     :root {{ --fs: 0.94; }}
@@ -535,8 +547,12 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
     .stTabs [role="tab"] {{ padding: 0 12px; }}
     [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
     [data-testid="stColumn"] {{ min-width: min(230px, 100%); }}
-    .ghn-logo-plate img {{ height: 40px; }}
-    .ghn-banner h1, .ghn-banner-row h1 {{ font-size: calc(26px * var(--fs)); }}
+}}
+/* Màn hình vừa (máy tính bảng, laptop nhỏ có thanh menu): thu nhỏ logo và tiêu đề để nhãn ngày
+   vẫn nằm cùng hàng, banner không cao thêm. */
+@media (max-width: 1440px) {{
+    .ghn-logo-plate img {{ height: 34px; }}
+    .ghn-banner-row h1 {{ font-size: calc(23px * var(--fs)); }}
 }}
 @media (max-width: 640px) {{
     html {{ font-size: 18px; }}
@@ -3495,14 +3511,19 @@ def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả") -> float:
 # ═══════════════════════════════════════════════════════════════════════
 _logo_html = (f'<div class="ghn-logo-plate"><img src="{logo_uri()}" alt="GiaoHangNhanh"></div>'
               if logo_uri() else "")
+# Giờ đồng bộ theo giờ Việt Nam (máy chủ Render chạy UTC nên datetime.now() lệch 7 tiếng).
+_sync_vn = pd.Timestamp.now("UTC") + timedelta(hours=7)
+_stale = (TODAY_VN - REF_DATE).days >= 2
 st.markdown(f"""
 <div class="ghn-banner">
   <div class="ghn-banner-row">{_logo_html}
     <div class="ghn-banner-text">
-      <h1>Trung Tâm Vận Hành — GHN</h1>
+      <h1>Trung Tâm Vận Hành</h1>
       <div class="ghn-slogan">Kỷ luật là sức mạnh</div>
-      <p>Hiệu suất thực · Quyết định nhanh · AI cố vấn &nbsp;|&nbsp;
-         Dữ liệu đến {REF_DATE:%d/%m/%Y} · Đồng bộ {datetime.now():%H:%M}</p>
+    </div>
+    <div class="ghn-status{' stale' if _stale else ''}"
+         title="{'Dữ liệu chưa cập nhật từ 2 ngày trở lên' if _stale else 'Dữ liệu mới nhất'}">
+      📅 Dữ liệu đến {REF_DATE:%d/%m} · Đồng bộ {_sync_vn:%H:%M}
     </div>
   </div>
 </div>""", unsafe_allow_html=True)
