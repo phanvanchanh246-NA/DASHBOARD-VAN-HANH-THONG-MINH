@@ -1,5 +1,5 @@
 """
-TRUNG TÂM VẬN HÀNH — GHN
+TRUNG TÂM VẬN HÀNH - KINH DOANH — GHN
 Dashboard Streamlit: Vận hành · Kinh doanh · Năng suất & Lương · KPI · AI cố vấn
 
 Chạy local:
@@ -73,7 +73,7 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════════
 _APP_ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icon-192.png")
 st.set_page_config(
-    page_title="Trung Tâm Vận Hành — GHN",
+    page_title="Trung Tâm Vận Hành - Kinh Doanh — GHN",
     page_icon=_APP_ICON if os.path.exists(_APP_ICON) else "🚀",
     layout="wide",
     initial_sidebar_state="auto",   # máy tính: mở menu bên trái; điện thoại: thu gọn
@@ -5719,5 +5719,5 @@ Trình bày bằng markdown, in đậm các con số quan trọng.""")
 st.markdown(
     f"<div style='margin-top:36px;padding-top:16px;border-top:2px solid {LINE};"
     f"text-align:center;color:{MUTED};font-size: calc(15.25px * var(--fs));font-weight:600;'>"
-    f"TRUNG TÂM VẬN HÀNH — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
+    f"TRUNG TÂM VẬN HÀNH - KINH DOANH — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
     unsafe_allow_html=True)
