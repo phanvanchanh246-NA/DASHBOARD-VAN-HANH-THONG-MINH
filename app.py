@@ -2777,9 +2777,9 @@ def hr_notice_data(hr: pd.DataFrame) -> tuple[str, str]:
 
 
 def hr_notice_prompt(thoi_gian: str, ngay_du_lieu: str, pham_vi: str, nguong: str, cao_txt: str,
-                     nhom_txt: str, n_total: int, n_cao: int) -> str:
-    return f"""Bạn là Quản lý khu vực của GHN, soạn tin nhắn gửi vào nhóm QUẢN LÝ bưu cục (trưởng bưu cục,
-điều phối) để cảnh báo các nhân viên giao hàng cần quan tâm. Giọng nghiêm túc, xây dựng.
+                     nhom_txt: str, n_total: int, n_cao: int, han_bao_cao: str) -> str:
+    return f"""Bạn là Quản lý khu vực của GHN, giao việc cho nhân viên xử lý (NVXL) của bưu cục về các nhân viên
+giao hàng đang có cảnh báo. Giọng rõ ràng, dứt khoát.
 
 SỐ LIỆU THẬT (chỉ dùng đúng những số này):
 - Dữ liệu năng suất đến ngày {ngay_du_lieu}; so sánh 7 ngày gần nhất ({thoi_gian}) với 7 ngày trước đó.
@@ -2790,28 +2790,20 @@ SỐ LIỆU THẬT (chỉ dùng đúng những số này):
 - Mức Trung bình, gom theo loại cảnh báo:
 {nhom_txt}
 
-YÊU CẦU — PHẦN ĐẦU NGẮN GỌN, PHẦN VIỆC CẦN LÀM CHI TIẾT:
-- VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 3 emoji. Không câu rào đón,
-  không giải thích lý thuyết, không lặp ý. Phần danh sách viết ngắn; phần "Việc NVXL cần làm" viết cụ thể.
-  Tổng cố gắng dưới 1.300 ký tự.
+YÊU CẦU — CHỈ GHI VIỆC NVXL PHẢI LÀM VÀ HẠN BÁO CÁO:
+- VĂN BẢN THUẦN (không markdown, không dấu * hay #), tối đa 2 emoji, dưới 900 ký tự.
+- KHÔNG liệt kê lại danh sách cảnh báo, KHÔNG nhận xét, KHÔNG giải thích, KHÔNG câu chào hay động viên.
 - TUYỆT ĐỐI không dùng từ "kỳ". Không bịa nguyên nhân, số liệu hay hình thức kỷ luật. Giữ nguyên tên như trên.
 - Bố cục đúng như sau:
-  Dòng 1: "⚠️ Cảnh báo nhân sự — dữ liệu đến {ngay_du_lieu}: {n_total} người cần chú ý ({n_cao} mức Cao)."
-  "Mức Cao:" rồi mỗi người một dòng "- Tên — bưu cục: vấn đề + con số chính".
-  "Theo dõi:" rồi mỗi loại cảnh báo một dòng "- Loại (số người): tên, tên…".
-  "Việc NVXL cần làm:" chỉ cho các loại cảnh báo đang có, ưu tiên người mức Cao trước. Mỗi việc một dòng,
-  ghi rõ: LÀM GÌ — VỚI AI (tên) — KHI NÀO — KẾT QUẢ CẦN ĐẠT. Tổng 4–7 dòng. Gợi ý theo từng loại:
-    %GTC thấp liên tiếp: trao đổi 1:1 trong hôm nay, cùng xem lý do đơn thất bại các ngày gần nhất
-      (khách hẹn lại, không nghe máy, sai địa chỉ, không kịp giờ); kèm tuyến 1–2 buổi với bạn %GTC tốt;
-      nhắc gọi xác nhận khách trước khi giao; mục tiêu %GTC về trên ngưỡng trong 3 ngày làm tới.
-    %GTC giảm mạnh: hỏi thay đổi từ khi bắt đầu giảm (tuyến mới, loại đơn mới, xe, sức khỏe);
-      điều chỉnh tuyến/đơn nếu cần; theo dõi %GTC hằng ngày trong 1 tuần.
-    Vắng / không có đơn: gọi hỏi thăm trong hôm nay, xác nhận ngày đi làm lại; sắp người hỗ trợ tuyến;
-      nếu bạn có ý định nghỉ thì ghi nhận lý do và báo nhân sự.
-    Gán thấp: xem lại cách phân đơn so với các bạn cùng bưu cục; tăng dần đơn gán khoảng 10–15%/ngày
-      và theo dõi để %GTC không giảm.
-  Thêm một dòng: "Báo cáo kết quả trao đổi và cam kết của từng bạn mức Cao trước [hạn cụ thể, ví dụ 17h ngày mai]."
-  Dòng cuối: "Chi tiết xem ảnh đính kèm."
+  Dòng 1: "⚠️ Việc NVXL cần làm — cảnh báo nhân sự đến {ngay_du_lieu}:"
+  Sau đó mỗi việc một dòng, đánh số 1, 2, 3…, ưu tiên người mức Cao trước, tổng 3–7 dòng.
+  Mỗi dòng: VIỆC CẦN LÀM — VỚI AI (tên, gom người cùng loại vào một dòng) — LÀM XONG TRƯỚC KHI NÀO.
+  Chỉ ghi việc cho các loại cảnh báo đang có. Gợi ý việc theo loại:
+    %GTC thấp liên tiếp: trao đổi 1:1 trong hôm nay, xem lý do đơn thất bại; kèm tuyến với bạn %GTC tốt.
+    %GTC giảm mạnh: hỏi thay đổi tuyến/loại đơn/xe/sức khỏe; điều chỉnh tuyến nếu cần, theo dõi hằng ngày.
+    Vắng / không có đơn: gọi hỏi thăm trong hôm nay, xác nhận ngày đi làm lại, sắp người hỗ trợ tuyến.
+    Gán thấp: xem lại cách phân đơn, tăng dần đơn gán và theo dõi %GTC.
+  Dòng cuối: "Hạn báo cáo lại: {han_bao_cao} — gửi kết quả trao đổi và cam kết của từng bạn."
 - Chỉ trả về nội dung tin nhắn."""
 
 
@@ -4402,7 +4394,8 @@ if PAGE == "canh_bao_ns":
                             ok_ai, ai_text = ask_ai_checked(hr_notice_prompt(
                                 tg_mo_ta, f"{hr_ref:%d/%m/%Y}",
                                 "toàn bộ các bưu cục" if bc_hr == "Tất cả" else f"bưu cục {bc_hr}",
-                                hr_nguong, cao_txt, nhom_txt, len(hr), n_cao), quick=True)
+                                hr_nguong, cao_txt, nhom_txt, len(hr), n_cao,
+                                f"17h ngày {TODAY_VN + timedelta(days=1):%d/%m/%Y}"), quick=True)
                         if ok_ai:
                             st.session_state["hr_msg"] = clean_tele_text(ai_text)
                             st.session_state["hr_msg_ctx"] = hr_ctx
