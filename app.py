@@ -2502,17 +2502,25 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
         return
     d = LN.assign(MaNV=LN[nv_col].map(staff_id), _tong=LN[c_tong0],
                   _ngay=LN[c_ngay0] if c_ngay0 else 1)
-    w1, w2, w3 = st.columns(3)
-    with w1:
-        muc_min = st.number_input("Lương TB/ngày công dưới (đ)", 0, 2_000_000, LUONG_LOW["min"], 10_000,
-                                  key="luong_low_min")
-    with w2:
-        pct = st.number_input("Hoặc dưới % trung vị bưu cục", 10, 100, LUONG_LOW["pct"], 5, key="luong_low_pct",
-                              help="Trung vị: lương TB/ngày của người đứng giữa khi xếp nhân viên bưu cục "
-                                   "từ thấp đến cao; không bị vài người quá cao hay quá thấp kéo lệch.")
-    with w3:
-        ngay_min = st.number_input("Chỉ xét người làm từ (ngày công)", 1, 31, LUONG_LOW["ngay"], 1,
-                                   key="luong_low_ngay")
+    # Ngưỡng thu gọn mặc định, bấm mở khi cần chỉnh. key cố định: tiêu đề hiện ngưỡng đang dùng nên đổi
+    # theo giá trị, không có key thì ô mở ra sẽ tự đóng lại mỗi lần chỉnh.
+    ss = st.session_state
+    dang_dung = (f"dưới {fmt_money(ss.get('luong_low_min', LUONG_LOW['min']))}/ngày hoặc dưới "
+                 f"{ss.get('luong_low_pct', LUONG_LOW['pct'])}% trung vị · từ "
+                 f"{ss.get('luong_low_ngay', LUONG_LOW['ngay'])} ngày công")
+    with st.expander(f"Điều chỉnh ngưỡng cảnh báo ({dang_dung})", key="exp_luong_low"):
+        w1, w2, w3 = st.columns(3)
+        with w1:
+            muc_min = st.number_input("Lương TB/ngày công dưới (đ)", 0, 2_000_000, LUONG_LOW["min"], 10_000,
+                                      key="luong_low_min")
+        with w2:
+            pct = st.number_input("Hoặc dưới % trung vị bưu cục", 10, 100, LUONG_LOW["pct"], 5,
+                                  key="luong_low_pct",
+                                  help="Trung vị: lương TB/ngày của người đứng giữa khi xếp nhân viên bưu cục "
+                                       "từ thấp đến cao; không bị vài người quá cao hay quá thấp kéo lệch.")
+        with w3:
+            ngay_min = st.number_input("Chỉ xét người làm từ (ngày công)", 1, 31, LUONG_LOW["ngay"], 1,
+                                       key="luong_low_ngay")
 
     # Trung vị tính trên TOÀN bưu cục trong khoảng ngày (không theo bộ lọc nhân viên).
     allc = DF_LUONG_NGAY[(DF_LUONG_NGAY["Ngày"] >= a) & (DF_LUONG_NGAY["Ngày"] <= b)]
@@ -2626,7 +2634,21 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
             fig_bc.update_layout(height=340, showlegend=False, margin=dict(t=80, b=60, r=80))
             plot_chart(fig_bc, width="stretch")
     else:
-        plot_chart(by_day, width="stretch")
+        # Chọn một bưu cục: cạnh biểu đồ theo ngày là tổng lương từng nhân viên của bưu cục đó.
+        cA, cB = st.columns([1.3, 1])
+        with cA:
+            plot_chart(by_day, width="stretch")
+        with cB:
+            g_nv = d.groupby("MaNV").agg(ten=(c["nv"], "last"), t=("_tong", "sum")).sort_values("t")
+            fig_nv = go.Figure(go.Bar(
+                x=g_nv["t"], y=g_nv["ten"].map(staff_label), orientation="h", marker_color=SUCCESS,
+                text=[money_label(v) for v in g_nv["t"]], textposition="outside", cliponaxis=False,
+                hovertemplate="%{y}<br>%{x:,.0f} đ<extra></extra>"))
+            fig_nv.update_layout(title="Tổng lương theo nhân viên", showlegend=False,
+                                 height=max(340, 30 * len(g_nv) + 130), margin=dict(l=10, r=90, t=70, b=50))
+            fig_nv.update_xaxes(title_text="VNĐ")
+            fig_nv.update_yaxes(automargin=True, tickfont=dict(size=13))
+            plot_chart(fig_nv, width="stretch")
 
     section("Bảng lương theo nhân viên")
     agg_cols = {"Nhân viên": (c["nv"], "last"), "Bưu cục": ("Bưu Cục", "last"),
