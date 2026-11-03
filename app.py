@@ -3622,6 +3622,7 @@ if PAGE == "tong_quan":
 
         g_gtc = scope(M_GTC, bc_ov)
         g_tra = scope(M_TRA, bc_ov)
+        g_gtb = scope(M_GTB, bc_ov)
         g_tts = scope(M_TTS, bc_ov)
         g_odr = scope(M_ODR, bc_ov)
         g_opr = scope(M_OPR, bc_ov)
@@ -3636,6 +3637,8 @@ if PAGE == "tong_quan":
 
         p_gtc = get_period_data(g_gtc, REF_DATE)
         p_tra = get_period_data(g_tra, REF_DATE)
+        p_gtb = get_period_data(g_gtb, REF_DATE)
+        t_gtb_ov = kpi_target([["gtb"]], 0.0, bc=bc_ov)   # chưa có cột GTB ở sheet KPI thì không ghi mốc
         p_tts = get_period_data(g_tts, REF_DATE)
         p_odr = get_period_data(g_odr, REF_DATE)
         p_opr = get_period_data(g_opr, REF_DATE)
@@ -3655,7 +3658,7 @@ if PAGE == "tong_quan":
         _sub_tab1 = st.tabs(['Tổng hợp', 'Bưu cục diện đỏ', 'Diễn biến 30 ngày', 'Nhận định AI'],
                             key="tabs_ov")
         with _sub_tab1[0]:
-            section("Chỉ số nổi bật hôm nay")
+            section("Chỉ số nổi bật hôm nay (N-1)")
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 st.markdown(metric_card("Sản lượng hôm nay", f"{p_vol['n']:,.0f}",
@@ -3673,7 +3676,7 @@ if PAGE == "tong_quan":
                 st.markdown(metric_card("Doanh thu tháng", fmt_money(p_dt["m"]),
                                         p_dt["m"] - p_dt["m1"], "đ", True, p_dt["has_m1"]),
                             unsafe_allow_html=True)
-            c5, c6, c7, _ = st.columns(4)
+            c5, c6, c7, c8 = st.columns(4)
             with c5:
                 st.markdown(metric_card("ODR TikTok", f"{p_odr['n']:,.2f}%",
                                         p_odr["n"] - p_odr["n1"], "%", True, p_odr["has_n1"],
@@ -3687,6 +3690,11 @@ if PAGE == "tong_quan":
                 st.markdown(metric_card("Tỷ lệ trả hàng", f"{p_tra['n']:,.2f}%",
                                         p_tra["n"] - p_tra["n1"], "%", False, p_tra["has_n1"],
                                         sub=f"· tối đa {t_tra_ov:g}%"), unsafe_allow_html=True)
+            with c8:
+                st.markdown(metric_card("GTB - Thu tiền", f"{p_gtb['n']:,.2f}%",
+                                        p_gtb["n"] - p_gtb["n1"], "%", True, p_gtb["has_n1"],
+                                        sub=f"· mốc {t_gtb_ov:g}%" if t_gtb_ov else ""),
+                            unsafe_allow_html=True)
 
             section("Cảnh báo — chỉ số chưa đạt mốc")
             checks = [
