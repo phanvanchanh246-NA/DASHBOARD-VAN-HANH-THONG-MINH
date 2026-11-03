@@ -181,7 +181,7 @@ SALARY_PARTS = {
 # 1. GIAO DIỆN — CSS TÙY CHỈNH
 # ═══════════════════════════════════════════════════════════════════════
 pio.templates["ghn"] = go.layout.Template(layout=dict(
-    font=dict(family="Montserrat, sans-serif", size=15, color=TEXT),
+    font=dict(family="Montserrat, sans-serif", size=13, color=TEXT),
     plot_bgcolor=BG, paper_bgcolor=BG, hovermode="x unified",
     # Không cho kéo/thu phóng: chạm nhầm vào biểu đồ trên điện thoại không làm đổi khung nhìn.
     dragmode=False,
@@ -189,19 +189,19 @@ pio.templates["ghn"] = go.layout.Template(layout=dict(
     # t=90 chừa chỗ cho tiêu đề; b=120 chừa chỗ cho legend nằm dưới.
     margin=dict(l=70, r=30, t=90, b=120),
     title=dict(x=0, xanchor="left", y=0.97, yanchor="top",
-               font=dict(family="Montserrat, sans-serif", size=18, color=PRIMARY)),
+               font=dict(family="Montserrat, sans-serif", size=15, color=PRIMARY)),
     xaxis=dict(showgrid=False, linecolor=LINE, linewidth=1,
-               ticks="outside", tickcolor=LINE, tickfont=dict(size=17),
+               ticks="outside", tickcolor=LINE, tickfont=dict(size=12),
                automargin=True, fixedrange=True),
-    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=17),
+    yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=12),
                automargin=True, fixedrange=True),
     # Legend nằm DƯỚI biểu đồ. Trước đây đặt y=1.02 (phía trên) nên đè lên tiêu đề.
     # orientation="h" giúp legend tự xuống dòng khi màn hình hẹp, không tràn chữ.
     legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0,
-                font=dict(size=15), itemwidth=30,
+                font=dict(size=12), itemwidth=30,
                 itemclick=False, itemdoubleclick=False),   # bấm vào chú thích không ẩn/hiện đường
     hoverlabel=dict(bgcolor=PRIMARY, bordercolor=PRIMARY,
-                    font=dict(family="Montserrat, sans-serif", size=15, color="#FFFFFF")),
+                    font=dict(family="Montserrat, sans-serif", size=13, color="#FFFFFF")),
 ))
 pio.templates.default = "ghn"
 
@@ -209,13 +209,12 @@ st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap');
 
-/* ── PHÓNG CỠ CHỮ 1.5 LẦN ────────────────────────────────────────────
-   Streamlit dùng rem cho phần lớn thành phần của nó (ô chọn, nút, bảng,
-   chat...). Đổi cỡ chữ gốc từ 16px lên 24px là mọi thứ đó tự phóng theo.
-   Các cỡ px trong CSS bên dưới đã được nhân sẵn 1.5. */
-html {{ font-size: 20px; }}
+/* ── CỠ CHỮ ───────────────────────────────────────────────────────────
+   Streamlit dùng rem cho phần lớn thành phần của nó (ô chọn, nút, bảng, chat...), nên cỡ chữ gốc
+   quyết định cỡ của tất cả. 16px là cỡ chuẩn của các trang web; các khối tự dựng nhân thêm --fs. */
+html {{ font-size: 16px; }}
 /* Hệ số cỡ chữ cho các khối tự dựng; đổi theo độ rộng màn hình ở cuối khối CSS. */
-:root {{ --fs: 1; }}
+:root {{ --fs: 0.85; }}
 
 html, body, [class*="css"], .stApp {{
     font-family: 'Montserrat', sans-serif !important;
@@ -532,18 +531,18 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
    các cột hẹp tự xuống hàng thay vì bị bóp.
    Điện thoại (≤640px): thu gọn banner, lề, cỡ chữ. Streamlit tự xếp cột thành một cột. */
 @media (min-width: 1800px) {{
-    html {{ font-size: 22px; }}
-    :root {{ --fs: 1.12; }}
+    html {{ font-size: 17px; }}
+    :root {{ --fs: 0.92; }}
     .ghn-logo-plate img {{ height: 46px; }}
 }}
 @media (min-width: 2400px) {{
-    html {{ font-size: 24px; }}
-    :root {{ --fs: 1.25; }}
+    html {{ font-size: 18px; }}
+    :root {{ --fs: 1; }}
     .block-container {{ padding-left: 2.4rem; padding-right: 2.4rem; }}
     .ghn-logo-plate img {{ height: 52px; }}
 }}
 @media (max-width: 1100px) {{
-    :root {{ --fs: 0.94; }}
+    :root {{ --fs: 0.82; }}
     .stTabs [role="tablist"] {{ flex-wrap: wrap; row-gap: 4px; }}
     .stTabs [role="tab"] {{ padding: 0 12px; }}
     [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
@@ -556,8 +555,8 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
     .ghn-banner-row h1 {{ font-size: calc(23px * var(--fs)); }}
 }}
 @media (max-width: 640px) {{
-    html {{ font-size: 18px; }}
-    :root {{ --fs: 0.86; }}
+    html {{ font-size: 15px; }}
+    :root {{ --fs: 0.76; }}
     .block-container {{ padding-left: 0.8rem; padding-right: 0.8rem; }}
     .stTabs [role="tab"] {{ padding: 0 7px; height: 36px; min-height: 0; }}
     .stTabs [role="tab"] p {{ font-size: 13.5px !important; }}
@@ -1276,7 +1275,7 @@ def pay_period(ref: pd.Timestamp):
     return a, b, name, prev_a, prev_b, prev_name
 
 
-LABEL_FONT = dict(size=12)
+LABEL_FONT = dict(size=11)
 
 
 fig_cache = memo   # biểu đồ plotly: xem memo
@@ -1431,7 +1430,7 @@ def _bc_bar_fig(g: pd.DataFrame, target, higher_is_better, title):
     fig = go.Figure(go.Bar(x=g["r"], y=g["Bưu Cục"], orientation="h",
                            marker=dict(color=colors),
                            text=[f"{v:,.2f}%" for v in g["r"]], textposition="outside",
-                           textfont=dict(size=17), cliponaxis=False,
+                           textfont=dict(size=12), cliponaxis=False,
                            customdata=g["w"],
                            hovertemplate="%{y}<br>%{x:.2f}%<br>Sản lượng %{customdata:,.0f} đơn<extra></extra>"))
     if target:
@@ -1440,7 +1439,7 @@ def _bc_bar_fig(g: pd.DataFrame, target, higher_is_better, title):
     # không bị cắt. Cỡ chữ đã phóng 1.5 lần nên nhãn chiếm nhiều chỗ hơn trước.
     x_max = float(max(g["r"].max(), target or 0))
     fig.update_xaxes(range=[0, x_max * 1.22], ticksuffix="%", automargin=True)
-    fig.update_yaxes(automargin=True, tickfont=dict(size=17))
+    fig.update_yaxes(automargin=True, tickfont=dict(size=12))
     fig.update_layout(title=title,
                       height=max(300, 110 * len(g) + 130),
                       margin=dict(l=20, r=120, t=90, b=60),
@@ -4383,7 +4382,7 @@ if PAGE == "kinh_doanh":
                         y=labels, x=cnt["Số lượng"], textinfo="none",
                         marker=dict(color=[PRIMARY, "#00B4D8", ACCENT, SUCCESS, MUTED]),
                         connector=dict(line=dict(color=LINE, width=1))))
-                    fig_funnel.update_yaxes(tickfont=dict(size=15))
+                    fig_funnel.update_yaxes(tickfont=dict(size=12))
                     fig_funnel.update_layout(title="Phễu trạng thái khách hàng", height=380, funnelgap=0.12, margin=dict(l=20, r=20),
                                              showlegend=False,
                                              hovermode="closest")
@@ -5449,13 +5448,13 @@ if PAGE == "thi_dua":
                         marker=dict(color=[SUCCESS if v >= 0 else DANGER
                                            for v in chart_td["Tỷ Lệ Cải Thiện"]]),
                         text=[f"{v:+.2f}" for v in chart_td["Tỷ Lệ Cải Thiện"]],
-                        textposition="outside", textfont=dict(size=15), cliponaxis=False,
+                        textposition="outside", textfont=dict(size=12), cliponaxis=False,
                         hovertemplate="%{y}<br>Cải thiện %{x:+.2f} điểm phần trăm<extra></extra>"))
                     fig_td.add_vline(x=0, line_color=MUTED, line_width=1)
                     lim = float(max(abs(chart_td["Tỷ Lệ Cải Thiện"].min()),
                                     abs(chart_td["Tỷ Lệ Cải Thiện"].max()), 1)) * 1.35
                     fig_td.update_xaxes(range=[-lim, lim], title_text="Điểm phần trăm")
-                    fig_td.update_yaxes(automargin=True, tickfont=dict(size=15))
+                    fig_td.update_yaxes(automargin=True, tickfont=dict(size=12))
                     fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
                                          margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
                     plot_chart(fig_td, width="stretch")
