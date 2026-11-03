@@ -2448,6 +2448,73 @@ Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đí
 - Chỉ trả về nội dung thông báo, không giải thích thêm."""
 
 
+LUONG_LOW = {"min": 300_000, "pct": 75, "ngay": 3}   # mặc định cảnh báo lương thấp
+
+
+def luong_low_warning(d: pd.DataFrame, nv_col: str, a, b) -> None:
+    """Cảnh báo nhân viên lương thấp trong khoảng ngày: lương TB/ngày công dưới mức tối thiểu,
+    hoặc thấp hơn x% trung vị lương TB/ngày của nhân viên cùng bưu cục. Bỏ người làm quá ít ngày
+    và người đã nghỉ việc. `d` có cột MaNV, Bưu Cục, _tong, _ngay (đã tính trong luong_tab)."""
+    section("Cảnh báo nhân viên lương thấp")
+    w1, w2, w3 = st.columns(3)
+    with w1:
+        muc_min = st.number_input("Lương TB/ngày công dưới (đ)", 0, 2_000_000, LUONG_LOW["min"], 10_000,
+                                  key="luong_low_min")
+    with w2:
+        pct = st.number_input("Hoặc dưới % trung vị bưu cục", 10, 100, LUONG_LOW["pct"], 5, key="luong_low_pct")
+    with w3:
+        ngay_min = st.number_input("Chỉ xét người làm từ (ngày công)", 1, 31, LUONG_LOW["ngay"], 1,
+                                   key="luong_low_ngay")
+
+    # Trung vị tính trên TOÀN bưu cục trong khoảng ngày (không theo bộ lọc nhân viên).
+    allc = DF_LUONG_NGAY[(DF_LUONG_NGAY["Ngày"] >= a) & (DF_LUONG_NGAY["Ngày"] <= b)]
+    c_tong, c_ngay = pick_col(allc, [["tong luong"]]), pick_col(allc, [["so ngay di lam"]])
+    if allc.empty or not c_tong:
+        return
+    ref = (allc.assign(MaNV=allc[nv_col].map(staff_id), _t=allc[c_tong],
+                       _n=allc[c_ngay] if c_ngay else 1)
+           .groupby("MaNV").agg(bc=("Bưu Cục", "last"), t=("_t", "sum"), n=("_n", "sum")))
+    ref = ref[ref["n"] >= ngay_min]
+    med = (ref["t"] / ref["n"]).groupby(ref["bc"]).median().astype(float)
+
+    p = d.groupby("MaNV").agg(ten=(nv_col, "last"), bc=("Bưu Cục", "last"), t=("_tong", "sum"),
+                              n=("_ngay", "sum"))
+    p = p[(p["n"] >= ngay_min) & ~p.index.isin(NGHI_VIEC)]
+    if p.empty:
+        st.markdown(f"<div class='ghn-alert ok'><span class='a-tag tag-ok'>CHƯA ĐỦ DỮ LIỆU</span>"
+                    f"Chưa có nhân viên nào đủ {ngay_min} ngày công trong khoảng ngày đã chọn.</div>",
+                    unsafe_allow_html=True)
+        return
+    p["tb"] = p["t"] / p["n"]
+    p["med"] = p["bc"].map(med).astype(float)
+    p["ty_le"] = p["tb"] / p["med"] * 100
+    duoi_min, duoi_med = p["tb"] < muc_min, p["ty_le"] < pct
+    low = p[duoi_min | duoi_med].sort_values("tb")
+    if low.empty:
+        st.markdown("<div class='ghn-alert ok'><span class='a-tag tag-ok'>ỔN ĐỊNH</span>"
+                    "Không có nhân viên nào lương thấp theo ngưỡng đang chọn.</div>", unsafe_allow_html=True)
+        return
+
+    cao = int((duoi_min & duoi_med).loc[low.index].sum())
+    st.markdown(f"<div class='ghn-alert {'danger' if cao else ''}'><span class='a-tag "
+                f"{'tag-danger' if cao else 'tag-warn'}'>{'CẦN XỬ LÝ' if cao else 'THEO DÕI'}</span>"
+                f"<b>{len(low)}</b> nhân viên lương thấp, <b>{cao}</b> người dưới cả hai ngưỡng.</div>",
+                unsafe_allow_html=True)
+    ly_do = [", ".join(x for x, ok in ((f"dưới {fmt_money(muc_min)}/ngày", m1),
+                                       (f"bằng {r:.0f}% trung vị bưu cục", m2)) if ok)
+             for m1, m2, r in zip(duoi_min.loc[low.index], duoi_med.loc[low.index], low["ty_le"])]
+    bang = pd.DataFrame({
+        "Mức": np.where(duoi_min.loc[low.index] & duoi_med.loc[low.index], "Cao", "Trung bình"),
+        "Nhân viên": low["ten"].map(staff_label), "Bưu cục": low["bc"],
+        "Ngày công": low["n"], "Tổng lương (đ)": low["t"].round(0),
+        "Lương TB/ngày (đ)": low["tb"].round(0), "Trung vị BC/ngày (đ)": low["med"].round(0),
+        "Lý do": ly_do}).reset_index(drop=True)
+    so = st.column_config.NumberColumn(format="localized")
+    st.dataframe(bang, hide_index=True, width="stretch",
+                 column_config={k: so for k in ("Ngày công", "Tổng lương (đ)", "Lương TB/ngày (đ)",
+                                                "Trung vị BC/ngày (đ)")})
+
+
 def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
     """Tab Lương: số liệu từ sheet Lương (mỗi dòng là lương 1 nhân viên trong 1 ngày)."""
     section(f"Lương nhân viên {a:%d/%m/%Y} – {b:%d/%m/%Y}")
@@ -2475,6 +2542,8 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
             ("Đơn giao tính lương", f"{d['_giao'].sum():,.0f}", f"đơn lấy tính lương {d['_lay'].sum():,.0f}"))):
         with col:
             st.markdown(metric_card(t, v, None, sub=sub, accent=(t == "Tổng lương")), unsafe_allow_html=True)
+
+    luong_low_warning(d, c["nv"], a, b)
 
     g_day = d.groupby("Ngày", as_index=False)["_tong"].sum()
     by_day = px.bar(g_day, x="Ngày", y="_tong", title="Tổng lương theo ngày")
