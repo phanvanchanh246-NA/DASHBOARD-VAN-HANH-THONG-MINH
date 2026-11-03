@@ -2491,7 +2491,7 @@ def luong_staff_chart(ma: str, a, b):
 
 
 def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
-    """Tab Cảnh báo lương thấp: lương TB/ngày công dưới mức tối thiểu, hoặc thấp hơn x% trung vị
+    """Tab Cảnh báo lương thấp: lương TB/ngày công dưới mức tối thiểu, hoặc thấp hơn x% mức trung bình
     lương TB/ngày của nhân viên cùng bưu cục. Bỏ người làm quá ít ngày và người đã nghỉ việc.
     Bấm chọn một dòng để xem biểu đồ đơn gán, GTC và lương ngày của người đó."""
     section(f"Cảnh báo nhân viên lương thấp {a:%d/%m/%Y} – {b:%d/%m/%Y}")
@@ -2507,12 +2507,12 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
         muc_min = st.number_input("Lương TB/ngày công dưới (đ)", 0, 2_000_000, LUONG_LOW["min"], 10_000,
                                   key="luong_low_min")
     with w2:
-        pct = st.number_input("Hoặc dưới % trung vị bưu cục", 10, 100, LUONG_LOW["pct"], 5, key="luong_low_pct")
+        pct = st.number_input("Hoặc dưới % trung bình bưu cục", 10, 100, LUONG_LOW["pct"], 5, key="luong_low_pct")
     with w3:
         ngay_min = st.number_input("Chỉ xét người làm từ (ngày công)", 1, 31, LUONG_LOW["ngay"], 1,
                                    key="luong_low_ngay")
 
-    # Trung vị tính trên TOÀN bưu cục trong khoảng ngày (không theo bộ lọc nhân viên).
+    # Mức trung bình tính trên TOÀN bưu cục trong khoảng ngày (không theo bộ lọc nhân viên).
     allc = DF_LUONG_NGAY[(DF_LUONG_NGAY["Ngày"] >= a) & (DF_LUONG_NGAY["Ngày"] <= b)]
     c_tong, c_ngay = pick_col(allc, [["tong luong"]]), pick_col(allc, [["so ngay di lam"]])
     if allc.empty or not c_tong:
@@ -2521,7 +2521,7 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
                        _n=allc[c_ngay] if c_ngay else 1)
            .groupby("MaNV").agg(bc=("Bưu Cục", "last"), t=("_t", "sum"), n=("_n", "sum")))
     ref = ref[ref["n"] >= ngay_min]
-    med = (ref["t"] / ref["n"]).groupby(ref["bc"]).median().astype(float)
+    med = (ref["t"] / ref["n"]).groupby(ref["bc"]).mean().astype(float)
 
     p = d.groupby("MaNV").agg(ten=(nv_col, "last"), bc=("Bưu Cục", "last"), t=("_tong", "sum"),
                               n=("_ngay", "sum"))
@@ -2547,27 +2547,27 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
                 f"<b>{len(low)}</b> nhân viên lương thấp, <b>{cao}</b> người dưới cả hai ngưỡng.</div>",
                 unsafe_allow_html=True)
     ly_do = [", ".join(x for x, ok in ((f"dưới {fmt_money(muc_min)}/ngày", m1),
-                                       (f"bằng {r:.0f}% trung vị bưu cục", m2)) if ok)
+                                       (f"bằng {r:.0f}% trung bình bưu cục", m2)) if ok)
              for m1, m2, r in zip(duoi_min.loc[low.index], duoi_med.loc[low.index], low["ty_le"])]
     bang = pd.DataFrame({
         "Mức": np.where(duoi_min.loc[low.index] & duoi_med.loc[low.index], "Cao", "Trung bình"),
         "Nhân viên": low["ten"].map(staff_label), "Bưu cục": low["bc"],
         "Ngày công": low["n"], "Tổng lương (đ)": low["t"].round(0),
-        "Lương TB/ngày (đ)": low["tb"].round(0), "Trung vị BC/ngày (đ)": low["med"].round(0),
+        "Lương TB/ngày (đ)": low["tb"].round(0), "Trung bình BC/ngày (đ)": low["med"].round(0),
         "Lý do": ly_do}).reset_index(drop=True)
     so = st.column_config.NumberColumn(format="localized")
     # Khóa không bắt đầu bằng tiền tố bộ lọc: bảng có chọn dòng không cho gán lại giá trị qua session_state.
     chon = st.dataframe(bang, hide_index=True, width="stretch", on_select="rerun",
                         selection_mode="single-row", key="tbl_luong_low",
                         column_config={k: so for k in ("Ngày công", "Tổng lương (đ)", "Lương TB/ngày (đ)",
-                                                       "Trung vị BC/ngày (đ)")})
+                                                       "Trung bình BC/ngày (đ)")})
     dong = [i for i in chon.selection.rows if 0 <= i < len(low)]
     if dong:
         r = low.iloc[dong[0]]
         section(f"{staff_label(r['ten'])} · {r['bc']}")
         k1, k2, k3, k4 = st.columns(4)
         for col, (t, v) in zip((k1, k2, k3, k4), (
-                ("Lương TB/ngày công", fmt_money(r["tb"])), ("Trung vị bưu cục/ngày", fmt_money(r["med"])),
+                ("Lương TB/ngày công", fmt_money(r["tb"])), ("Trung bình bưu cục/ngày", fmt_money(r["med"])),
                 ("Tổng lương trong khoảng", fmt_money(r["t"])), ("Ngày công", f"{r['n']:,.0f}"))):
             with col:
                 st.markdown(metric_card(t, v, None, accent=(t == "Lương TB/ngày công")),
@@ -2736,7 +2736,7 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
       drop   — %GTC 7 ngày gần nhất giảm từ `drop` điểm so với 7 ngày trước đó (mỗi bên ≥ 30 đơn gán)
       absent — đã `absent` ngày trở lên không có đơn (nhưng chưa tới HR_QUIT_DAYS)
     Người không có đơn từ HR_QUIT_DAYS ngày trở lên coi như đã nghỉ việc và bị bỏ qua.
-      gan    — đơn gán bình quân/ngày trong 7 ngày dưới `ratio`% trung vị của bưu cục (làm ≥ 2 ngày)
+      gan    — đơn gán bình quân/ngày trong 7 ngày dưới `ratio`% mức trung bình của bưu cục (làm ≥ 2 ngày)
     Mỗi nhân viên một dòng, chỉ giữ người có ít nhất một cảnh báo."""
     cols = ["Mức", "Nhân viên", "Bưu cục", "Cảnh báo", "%GTC 7 ngày", "%GTC 7 ngày trước",
             "Gán TB/ngày", "Ngày làm cuối", "_tags", "_flags", "_score", "_ma"]
@@ -2758,7 +2758,7 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
                                               bc=("Bưu cục", "last"))
     per_staff = per_staff[per_staff["n"] >= 2]
     per_staff["avg"] = per_staff["gan"] / per_staff["n"]
-    med_bc = per_staff.groupby("bc")["avg"].median()
+    med_bc = per_staff.groupby("bc")["avg"].mean()
 
     rows = []
     for ma, x in d.groupby("MaNV"):
@@ -2802,7 +2802,7 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
             flags.append("gan")
             tags.append(f"Gán thấp {avg_gan / med * 100:.0f}%")
             desc.append(f"gán TB {avg_gan:,.0f} đơn/ngày, bằng {avg_gan / med * 100:.0f}% "
-                        f"trung vị bưu cục ({med:,.0f})")
+                        f"trung bình bưu cục ({med:,.0f})")
             score += 1
         if not flags:
             continue
@@ -4438,7 +4438,7 @@ if PAGE == "canh_bao_ns":
                 hr_absent = st.number_input("Vắng từ (ngày)", 1, HR_QUIT_DAYS - 1, HR_DEFAULTS["absent"], 1,
                                             key="hr_absent")
             with h5:
-                hr_ratio = st.number_input("Gán dưới (% trung vị BC)", 5, 100, HR_DEFAULTS["ratio"], 5,
+                hr_ratio = st.number_input("Gán dưới (% trung bình BC)", 5, 100, HR_DEFAULTS["ratio"], 5,
                                            key="hr_ratio")
 
         hr_day = hr_daily(DF_NSGTC)
@@ -4458,7 +4458,7 @@ if PAGE == "canh_bao_ns":
                     (k2, "drop", "%GTC giảm mạnh", f"giảm từ {hr_drop:g} điểm so 7 ngày trước"),
                     (k3, "absent", "Vắng / không có đơn",
                      f"{int(hr_absent)}–{HR_QUIT_DAYS - 1} ngày không có đơn"),
-                    (k4, "gan", "Sản lượng gán thấp", f"dưới {hr_ratio}% trung vị bưu cục")):
+                    (k4, "gan", "Sản lượng gán thấp", f"dưới {hr_ratio}% trung bình bưu cục")):
                 with col_:
                     st.markdown(metric_card(ttl, f"{n_flag[k]} người", None, sub=sub,
                                             accent=n_flag[k] > 0), unsafe_allow_html=True)
@@ -4529,7 +4529,7 @@ if PAGE == "canh_bao_ns":
 
                 with _sub_tab8[1]:
                     hr_nguong = (f"%GTC dưới {hr_low:g}% từ {int(hr_streak)} ngày liền; giảm từ {hr_drop:g} điểm; "
-                                 f"vắng {int(hr_absent)}–{HR_QUIT_DAYS - 1} ngày; gán dưới {hr_ratio}% trung vị bưu cục")
+                                 f"vắng {int(hr_absent)}–{HR_QUIT_DAYS - 1} ngày; gán dưới {hr_ratio}% trung bình bưu cục")
 
                     def hr_png() -> bytes:
                         """Vẽ ảnh danh sách cảnh báo — chỉ chạy khi bấm tải, xem trước hoặc gửi."""
@@ -5615,20 +5615,30 @@ def truy_thu_page() -> None:
     by_loai = (d.groupby("_loai").agg(so_vu=("_phai", "size"), tien=("_phai", "sum"))
                .sort_values(["tien", "so_vu"], ascending=False))
     top_loai = by_loai.index[0]
-    k1, k2, k3, k4 = st.columns(4)
-    for col, (t, v, sub, acc) in zip((k1, k2, k3, k4), (
+    k1, k2, k3 = st.columns(3)
+    for col, (t, v, sub, acc) in zip((k1, k2, k3), (
             ("Tổng phải truy thu", fmt_money(d["_phai"].sum()),
              f"{len(d)} khoản · {d['MaNV'].nunique()} nhân viên", True),
             ("Đã truy thu", fmt_money(d["_da"].sum()),
              f"{d['_da'].sum() / d['_phai'].sum() * 100:.0f}% số phải thu" if d["_phai"].sum() else "", False),
             ("Còn phải truy thu", fmt_money(d["_con"].sum()),
-             f"{int((d['_con'] > 0).sum())} khoản chưa thu đủ", False),
-            ("Loại truy thu nhiều tiền nhất",
-             f"<span style='font-size:calc(22px * var(--fs));line-height:1.25'>{esc(top_loai)}</span>",
-             f"{fmt_money(by_loai['tien'].iloc[0])} · {int(by_loai['so_vu'].iloc[0])} khoản. "
-             f"Nhiều khoản nhất: {by_loai['so_vu'].idxmax()} ({int(by_loai['so_vu'].max())} khoản)", False))):
+             f"{int((d['_con'] > 0).sum())} khoản chưa thu đủ", False))):
         with col:
             st.markdown(metric_card(t, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+
+    # Hàng dưới: loại truy thu nhiều tiền nhất và nhiều khoản nhất (tên loại dài nên để ô rộng).
+    loai_khoan = by_loai["so_vu"].idxmax()
+    tong_phai = d["_phai"].sum()
+    l1, l2 = st.columns(2)
+    for col, (t, ten, sub) in zip((l1, l2), (
+            ("Loại truy thu nhiều tiền nhất", top_loai,
+             f"{fmt_money(by_loai['tien'].iloc[0])} · {int(by_loai['so_vu'].iloc[0])} khoản"
+             + (f" · {by_loai['tien'].iloc[0] / tong_phai * 100:.0f}% tổng tiền" if tong_phai else "")),
+            ("Loại truy thu nhiều khoản nhất", loai_khoan,
+             f"{int(by_loai.loc[loai_khoan, 'so_vu'])} khoản · {fmt_money(by_loai.loc[loai_khoan, 'tien'])}"))):
+        with col:
+            st.markdown(metric_card(t, f"<span style='font-size:calc(24px * var(--fs))'>{esc(ten)}</span>",
+                                    None, sub=sub), unsafe_allow_html=True)
 
     cL, cR = st.columns([1.3, 1])
     with cL:
