@@ -2451,11 +2451,57 @@ Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đí
 LUONG_LOW = {"min": 300_000, "pct": 75, "ngay": 3}   # mặc định cảnh báo lương thấp
 
 
-def luong_low_warning(d: pd.DataFrame, nv_col: str, a, b) -> None:
-    """Cảnh báo nhân viên lương thấp trong khoảng ngày: lương TB/ngày công dưới mức tối thiểu,
-    hoặc thấp hơn x% trung vị lương TB/ngày của nhân viên cùng bưu cục. Bỏ người làm quá ít ngày
-    và người đã nghỉ việc. `d` có cột MaNV, Bưu Cục, _tong, _ngay (đã tính trong luong_tab)."""
-    section("Cảnh báo nhân viên lương thấp")
+def luong_staff_chart(ma: str, a, b):
+    """Biểu đồ theo ngày của một nhân viên: cột đơn gán, đơn GTC (sheet năng suất) và đường lương ngày
+    (sheet Lương). Khoảng ngắn thì kéo về đủ 14 ngày tính tới ngày cuối để thấy diễn biến."""
+    b = pd.Timestamp(b).normalize()
+    a = min(pd.Timestamp(a).normalize(), b - pd.Timedelta(days=13))
+    days = pd.date_range(a, b, freq="D")
+    ns = hr_daily(DF_NSGTC)
+    ns = ns[(ns["MaNV"] == ma) & (ns["Ngày"] >= a) & (ns["Ngày"] <= b)]
+    ns = ns.groupby("Ngày")[["Gán", "GTC"]].sum().reindex(days, fill_value=0)
+    ln = DF_LUONG_NGAY
+    c_nv, c_t = pick_col(ln, [["nhan vien"]]), pick_col(ln, [["tong luong"]])
+    luong = pd.Series(np.nan, index=days)
+    if c_nv and c_t:
+        x = ln[(ln[c_nv].map(staff_id) == ma) & (ln["Ngày"] >= a) & (ln["Ngày"] <= b)]
+        luong = x.groupby("Ngày")[c_t].sum().reindex(days)
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(x=days, y=ns["Gán"], name="Đơn gán", marker_color=PRIMARY_SOFT,
+                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+    fig.add_trace(go.Bar(x=days, y=ns["GTC"], name="Đơn GTC", marker_color=PRIMARY,
+                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=days, y=luong, name="Lương ngày (đ)", mode="lines+markers+text",
+                             connectgaps=False, line=dict(color=SUCCESS, width=3), marker=dict(size=7),
+                             hovertemplate="%{x|%d/%m}<br>Lương %{y:,.0f} đ<extra></extra>",
+                             text=point_labels(luong, money_label, 14), textposition="top center",
+                             cliponaxis=False, textfont=dict(color=SUCCESS, **LABEL_FONT)),
+                  secondary_y=True)
+    fig.update_layout(barmode="overlay", height=440,
+                      title=f"Đơn gán · GTC · Lương ngày — {a:%d/%m} đến {b:%d/%m/%Y}")
+    fig.update_yaxes(title_text="Số đơn", secondary_y=False)
+    # Cột dồn xuống dải dưới, đường lương lên dải trên để nhãn không đè nhau (như band_axes nhưng trục tiền).
+    fig.update_yaxes(range=[0, max(float(ns["Gán"].max()), 1.0) * 1.6], secondary_y=False)
+    lmax = float(luong.max()) if luong.notna().any() else 1.0
+    fig.update_yaxes(title_text="Lương (đ)", secondary_y=True, showgrid=False,
+                     range=[-1.4 * lmax, 1.15 * lmax], tickvals=[0, lmax / 2, lmax],
+                     ticktext=[money_label(v) for v in (0, lmax / 2, lmax)])
+    fig.update_xaxes(tickformat="%d/%m")
+    return fig
+
+
+def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
+    """Tab Cảnh báo lương thấp: lương TB/ngày công dưới mức tối thiểu, hoặc thấp hơn x% trung vị
+    lương TB/ngày của nhân viên cùng bưu cục. Bỏ người làm quá ít ngày và người đã nghỉ việc.
+    Bấm chọn một dòng để xem biểu đồ đơn gán, GTC và lương ngày của người đó."""
+    section(f"Cảnh báo nhân viên lương thấp {a:%d/%m/%Y} – {b:%d/%m/%Y}")
+    nv_col, c_tong0, c_ngay0 = (pick_col(LN, [["nhan vien"]]), pick_col(LN, [["tong luong"]]),
+                                pick_col(LN, [["so ngay di lam"]]))
+    if LN.empty or not (nv_col and c_tong0):
+        note("Chưa có dữ liệu lương trong khoảng ngày đã chọn (sheet Lương).")
+        return
+    d = LN.assign(MaNV=LN[nv_col].map(staff_id), _tong=LN[c_tong0],
+                  _ngay=LN[c_ngay0] if c_ngay0 else 1)
     w1, w2, w3 = st.columns(3)
     with w1:
         muc_min = st.number_input("Lương TB/ngày công dưới (đ)", 0, 2_000_000, LUONG_LOW["min"], 10_000,
@@ -2510,9 +2556,23 @@ def luong_low_warning(d: pd.DataFrame, nv_col: str, a, b) -> None:
         "Lương TB/ngày (đ)": low["tb"].round(0), "Trung vị BC/ngày (đ)": low["med"].round(0),
         "Lý do": ly_do}).reset_index(drop=True)
     so = st.column_config.NumberColumn(format="localized")
-    st.dataframe(bang, hide_index=True, width="stretch",
-                 column_config={k: so for k in ("Ngày công", "Tổng lương (đ)", "Lương TB/ngày (đ)",
-                                                "Trung vị BC/ngày (đ)")})
+    # Khóa không bắt đầu bằng tiền tố bộ lọc: bảng có chọn dòng không cho gán lại giá trị qua session_state.
+    chon = st.dataframe(bang, hide_index=True, width="stretch", on_select="rerun",
+                        selection_mode="single-row", key="tbl_luong_low",
+                        column_config={k: so for k in ("Ngày công", "Tổng lương (đ)", "Lương TB/ngày (đ)",
+                                                       "Trung vị BC/ngày (đ)")})
+    dong = [i for i in chon.selection.rows if 0 <= i < len(low)]
+    if dong:
+        r = low.iloc[dong[0]]
+        section(f"{staff_label(r['ten'])} · {r['bc']}")
+        k1, k2, k3, k4 = st.columns(4)
+        for col, (t, v) in zip((k1, k2, k3, k4), (
+                ("Lương TB/ngày công", fmt_money(r["tb"])), ("Trung vị bưu cục/ngày", fmt_money(r["med"])),
+                ("Tổng lương trong khoảng", fmt_money(r["t"])), ("Ngày công", f"{r['n']:,.0f}"))):
+            with col:
+                st.markdown(metric_card(t, v, None, accent=(t == "Lương TB/ngày công")),
+                            unsafe_allow_html=True)
+        plot_chart(luong_staff_chart(low.index[dong[0]], a, b), width="stretch")
 
 
 def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
@@ -2542,8 +2602,6 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
             ("Đơn giao tính lương", f"{d['_giao'].sum():,.0f}", f"đơn lấy tính lương {d['_lay'].sum():,.0f}"))):
         with col:
             st.markdown(metric_card(t, v, None, sub=sub, accent=(t == "Tổng lương")), unsafe_allow_html=True)
-
-    luong_low_warning(d, c["nv"], a, b)
 
     g_day = d.groupby("Ngày", as_index=False)["_tong"].sum()
     by_day = px.bar(g_day, x="Ngày", y="_tong", title="Tổng lương theo ngày")
@@ -4634,7 +4692,8 @@ if PAGE == "nang_suat":
                 return 0.0
             return float(d[cols].apply(pd.to_numeric, errors="coerce").sum().sum())
 
-        _sub_tab4 = st.tabs(['Kỳ lương', 'Lương', '%GTC theo kỳ', 'Xếp hạng & gửi thông báo', 'Nhận định AI'],
+        _sub_tab4 = st.tabs(['Kỳ lương', 'Lương', 'Cảnh báo lương thấp', '%GTC theo kỳ',
+                             'Xếp hạng & gửi thông báo', 'Nhận định AI'],
                             key="tabs_ns")
         with _sub_tab4[0]:
             section("1. So sánh kỳ lương hiện tại với kỳ trước")
@@ -4703,6 +4762,9 @@ if PAGE == "nang_suat":
                       bc_ns == "Tất cả")
 
         with _sub_tab4[2]:
+            luong_low_warning(cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), a_ns, b_ns), a_ns, b_ns)
+
+        with _sub_tab4[3]:
             section("3. %GTC theo Ngày, Tuần, Tháng")
             if col_gan and col_gtc and not G.empty:
                 gm = pd.DataFrame({
@@ -4747,7 +4809,7 @@ if PAGE == "nang_suat":
             else:
                 note("Chưa đủ dữ liệu gán và giao để vẽ biểu đồ.")
 
-        with _sub_tab4[3]:
+        with _sub_tab4[4]:
             if col_gan and col_gtc and nv_col_gtc and not G_range.empty:
                 section("5. Xếp hạng nhân viên theo %GTC")
                 rank = G_range.groupby(nv_col_gtc, as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
@@ -4830,7 +4892,7 @@ if PAGE == "nang_suat":
                 notice_send_panel("rank", ctx_sig, "AI VIẾT THÔNG BÁO XẾP HẠNG", bc_ns, png,
                                   f"xep_hang_gtc_{b_ns:%Y%m%d}.png")
 
-        with _sub_tab4[4]:
+        with _sub_tab4[5]:
             ai_advisor(
                 "ns", "Năng suất & Lương",
                 f"""Bưu cục: {bc_ns}. Nhân viên: {nv_ns}.
