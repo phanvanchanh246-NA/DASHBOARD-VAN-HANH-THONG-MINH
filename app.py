@@ -292,6 +292,18 @@ h1, h2, h3, h4 {{
     .ghn-logo-plate img {{ height: auto; width: 100%; max-width: 260px; margin: 0 auto; }}
 }}
 
+/* ── Ô/cảnh báo bấm được (link_box): nút trong suốt phủ kín, bấm là sang trang chi tiết ── */
+[class*="st-key-lnk_"] {{ position: relative; }}
+[class*="st-key-lnkbtn_"] {{ position: absolute !important; inset: 0; z-index: 3; margin: 0 !important; }}
+[class*="st-key-lnkbtn_"] button {{
+    position: absolute !important; inset: 0; width: 100% !important; height: 100% !important;
+    opacity: 0; cursor: pointer;
+}}
+[class*="st-key-lnk_"]:hover .metric-card, [class*="st-key-lnk_"]:hover .ghn-alert {{
+    box-shadow: 0 6px 18px rgba(0,119,182,0.22); transform: translateY(-1px);
+    transition: box-shadow .15s, transform .15s;
+}}
+
 /* ── Metric Card: nền trắng, đổ bóng, bo góc, viền trái xanh ────────── */
 .metric-card {{
     background: {BG};
@@ -1169,6 +1181,36 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
     vcls = "accent" if accent else ""
     return (f"<div class='metric-card {cls}'><div class='m-title'>{esc(title)}</div>"
             f"<div class='m-value {vcls}'>{value}</div>{dhtml}</div>")
+
+
+_BC_KEY_OF_PAGE = {"van_hanh": "bc_vh", "kinh_doanh": "bc_kd"}
+
+
+def _goto(page: str, tab: str | None, bc: str | None) -> None:
+    """Chuyển sang trang `page`, mở sẵn tab con `tab`, giữ bưu cục đang xem (gọi trong on_click)."""
+    st.session_state["nav_page"] = page
+    st.session_state["_nav_changed"] = time.time()
+    if tab:
+        st.session_state["_goto_tab"] = (page, tab)
+    if bc and page in _BC_KEY_OF_PAGE:
+        st.session_state[_BC_KEY_OF_PAGE[page]] = bc
+
+
+def goto_tab(page: str, labels: list[str]) -> str | None:
+    """Tab con cần mở sẵn khi vừa bấm link sang `page` (dùng làm default của st.tabs)."""
+    want = st.session_state.get("_goto_tab")
+    if want and want[0] == page:
+        st.session_state.pop("_goto_tab", None)
+        return want[1] if want[1] in labels else None
+    return None
+
+
+def link_box(html: str, key: str, page: str, tab: str | None = None, bc: str | None = None) -> None:
+    """Hiện một khối HTML (ô số liệu, dòng cảnh báo) bấm được: phủ nút trong suốt lên trên."""
+    with st.container(key=f"lnk_{key}"):
+        st.markdown(html, unsafe_allow_html=True)
+        st.button(f"Xem {tab or page}", key=f"lnkbtn_{key}", on_click=_goto, args=(page, tab, bc),
+                  width="stretch")
 
 
 def period_cards(df: pd.DataFrame, ref, unit="%", higher_is_better=True,
@@ -3809,42 +3851,32 @@ if PAGE == "tong_quan":
                             key="tabs_ov")
         with _sub_tab1[0]:
             section("Chỉ số nổi bật hôm nay (N-1)")
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown(metric_card("Sản lượng hôm nay", f"{p_vol['n']:,.0f}",
-                                        p_vol["n"] - p_vol["n1"], "đơn", True, p_vol["has_n1"],
-                                        accent=True), unsafe_allow_html=True)
-            with c2:
-                st.markdown(metric_card("%GTC tổng", f"{p_gtc['n']:,.2f}%",
-                                        p_gtc["n"] - p_gtc["n1"], "%", True, p_gtc["has_n1"]),
-                            unsafe_allow_html=True)
-            with c3:
-                st.markdown(metric_card("%GTC TikTok", f"{p_tts['n']:,.2f}%",
-                                        p_tts["n"] - p_tts["n1"], "%", True, p_tts["has_n1"]),
-                            unsafe_allow_html=True)
-            with c4:
-                st.markdown(metric_card("Doanh thu tháng", fmt_money(p_dt["m"]),
-                                        p_dt["m"] - p_dt["m1"], "đ", True, p_dt["has_m1"]),
-                            unsafe_allow_html=True)
-            c5, c6, c7, c8 = st.columns(4)
-            with c5:
-                st.markdown(metric_card("ODR TikTok", f"{p_odr['n']:,.2f}%",
-                                        p_odr["n"] - p_odr["n1"], "%", True, p_odr["has_n1"],
-                                        sub=f"· mốc {t_odr_ov:g}%"), unsafe_allow_html=True)
-            with c6:
-                st.markdown(metric_card("OPR TikTok", f"{p_opr['n']:,.2f}%",
-                                        p_opr["n"] - p_opr["n1"], "%", True, p_opr["has_n1"],
-                                        sub=f"· mốc {t_opr_ov:g}%"), unsafe_allow_html=True)
-            with c7:
+            # Bấm vào ô nào thì sang đúng trang/tab chi tiết của chỉ số đó, giữ bưu cục đang xem.
+            o_bc = bc_ov
+            cards = [
+                ("vol", metric_card("Sản lượng hôm nay", f"{p_vol['n']:,.0f}", p_vol["n"] - p_vol["n1"], "đơn",
+                                    True, p_vol["has_n1"], accent=True), "van_hanh", "GTC tổng"),
+                ("gtc", metric_card("%GTC tổng", f"{p_gtc['n']:,.2f}%", p_gtc["n"] - p_gtc["n1"], "%", True,
+                                    p_gtc["has_n1"]), "van_hanh", "GTC tổng"),
+                ("tts", metric_card("%GTC TikTok", f"{p_tts['n']:,.2f}%", p_tts["n"] - p_tts["n1"], "%", True,
+                                    p_tts["has_n1"]), "van_hanh", "TikTok Shop"),
+                ("dt", metric_card("Doanh thu tháng", fmt_money(p_dt["m"]), p_dt["m"] - p_dt["m1"], "đ", True,
+                                   p_dt["has_m1"]), "kinh_doanh", "Doanh thu"),
+                ("odr", metric_card("ODR TikTok", f"{p_odr['n']:,.2f}%", p_odr["n"] - p_odr["n1"], "%", True,
+                                    p_odr["has_n1"], sub=f"· mốc {t_odr_ov:g}%"), "van_hanh", "TikTok Shop"),
+                ("opr", metric_card("OPR TikTok", f"{p_opr['n']:,.2f}%", p_opr["n"] - p_opr["n1"], "%", True,
+                                    p_opr["has_n1"], sub=f"· mốc {t_opr_ov:g}%"), "van_hanh", "TikTok Shop"),
                 # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
-                st.markdown(metric_card("Tỷ lệ trả hàng", f"{p_tra['n']:,.2f}%",
-                                        p_tra["n"] - p_tra["n1"], "%", False, p_tra["has_n1"],
-                                        sub=f"· tối đa {t_tra_ov:g}%"), unsafe_allow_html=True)
-            with c8:
-                st.markdown(metric_card("GTB - Thu tiền", f"{p_gtb['n']:,.2f}%",
-                                        p_gtb["n"] - p_gtb["n1"], "%", True, p_gtb["has_n1"],
-                                        sub=f"· mốc {t_gtb_ov:g}%" if t_gtb_ov else ""),
-                            unsafe_allow_html=True)
+                ("tra", metric_card("Tỷ lệ trả hàng", f"{p_tra['n']:,.2f}%", p_tra["n"] - p_tra["n1"], "%", False,
+                                    p_tra["has_n1"], sub=f"· tối đa {t_tra_ov:g}%"), "van_hanh", "Trả hàng & GTB"),
+                ("gtb", metric_card("GTB - Thu tiền", f"{p_gtb['n']:,.2f}%", p_gtb["n"] - p_gtb["n1"], "%", True,
+                                    p_gtb["has_n1"], sub=f"· mốc {t_gtb_ov:g}%" if t_gtb_ov else ""),
+                 "van_hanh", "Trả hàng & GTB"),
+            ]
+            for row in (cards[:4], cards[4:]):
+                for col, (k, html, page, tab) in zip(st.columns(4), row):
+                    with col:
+                        link_box(html, f"ov_{k}", page, tab, o_bc)
 
             section("Cảnh báo — chỉ số chưa đạt mốc")
             checks = [
@@ -3854,6 +3886,8 @@ if PAGE == "tong_quan":
                 ("OPR TikTok", p_opr["n"], t_opr_ov, True, "lấy hàng đúng hạn với sàn"),
                 ("Tỷ lệ trả hàng", p_tra["n"], t_tra_ov, False, "đơn quay đầu về kho"),
             ]
+            tab_of = {"GTC tổng": "GTC tổng", "GTC TikTok": "TikTok Shop", "ODR TikTok": "TikTok Shop",
+                      "OPR TikTok": "TikTok Shop", "Tỷ lệ trả hàng": "Trả hàng & GTB"}
             issues = []
             for name, actual, target, hib, why in checks:
                 if not target:
@@ -3868,11 +3902,11 @@ if PAGE == "tong_quan":
                     tag = "tag-danger" if sev > 0.05 else "tag-warn"
                     label = "CẦN XỬ LÝ" if sev > 0.05 else "THEO DÕI"
                     cls = "danger" if sev > 0.05 else ""
-                    st.markdown(
+                    link_box(
                         f"<div class='ghn-alert {cls}'><span class='a-tag {tag}'>{label}</span>"
                         f"<b>{esc(name)}</b> đang ở <b>{actual:,.2f}%</b>, mốc là <b>{target:,.2f}%</b> — "
                         f"lệch <b>{abs(gap):,.2f}</b> điểm phần trăm. {esc(why.capitalize())}.</div>",
-                        unsafe_allow_html=True)
+                        f"ovw_{norm(name).replace(' ', '_')}", "van_hanh", tab_of.get(name), o_bc)
             else:
                 st.markdown(
                     "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ĐẠT MỐC</span>"
@@ -4115,8 +4149,8 @@ if PAGE == "van_hanh":
         s_lead = sl(scope(M_LEAD, bc_vh), a_vh, b_vh)
         s_ca = sl(scope(M_CA, bc_vh), a_vh, b_vh)
 
-        _sub_tab2 = st.tabs(['GTC tổng', 'Theo ca', 'TikTok Shop', 'Trả hàng & GTB', 'Nhận định AI'],
-                            key="tabs_vh")
+        _tabs_vh = ['GTC tổng', 'Theo ca', 'TikTok Shop', 'Trả hàng & GTB', 'Nhận định AI']
+        _sub_tab2 = st.tabs(_tabs_vh, key="tabs_vh", default=goto_tab("van_hanh", _tabs_vh))
         with _sub_tab2[0]:
             # 2.1 GTC tổng
             section("1. Báo cáo GTC tổng")
@@ -4304,8 +4338,8 @@ if PAGE == "kinh_doanh":
                     f"tích là **{REF_DATE:%d/%m/%Y}**. Vì vậy con số 'lũy kế tháng này' đang bằng 0. "
                     "Cập nhật sheet doanh thu là hết.", icon="⚠️")
 
-        _sub_tab3 = st.tabs(['Doanh thu', 'Khách hàng', 'Nhận định AI'],
-                            key="tabs_kd")
+        _tabs_kd = ['Doanh thu', 'Khách hàng', 'Nhận định AI']
+        _sub_tab3 = st.tabs(_tabs_kd, key="tabs_kd", default=goto_tab("kinh_doanh", _tabs_kd))
         with _sub_tab3[0]:
             section("1. Doanh thu — so sánh N-1, W-1, M-1")
             p_kd = period_cards(dt_scope, b_kd, "đ", True, "sum", "Doanh thu")
