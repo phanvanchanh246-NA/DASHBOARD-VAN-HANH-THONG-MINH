@@ -5793,6 +5793,7 @@ EVENT_LINKS = {
     "cao_diem": _EVENT_SHEET + "1111",   # Cao điểm 11.11
     "tuyen": _EVENT_SHEET + "1114",      # Cảnh báo tuyến
     "nhan_su": _EVENT_SHEET + "1113",    # Tính nhân sự
+    "capacity": _EVENT_SHEET + "1115",   # Capacity nhập BC: đơn nhập từng ngày (Thực / Dự báo)
 }
 
 
@@ -5837,13 +5838,17 @@ def grid_block(g: pd.DataFrame, header_first: str, title: str | None = None) -> 
 
 
 def to_num(df: pd.DataFrame, skip=("Bưu Cục", "Nhân viên", "Nhân viên (tuyến)", "Ngày", "Cảnh báo",
-                                   "Hướng xử lý")) -> pd.DataFrame:
-    """Ép các cột số kiểu Việt Nam ('1.696', '53,5%', '1,0') sang số; cột chữ giữ nguyên."""
+                                   "Hướng xử lý", "Ngày cao nhất")) -> pd.DataFrame:
+    """Ép các cột số kiểu Việt Nam ('1.696', '53,5%', '1,0', '1,45x') sang số; cột chữ giữ nguyên."""
     d = df.copy()
     for c in d.columns:
         if c not in skip:
-            d[c] = d[c].map(lambda v: parse_num(v) if str(v).strip() else np.nan)
+            d[c] = d[c].map(lambda v: parse_num(str(v).rstrip("x")) if str(v).strip() else np.nan)
     return d
+
+
+def bo_tong(df: pd.DataFrame) -> pd.DataFrame:
+    return df[df["Bưu Cục"] != "Tổng"] if not df.empty and "Bưu Cục" in df.columns else df
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
@@ -5856,12 +5861,14 @@ def event_data() -> dict:
             grids[k] = load_grid(k)
         except Exception as exc:  # noqa: BLE001
             grids[k], loi[k] = pd.DataFrame(), f"{type(exc).__name__}: {exc}"
-    cd, tu, ns = grids["cao_diem"], grids["tuyen"], grids["nhan_su"]
+    cd, tu, ns, cap = grids["cao_diem"], grids["tuyen"], grids["nhan_su"], grids["capacity"]
     if not cd.empty:
         out["tieu_de"] = cd.iat[0, 0]
         out["peak"] = to_num(grid_block(cd, "Bưu cục", "1."))
         out["daily"] = to_num(grid_block(cd, "Ngày", "3."))
         out["nv_gtc"] = to_num(grid_block(cd, "Bưu cục", "4."))
+        t4 = cd.index[cd[0].str.startswith("4.")]
+        out["nv_gtc_tieu_de"] = re.sub(r"^4\.\s*", "", cd.iat[t4[0], 0]) if len(t4) else ""
         out["params"] = {lb: grid_param(cd, lb) for lb in (
             "%GTC tối thiểu", "Ngày bắt đầu đợt 10.10", "Số ngày xét đợt 10.10",
             "Ngày bắt đầu theo dõi", "Số ngày xét nhân viên")}
@@ -5872,8 +5879,23 @@ def event_data() -> dict:
         out["ngay_xem"] = grid_param(tu, "Ngày xem")
     if not ns.empty:
         out["ns_ngay"] = to_num(grid_block(ns, "Ngày", "1."))
-        need = to_num(grid_block(ns, "Bưu cục", "2."))
-        out["ns_can"] = need[need["Bưu Cục"] != "Tổng"] if not need.empty else need
+        # Ba cách tính số người cần cho ngày đỉnh (khối 2, 3, 4 của tab Tính nhân sự).
+        out["ns_can"] = bo_tong(to_num(grid_block(ns, "Bưu cục", "2.")))
+        out["ns_kb1010"] = bo_tong(to_num(grid_block(ns, "Bưu cục", "3.")))
+        out["ns_cap"] = bo_tong(to_num(grid_block(ns, "Bưu cục", "4.")))
+    if not cap.empty:
+        # Bảng phẳng: Ngày | Thứ | <một cột mỗi bưu cục> | Tổng 3 BC | Ngày lấy | Loại → dạng dài.
+        hd = list(cap.iloc[0])
+        c = cap.iloc[1:].copy()
+        c.columns = hd
+        c = c[c["Ngày"] != ""]
+        bc_cols = [x for x in hd if x and x not in ("Ngày", "Thứ", "Ngày lấy", "Loại") and not x.startswith("Tổng")]
+        long = c.melt(id_vars=["Ngày", "Thứ", "Ngày lấy", "Loại"], value_vars=bc_cols,
+                      var_name="Bưu Cục", value_name="Đơn nhập")
+        long["Bưu Cục"] = long["Bưu Cục"].map(lambda v: _BC_CANON.get(norm(f"(QBI) {v}"), f"(QBI) {v}"))
+        long["Ngày"] = pd.to_datetime(long["Ngày"], format="%d/%m/%Y", errors="coerce")
+        long["Đơn nhập"] = long["Đơn nhập"].map(lambda v: parse_num(v) if str(v).strip() else np.nan)
+        out["capacity"] = long.dropna(subset=["Ngày"])
     out["loi"] = loi
     # Năm cho các ô ngày 'dd/mm' của bảng theo dõi: lấy từ ngày bắt đầu theo dõi.
     nam = re.search(r"(\d{4})", out.get("params", {}).get("Ngày bắt đầu theo dõi", "")) if out.get("params") else None
@@ -5900,50 +5922,69 @@ def event_page() -> None:
     so = st.column_config.NumberColumn(format="localized")
     pct = st.column_config.NumberColumn(format="%.1f%%")
 
-    tabs_ev = ['Nhân sự ngày đỉnh', 'Theo dõi từng ngày', 'Cảnh báo tuyến', '%GTC nhân viên',
-               'Năng suất tuần cao điểm']
+    tabs_ev = ['Nhân sự ngày đỉnh', 'Đơn nhập (Capacity)', 'Theo dõi từng ngày', 'Cảnh báo tuyến',
+               '%GTC nhân viên', 'Năng suất tuần cao điểm']
     t = st.tabs(tabs_ev, key="tabs_ev", default=goto_tab("van_hanh_event", tabs_ev))
 
-    # ── 1. Nhân sự cần cho ngày đỉnh ───────────────────────────────────────
+    # ── 1. Nhân sự cần cho ngày đỉnh: so sánh 3 cách tính ───────────────────
     with t[0]:
         section(ev.get("tieu_de", "Theo dõi cao điểm") + " — nhân sự cần cho ngày đỉnh")
-        can = theo_bc(ev.get("ns_can"))
-        if can is None or can.empty:
-            note("Chưa đọc được bảng 'Số nhân sự cần cho ngày đỉnh' (tab Tính nhân sự).")
+        # (khóa, tên, giải thích ngắn, cột NV cần) — đúng thứ tự khối 2, 3, 4 của tab Tính nhân sự.
+        cach = [("ns_can", "Theo hàng về đỉnh 10.10", "hàng về ngày đỉnh đợt 10.10 ÷ GTC/NV", "NV cần"),
+                ("ns_kb1010", "Đơn nhập × hệ số 10.10", "đơn nhập thực tế × hệ số cao điểm 10.10", "NV cần"),
+                ("ns_cap", "Theo Capacity dự báo", "đơn nhập dự báo ngày cao nhất ÷ GTC/NV",
+                 "NV cần ngày cao nhất")]
+        bang = {k: theo_bc(ev.get(k)) for k, *_ in cach}
+        bang = {k: v for k, v in bang.items() if v is not None and not v.empty}
+        if not bang:
+            note("Chưa đọc được các bảng tính nhân sự (tab Tính nhân sự).")
         else:
-            c_can, c_co = "NV cần", "NV hiện có"
-            c_thieu = next((c for c in can.columns if c.startswith("Thiếu")), None)
-            c_hv = next((c for c in can.columns if c.startswith("Hàng về dự báo")), None)
-            c_gtc = next((c for c in can.columns if c.startswith("GTC cần")), None)
-            thieu = float(can[c_thieu].sum()) if c_thieu else float(can[c_can].sum() - can[c_co].sum())
-            k1, k2, k3, k4 = st.columns(4)
-            for col, (tt, v, sub, acc) in zip((k1, k2, k3, k4), (
-                    ("Hàng về dự báo ngày đỉnh", f"{can[c_hv].sum():,.0f}" if c_hv else "—",
-                     f"GTC cần đạt {can[c_gtc].sum():,.0f}" if c_gtc else "", False),
-                    ("NV cần ngày đỉnh", f"{can[c_can].sum():,.0f}", "theo năng suất tuần cao điểm", False),
-                    ("NV hiện có", f"{can[c_co].sum():,.0f}", "đi giao 7 ngày qua", False),
-                    ("Thiếu nhân sự" if thieu > 0 else "Đủ nhân sự", f"{max(thieu, 0):,.0f}",
-                     "cần bổ sung trước ngày đỉnh" if thieu > 0 else "không thiếu người", thieu > 0))):
+            co = next(iter(bang.values()))
+            nv_co = float(co["NV hiện có"].sum()) if "NV hiện có" in co else np.nan
+            cols = st.columns(len(cach) + 1)
+            with cols[0]:
+                st.markdown(metric_card("NV hiện có", f"{nv_co:,.0f}", None, sub="đi giao 7 ngày qua"),
+                            unsafe_allow_html=True)
+            for col, (k, ten, giai_thich, c_can) in zip(cols[1:], cach):
+                b = bang.get(k)
+                if b is None or c_can not in b:
+                    continue
+                can, thieu = float(b[c_can].sum()), float(b[c_can].sum()) - nv_co
                 with col:
-                    st.markdown(metric_card(tt, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+                    st.markdown(metric_card(
+                        f"Cần — {ten}", f"{can:,.0f}", None, accent=thieu > 0,
+                        sub=(f"thiếu {thieu:,.0f} người" if thieu > 0 else "đủ người") + f" · {giai_thich}"),
+                        unsafe_allow_html=True)
+
             fig = go.Figure()
-            fig.add_trace(go.Bar(x=can["Bưu Cục"], y=can[c_co], name="NV hiện có", marker_color=PRIMARY_SOFT,
-                                 text=can[c_co].map(lambda v: f"{v:,.0f}"), textposition="outside"))
-            fig.add_trace(go.Bar(x=can["Bưu Cục"], y=can[c_can], name="NV cần ngày đỉnh", marker_color=ACCENT,
-                                 text=can[c_can].map(lambda v: f"{v:,.0f}"), textposition="outside"))
-            fig.update_layout(barmode="group", height=360, title="Nhân viên hiện có và cần cho ngày đỉnh")
-            fig.update_yaxes(title_text="Nhân viên", range=[0, float(can[[c_can, c_co]].max().max()) * 1.3])
-            cA, cB = st.columns([1, 1.3])
-            with cA:
-                plot_chart(fig, width="stretch")
-            with cB:
-                bang = can.copy()
-                if c_thieu:
-                    bang[c_thieu] = bang[c_thieu].map(lambda v: f"Thiếu {v:,.0f}" if v > 0 else
-                                                      ("Đủ" if v == 0 else f"Thừa {-v:,.0f}"))
-                    bang = bang.rename(columns={c_thieu: "Tình trạng"})
-                st.dataframe(bang, hide_index=True, width="stretch", column_config={
-                    k: (pct if "%" in k else so) for k in bang.columns if k not in ("Bưu Cục", "Tình trạng")})
+            fig.add_trace(go.Bar(x=co["Bưu Cục"], y=co["NV hiện có"], name="NV hiện có",
+                                 marker_color=PRIMARY_SOFT, text=co["NV hiện có"].map(lambda v: f"{v:,.0f}"),
+                                 textposition="outside"))
+            for (k, ten, _, c_can), mau in zip(cach, (PRIMARY, ACCENT, SUCCESS)):
+                b = bang.get(k)
+                if b is None or c_can not in b:
+                    continue
+                fig.add_trace(go.Bar(x=b["Bưu Cục"], y=b[c_can], name=f"Cần — {ten}", marker_color=mau,
+                                     text=b[c_can].map(lambda v: f"{v:,.0f}"), textposition="outside"))
+            ymax = max(float(b[c].max()) for k, *_, c in cach if (b := bang.get(k)) is not None and c in b)
+            fig.update_layout(barmode="group", height=380, title="Nhân viên hiện có và cần cho ngày đỉnh")
+            fig.update_yaxes(title_text="Nhân viên", range=[0, max(ymax, float(co["NV hiện có"].max())) * 1.3])
+            plot_chart(fig, width="stretch")
+
+            for k, ten, giai_thich, _ in cach:
+                b = bang.get(k)
+                if b is None:
+                    continue
+                section(f"{ten} ({giai_thich})")
+                hien = b.copy()
+                c_th = next((c for c in hien.columns if c.startswith("Thiếu")), None)
+                if c_th:
+                    hien[c_th] = hien[c_th].map(lambda v: f"Thiếu {v:,.0f}" if v > 0 else
+                                                ("Đủ" if v == 0 else f"Thừa {-v:,.0f}"))
+                    hien = hien.rename(columns={c_th: "Tình trạng"})
+                st.dataframe(hien, hide_index=True, width="stretch", column_config={
+                    c: (pct if "%" in c else so) for c in hien.columns
+                    if c not in ("Bưu Cục", "Tình trạng", "Ngày cao nhất")})
         peak = theo_bc(ev.get("peak"))
         if peak is not None and not peak.empty:
             section("Dự báo sản lượng đỉnh theo đợt 10.10")
@@ -5953,8 +5994,58 @@ def event_page() -> None:
             with st.expander("Thông số đợt", key="exp_ev_params"):
                 st.markdown("\n".join(f"- **{esc(k)}:** {esc(v)}" for k, v in p.items() if v))
 
-    # ── 2. Theo dõi từng ngày ──────────────────────────────────────────────
+    # ── 2. Đơn nhập từng ngày (Capacity nhập BC) ────────────────────────────
     with t[1]:
+        cap = theo_bc(ev.get("capacity"))
+        section("Đơn nhập bưu cục theo ngày — thực tế và dự báo")
+        if cap is None or cap.empty:
+            note("Chưa đọc được tab Capacity nhập BC.")
+        else:
+            thuc, du_bao = cap[cap["Loại"] == "Thực"], cap[cap["Loại"] != "Thực"]
+            g_thuc = thuc.groupby("Ngày")["Đơn nhập"].sum()
+            g_db = du_bao.groupby("Ngày")["Đơn nhập"].sum()
+            k1, k2, k3, k4 = st.columns(4)
+            for col, (tt, v, sub, acc) in zip((k1, k2, k3, k4), (
+                    ("Đơn nhập TB/ngày (thực)", f"{g_thuc.mean():,.0f}" if len(g_thuc) else "—",
+                     f"{len(g_thuc)} ngày thực tế", False),
+                    ("Ngày nhập cao nhất (thực)", f"{g_thuc.max():,.0f}" if len(g_thuc) else "—",
+                     f"{g_thuc.idxmax():%d/%m}" if len(g_thuc) else "", False),
+                    # "Gấp" tính như tab Tính nhân sự: dự báo ngày cao nhất ÷ đơn nhập TB thực tế.
+                    ("Dự báo cao nhất", f"{g_db.max():,.0f}" if len(g_db) else "—",
+                     (f"{g_db.idxmax():%d/%m} · gấp {g_db.max() / g_thuc.mean():.2f} lần TB thực tế"
+                      if len(g_db) and len(g_thuc) and g_thuc.mean() else ""), True),
+                    ("Dự báo TB/ngày", f"{g_db.mean():,.0f}" if len(g_db) else "—",
+                     f"{len(g_db)} ngày dự báo", False))):
+                with col:
+                    st.markdown(metric_card(tt, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+            fig = go.Figure()
+            for (bc, g), mau in zip(cap.groupby("Bưu Cục"), (PRIMARY, ACCENT, SUCCESS, DANGER, MUTED)):
+                g = g.sort_values("Ngày")
+                gt, gd = g[g["Loại"] == "Thực"], g[g["Loại"] != "Thực"]
+                fig.add_trace(go.Scatter(x=gt["Ngày"], y=gt["Đơn nhập"], name=f"{bc} (thực)",
+                                         mode="lines+markers", legendgroup=bc, line=dict(color=mau)))
+                # Nối điểm thực cuối với dự báo để đường liền mạch, phần dự báo vẽ nét đứt.
+                gd2 = pd.concat([gt.tail(1), gd]) if not gt.empty else gd
+                fig.add_trace(go.Scatter(x=gd2["Ngày"], y=gd2["Đơn nhập"], name=f"{bc} (dự báo)",
+                                         mode="lines+markers+text", legendgroup=bc,
+                                         line=dict(dash="dash", color=mau),
+                                         text=[""] * (len(gd2) - len(gd)) + point_labels(gd["Đơn nhập"],
+                                                                                        lambda v: f"{v:,.0f}"),
+                                         textposition="top center", textfont=LABEL_FONT, cliponaxis=False))
+            if len(g_db):
+                fig.add_vline(x=g_db.index.min(), line_color=MUTED, line_dash="dot")
+            fig.update_layout(height=400, title="Đơn nhập từng ngày (nét đứt: dự báo)")
+            fig.update_xaxes(tickformat="%d/%m")
+            fig.update_yaxes(title_text="Đơn nhập", range=[0, float(cap["Đơn nhập"].max()) * 1.2])
+            plot_chart(fig, width="stretch")
+            hien = cap.pivot_table(index=["Ngày", "Loại"], columns="Bưu Cục", values="Đơn nhập",
+                                   aggfunc="sum").reset_index().sort_values("Ngày")
+            hien["Ngày"] = hien["Ngày"].dt.strftime("%d/%m/%Y")
+            st.dataframe(hien, hide_index=True, width="stretch",
+                         column_config={c: so for c in hien.columns if c not in ("Ngày", "Loại")})
+
+    # ── 2. Theo dõi từng ngày ──────────────────────────────────────────────
+    with t[2]:
         section("Theo dõi từng ngày trong đợt")
         dd = theo_bc(ev.get("daily"))
         if dd is None or dd.empty:
@@ -5998,7 +6089,7 @@ def event_page() -> None:
                     if k not in ("Ngày", "Bưu Cục", "Cảnh báo")})
 
     # ── 3. Cảnh báo tuyến ───────────────────────────────────────────────────
-    with t[2]:
+    with t[3]:
         tu = theo_bc(ev.get("tuyen"))
         section(f"Cảnh báo theo tuyến nhân viên — ngày {ev.get('ngay_xem', '')}")
         if tu is None or tu.empty:
@@ -6036,11 +6127,10 @@ def event_page() -> None:
                 if k not in ("Bưu Cục", "Nhân viên (tuyến)", "Cảnh báo", "Hướng xử lý")})
 
     # ── 4. %GTC theo nhân viên ──────────────────────────────────────────────
-    with t[3]:
+    with t[4]:
         nv = theo_bc(ev.get("nv_gtc"))
-        n_ngay = p.get("Số ngày xét nhân viên", "")
-        section(f"%GTC theo nhân viên ({n_ngay} ngày gần nhất), thấp nhất lên đầu" if n_ngay
-                else "%GTC theo nhân viên, thấp nhất lên đầu")
+        tieu_de = ev.get("nv_gtc_tieu_de") or "%GTC theo nhân viên, thấp nhất lên đầu"
+        section(tieu_de[0].upper() + tieu_de[1:])
         if nv is None or nv.empty:
             note("Chưa đọc được bảng %GTC theo nhân viên (tab Cao điểm 11.11).")
         else:
@@ -6068,7 +6158,7 @@ def event_page() -> None:
                              column_config={"Đơn gán": so, "GTC": so, "%GTC": pct})
 
     # ── 5. Năng suất tuần cao điểm ──────────────────────────────────────────
-    with t[4]:
+    with t[5]:
         section("Năng suất từng ngày trong tuần cao điểm sau 10.10")
         ns = theo_bc(ev.get("ns_ngay"))
         if ns is None or ns.empty:
@@ -6172,7 +6262,10 @@ if PAGE == "ai":
             ] + [(f"EVENT 11.11 - {ten}", event_data().get(k), False) for k, ten in (
                 ("ns_can", "NHAN SU CAN NGAY DINH"), ("peak", "DU BAO SAN LUONG DINH"),
                 ("daily", "THEO DOI TUNG NGAY"), ("tuyen", "CANH BAO TUYEN"),
-                ("nv_gtc", "%GTC NHAN VIEN"), ("ns_ngay", "NANG SUAT TUAN CAO DIEM"))]
+                ("nv_gtc", "%GTC NHAN VIEN"), ("ns_ngay", "NANG SUAT TUAN CAO DIEM"),
+                ("ns_kb1010", "NHAN SU CAN - KICH BAN DON NHAP x HE SO 10.10"),
+                ("ns_cap", "NHAN SU CAN - THEO CAPACITY DU BAO"),
+                ("capacity", "DON NHAP BUU CUC THEO NGAY (Thuc / Du bao)"))]
             for label, df, by_date in raw_specs:
                 if df is None or df.empty:
                     continue
@@ -6182,7 +6275,8 @@ if PAGE == "ai":
                     s = s[(s["Ngày"] >= a) & (s["Ngày"] <= b)]
                 if s.empty:
                     continue
-                keep = [c for c in s.columns if c != "Ngày" and not s[c].isna().all()
+                # Bảng không lọc theo ngày (KPI, bảng event) vẫn giữ cột Ngày nếu có, như một cột thường.
+                keep = [c for c in s.columns if (c != "Ngày" or not co_ngay) and not s[c].isna().all()
                         and not (s[c].astype(str).isin(["nan", "", "Chưa phân loại"]).all())]
                 o = s[(["Ngày"] if co_ngay else []) + keep].copy()
                 if co_ngay:
