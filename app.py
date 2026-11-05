@@ -3726,6 +3726,7 @@ st.markdown(f"""
 NAV_PAGES = [
     ("tong_quan", "Tổng quan", ":material/dashboard:"),
     ("van_hanh", "Vận hành", ":material/local_shipping:"),
+    ("van_hanh_event", "Vận hành Event", ":material/local_fire_department:"),
     ("kinh_doanh", "Kinh doanh", ":material/payments:"),
     ("kpi", "Tiến độ KPI", ":material/speed:"),
     ("nang_suat", "Năng suất & Lương", ":material/badge:"),
@@ -5782,6 +5783,325 @@ if PAGE == "truy_thu":
         truy_thu_page()
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# VẬN HÀNH EVENT (cao điểm 11.11)
+# ═══════════════════════════════════════════════════════════════════════
+# Ba tab báo cáo dựng sẵn trong file Năng suất: mỗi tab gồm nhiều khối bảng xếp dọc (tiêu đề
+# "1. …", "2. …"), không phải bảng phẳng, nên đọc nguyên lưới ô rồi tách từng khối.
+_EVENT_SHEET = "https://docs.google.com/spreadsheets/d/1OemA7cIZM-5AAvsnQuQphNArKw43de27W75Z-Ri6BcQ/edit?gid="
+EVENT_LINKS = {
+    "cao_diem": _EVENT_SHEET + "1111",   # Cao điểm 11.11
+    "tuyen": _EVENT_SHEET + "1114",      # Cảnh báo tuyến
+    "nhan_su": _EVENT_SHEET + "1113",    # Tính nhân sự
+}
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def load_grid(key: str) -> pd.DataFrame:
+    """Lưới ô nguyên trạng của một tab báo cáo (mọi ô là chữ, ô trống là '')."""
+    resp = requests.get(make_csv_url(EVENT_LINKS[key]), timeout=30)
+    resp.raise_for_status()
+    g = pd.read_csv(io.BytesIO(resp.content), header=None, dtype=str, keep_default_na=False)
+    return g.apply(lambda c: c.str.strip())
+
+
+def grid_param(g: pd.DataFrame, label: str, col: int = 1) -> str:
+    """Giá trị ô bên phải ô có chữ `label` ở cột A (vùng thông số)."""
+    hit = g.index[g[0] == label]
+    return g.iat[hit[0], col] if len(hit) else ""
+
+
+def grid_block(g: pd.DataFrame, header_first: str, title: str | None = None) -> pd.DataFrame:
+    """Tách một khối bảng: tìm dòng tiêu đề cột (ô đầu = `header_first`, nằm sau dòng tiêu đề khối
+    `title` nếu có), lấy các dòng bên dưới cho tới dòng có ô đầu trống hoặc tiêu đề khối kế tiếp.
+    Cột 'Bưu cục' đổi tên thành 'Bưu Cục' cho khớp bộ lọc chung (only_bc, AI cố vấn)."""
+    start = 0
+    if title:
+        t = g.index[g[0].str.startswith(title)]
+        if not len(t):
+            return pd.DataFrame()
+        start = t[0] + 1
+    h = [i for i in g.index[start:] if g.iat[i, 0] == header_first]
+    if not h:
+        return pd.DataFrame()
+    h = h[0]
+    cols = [(j, c) for j, c in enumerate(g.iloc[h]) if c]
+    rows = []
+    for i in range(h + 1, len(g)):
+        first = g.iat[i, 0]
+        if not first or re.match(r"^\d+\.\s", first):
+            break
+        rows.append([g.iat[i, j] for j, _ in cols])
+    out = pd.DataFrame(rows, columns=[c for _, c in cols])
+    return out.rename(columns={"Bưu cục": "Bưu Cục"})
+
+
+def to_num(df: pd.DataFrame, skip=("Bưu Cục", "Nhân viên", "Nhân viên (tuyến)", "Ngày", "Cảnh báo",
+                                   "Hướng xử lý")) -> pd.DataFrame:
+    """Ép các cột số kiểu Việt Nam ('1.696', '53,5%', '1,0') sang số; cột chữ giữ nguyên."""
+    d = df.copy()
+    for c in d.columns:
+        if c not in skip:
+            d[c] = d[c].map(lambda v: parse_num(v) if str(v).strip() else np.nan)
+    return d
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def event_data() -> dict:
+    """Mọi khối của 3 tab event, đã tách và ép số. Lỗi đọc sheet nào thì khối đó rỗng (kèm lý do)."""
+    out, loi = {}, {}
+    grids = {}
+    for k in EVENT_LINKS:
+        try:
+            grids[k] = load_grid(k)
+        except Exception as exc:  # noqa: BLE001
+            grids[k], loi[k] = pd.DataFrame(), f"{type(exc).__name__}: {exc}"
+    cd, tu, ns = grids["cao_diem"], grids["tuyen"], grids["nhan_su"]
+    if not cd.empty:
+        out["tieu_de"] = cd.iat[0, 0]
+        out["peak"] = to_num(grid_block(cd, "Bưu cục", "1."))
+        out["daily"] = to_num(grid_block(cd, "Ngày", "3."))
+        out["nv_gtc"] = to_num(grid_block(cd, "Bưu cục", "4."))
+        out["params"] = {lb: grid_param(cd, lb) for lb in (
+            "%GTC tối thiểu", "Ngày bắt đầu đợt 10.10", "Số ngày xét đợt 10.10",
+            "Ngày bắt đầu theo dõi", "Số ngày xét nhân viên")}
+        out["params"].update({lb: grid_param(cd, lb, 7) for lb in (
+            "%GTC đạt thưởng", "Thưởng/người/ngày (đ)", "Đơn gán tối thiểu để tính thưởng")})
+    if not tu.empty:
+        out["tuyen"] = to_num(grid_block(tu, "Bưu cục"))
+        out["ngay_xem"] = grid_param(tu, "Ngày xem")
+    if not ns.empty:
+        out["ns_ngay"] = to_num(grid_block(ns, "Ngày", "1."))
+        need = to_num(grid_block(ns, "Bưu cục", "2."))
+        out["ns_can"] = need[need["Bưu Cục"] != "Tổng"] if not need.empty else need
+    out["loi"] = loi
+    # Năm cho các ô ngày 'dd/mm' của bảng theo dõi: lấy từ ngày bắt đầu theo dõi.
+    nam = re.search(r"(\d{4})", out.get("params", {}).get("Ngày bắt đầu theo dõi", "")) if out.get("params") else None
+    out["nam"] = int(nam.group(1)) if nam else TODAY_VN.year
+    return out
+
+
+def event_page() -> None:
+    ev = event_data()
+    if ev["loi"]:
+        st.error("Không đọc được: " + "; ".join(f"{k}: {v}" for k, v in ev["loi"].items()))
+    with st.columns([1.1, 2.9])[0]:
+        bc_ev = st.selectbox("Bưu cục", ALL_BC, key="bc_ev")
+
+    def theo_bc(df):
+        """Lọc theo bưu cục đang chọn; NVXL luôn chỉ thấy bưu cục mình."""
+        if df is None or df.empty or "Bưu Cục" not in df.columns:
+            return df if df is not None else pd.DataFrame()
+        df = only_bc(df, USER_BC) if USER_BC else df
+        return df if bc_ev == "Tất cả" else df[df["Bưu Cục"].map(norm) == norm(bc_ev)]
+
+    p = ev.get("params", {})
+    gtc_min = parse_num(p.get("%GTC tối thiểu", "70%")) or 70.0
+    so = st.column_config.NumberColumn(format="localized")
+    pct = st.column_config.NumberColumn(format="%.1f%%")
+
+    tabs_ev = ['Nhân sự ngày đỉnh', 'Theo dõi từng ngày', 'Cảnh báo tuyến', '%GTC nhân viên',
+               'Năng suất tuần cao điểm']
+    t = st.tabs(tabs_ev, key="tabs_ev", default=goto_tab("van_hanh_event", tabs_ev))
+
+    # ── 1. Nhân sự cần cho ngày đỉnh ───────────────────────────────────────
+    with t[0]:
+        section(ev.get("tieu_de", "Theo dõi cao điểm") + " — nhân sự cần cho ngày đỉnh")
+        can = theo_bc(ev.get("ns_can"))
+        if can is None or can.empty:
+            note("Chưa đọc được bảng 'Số nhân sự cần cho ngày đỉnh' (tab Tính nhân sự).")
+        else:
+            c_can, c_co = "NV cần", "NV hiện có"
+            c_thieu = next((c for c in can.columns if c.startswith("Thiếu")), None)
+            c_hv = next((c for c in can.columns if c.startswith("Hàng về dự báo")), None)
+            c_gtc = next((c for c in can.columns if c.startswith("GTC cần")), None)
+            thieu = float(can[c_thieu].sum()) if c_thieu else float(can[c_can].sum() - can[c_co].sum())
+            k1, k2, k3, k4 = st.columns(4)
+            for col, (tt, v, sub, acc) in zip((k1, k2, k3, k4), (
+                    ("Hàng về dự báo ngày đỉnh", f"{can[c_hv].sum():,.0f}" if c_hv else "—",
+                     f"GTC cần đạt {can[c_gtc].sum():,.0f}" if c_gtc else "", False),
+                    ("NV cần ngày đỉnh", f"{can[c_can].sum():,.0f}", "theo năng suất tuần cao điểm", False),
+                    ("NV hiện có", f"{can[c_co].sum():,.0f}", "đi giao 7 ngày qua", False),
+                    ("Thiếu nhân sự" if thieu > 0 else "Đủ nhân sự", f"{max(thieu, 0):,.0f}",
+                     "cần bổ sung trước ngày đỉnh" if thieu > 0 else "không thiếu người", thieu > 0))):
+                with col:
+                    st.markdown(metric_card(tt, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=can["Bưu Cục"], y=can[c_co], name="NV hiện có", marker_color=PRIMARY_SOFT,
+                                 text=can[c_co].map(lambda v: f"{v:,.0f}"), textposition="outside"))
+            fig.add_trace(go.Bar(x=can["Bưu Cục"], y=can[c_can], name="NV cần ngày đỉnh", marker_color=ACCENT,
+                                 text=can[c_can].map(lambda v: f"{v:,.0f}"), textposition="outside"))
+            fig.update_layout(barmode="group", height=360, title="Nhân viên hiện có và cần cho ngày đỉnh")
+            fig.update_yaxes(title_text="Nhân viên", range=[0, float(can[[c_can, c_co]].max().max()) * 1.3])
+            cA, cB = st.columns([1, 1.3])
+            with cA:
+                plot_chart(fig, width="stretch")
+            with cB:
+                bang = can.copy()
+                if c_thieu:
+                    bang[c_thieu] = bang[c_thieu].map(lambda v: f"Thiếu {v:,.0f}" if v > 0 else
+                                                      ("Đủ" if v == 0 else f"Thừa {-v:,.0f}"))
+                    bang = bang.rename(columns={c_thieu: "Tình trạng"})
+                st.dataframe(bang, hide_index=True, width="stretch", column_config={
+                    k: (pct if "%" in k else so) for k in bang.columns if k not in ("Bưu Cục", "Tình trạng")})
+        peak = theo_bc(ev.get("peak"))
+        if peak is not None and not peak.empty:
+            section("Dự báo sản lượng đỉnh theo đợt 10.10")
+            st.dataframe(peak, hide_index=True, width="stretch",
+                         column_config={k: so for k in peak.columns if k != "Bưu Cục"})
+        if p:
+            with st.expander("Thông số đợt", key="exp_ev_params"):
+                st.markdown("\n".join(f"- **{esc(k)}:** {esc(v)}" for k, v in p.items() if v))
+
+    # ── 2. Theo dõi từng ngày ──────────────────────────────────────────────
+    with t[1]:
+        section("Theo dõi từng ngày trong đợt")
+        dd = theo_bc(ev.get("daily"))
+        if dd is None or dd.empty:
+            note("Chưa đọc được bảng 'Theo dõi từng ngày' (tab Cao điểm 11.11).")
+        else:
+            dd = dd.copy()
+            dd["Ngày"] = pd.to_datetime(dd["Ngày"] + f"/{ev['nam']}", format="%d/%m/%Y", errors="coerce")
+            co_so = dd[(dd.get("Hàng về (Volume)", 0) > 0) | (dd.get("Đơn gán", 0) > 0)]
+            if co_so.empty:
+                note(f"Đợt theo dõi bắt đầu {p.get('Ngày bắt đầu theo dõi', '')}: chưa có số liệu ngày nào.")
+            else:
+                tong = co_so.agg({"Hàng về (Volume)": "sum", "Đơn gán": "sum", "GTC": "sum"})
+                thuong = co_so["Tiền thưởng (đ)"].sum() if "Tiền thưởng (đ)" in co_so else 0
+                k1, k2, k3, k4 = st.columns(4)
+                for col, (tt, v, sub, acc) in zip((k1, k2, k3, k4), (
+                        ("Hàng về", f"{tong['Hàng về (Volume)']:,.0f}", f"{co_so['Ngày'].nunique()} ngày có số liệu", True),
+                        ("Đơn gán", f"{tong['Đơn gán']:,.0f}", "", False),
+                        ("%GTC", f"{tong['GTC'] / tong['Đơn gán'] * 100:,.2f}%" if tong["Đơn gán"] else "—",
+                         f"{tong['GTC']:,.0f} đơn GTC", False),
+                        ("Tiền thưởng", fmt_money(thuong),
+                         f"{co_so['NV đạt thưởng'].sum():,.0f} lượt đạt thưởng" if "NV đạt thưởng" in co_so else "",
+                         False))):
+                    with col:
+                        st.markdown(metric_card(tt, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+                fig = go.Figure()
+                for bc, g in co_so.groupby("Bưu Cục"):
+                    fig.add_trace(go.Scatter(x=g["Ngày"], y=g["%GTC"], name=bc, mode="lines+markers+text",
+                                             text=point_labels(g["%GTC"], pct_label), textposition="top center",
+                                             textfont=LABEL_FONT, cliponaxis=False))
+                fig.add_trace(go.Scatter(x=[co_so["Ngày"].min(), co_so["Ngày"].max()], y=[gtc_min, gtc_min],
+                                         mode="lines", name=f"Tối thiểu {gtc_min:g}%", hoverinfo="skip",
+                                         line=dict(color=DANGER, dash="dot", width=2)))
+                fig.update_layout(height=360, title="%GTC từng ngày theo bưu cục")
+                fig.update_xaxes(tickformat="%d/%m")
+                fig.update_yaxes(title_text="%GTC", range=[0, 105])
+                plot_chart(fig, width="stretch")
+                hien = co_so.copy()
+                hien["Ngày"] = hien["Ngày"].dt.strftime("%d/%m")
+                st.dataframe(hien, hide_index=True, width="stretch", column_config={
+                    k: (pct if k.startswith("%") else so) for k in hien.columns
+                    if k not in ("Ngày", "Bưu Cục", "Cảnh báo")})
+
+    # ── 3. Cảnh báo tuyến ───────────────────────────────────────────────────
+    with t[2]:
+        tu = theo_bc(ev.get("tuyen"))
+        section(f"Cảnh báo theo tuyến nhân viên — ngày {ev.get('ngay_xem', '')}")
+        if tu is None or tu.empty:
+            note("Chưa đọc được bảng cảnh báo tuyến (tab Cảnh báo tuyến).")
+        else:
+            cb = tu["Cảnh báo"].fillna("").astype(str)
+            loai = [("GTC thấp", DANGER), ("Quá tải", DANGER), ("Tải tăng mạnh", ACCENT),
+                    ("Tải cao, vẫn giao tốt", ACCENT), ("Còn dư tải", SUCCESS)]
+            cols = st.columns(len(loai))
+            for col, (ten, _) in zip(cols, loai):
+                n = int(cb.str.contains(ten, regex=False).sum())
+                with col:
+                    st.markdown(metric_card(ten, f"{n}", None, sub=f"trên {len(tu)} tuyến"),
+                                unsafe_allow_html=True)
+            c_tai = next((c for c in tu.columns if c.startswith("Tải so với")), None)
+            if c_tai:
+                g = tu.sort_values(c_tai)
+                mau = [DANGER if ("Quá tải" in x or "GTC thấp" in x) else ACCENT if "Tải" in x
+                       else SUCCESS if "dư tải" in x else PRIMARY for x in g["Cảnh báo"].astype(str)]
+                fig = go.Figure(go.Bar(
+                    x=g[c_tai], y=g["Nhân viên (tuyến)"].map(staff_label), orientation="h", marker_color=mau,
+                    text=[f"{v:.0f}% · {x}" for v, x in zip(g[c_tai], g["Cảnh báo"].astype(str))],
+                    textposition="outside", cliponaxis=False,
+                    hovertemplate="%{y}<br>Tải %{x:.0f}% so với ngày thường<extra></extra>"))
+                fig.add_vline(x=100, line_color=MUTED, line_dash="dot")
+                fig.update_layout(height=max(360, 26 * len(g) + 120), showlegend=False,
+                                  title="Tải đơn gán so với ngày thường", margin=dict(l=10, r=200, t=60, b=40))
+                fig.update_xaxes(title_text="% so với ngày thường")
+                fig.update_yaxes(automargin=True, tickfont=dict(size=11))
+                plot_chart(fig, width="stretch")
+            hien = tu.copy()
+            hien["Nhân viên (tuyến)"] = hien["Nhân viên (tuyến)"].map(staff_label)
+            st.dataframe(hien, hide_index=True, width="stretch", column_config={
+                k: (pct if k.startswith("%") or k.startswith("Tải") else so) for k in hien.columns
+                if k not in ("Bưu Cục", "Nhân viên (tuyến)", "Cảnh báo", "Hướng xử lý")})
+
+    # ── 4. %GTC theo nhân viên ──────────────────────────────────────────────
+    with t[3]:
+        nv = theo_bc(ev.get("nv_gtc"))
+        n_ngay = p.get("Số ngày xét nhân viên", "")
+        section(f"%GTC theo nhân viên ({n_ngay} ngày gần nhất), thấp nhất lên đầu" if n_ngay
+                else "%GTC theo nhân viên, thấp nhất lên đầu")
+        if nv is None or nv.empty:
+            note("Chưa đọc được bảng %GTC theo nhân viên (tab Cao điểm 11.11).")
+        else:
+            g = nv.sort_values("%GTC", ascending=False)
+            fig = go.Figure(go.Bar(
+                x=g["%GTC"], y=g["Nhân viên"].map(staff_label), orientation="h",
+                marker_color=[DANGER if v < gtc_min else ACCENT if v < 80 else SUCCESS for v in g["%GTC"]],
+                text=[f"{v:.1f}%" for v in g["%GTC"]], textposition="outside", cliponaxis=False,
+                customdata=g[["Đơn gán", "GTC"]].values,
+                hovertemplate="%{y}<br>%GTC %{x:.1f}%<br>Gán %{customdata[0]:,.0f} · GTC %{customdata[1]:,.0f}"
+                              "<extra></extra>"))
+            fig.add_vline(x=gtc_min, line_color=DANGER, line_dash="dot")
+            fig.update_layout(height=max(360, 24 * len(g) + 120), showlegend=False,
+                              title=f"%GTC từng nhân viên (đỏ: dưới {gtc_min:g}%)",
+                              margin=dict(l=10, r=70, t=60, b=40))
+            fig.update_xaxes(range=[0, 105], title_text="%GTC")
+            fig.update_yaxes(automargin=True, tickfont=dict(size=11))
+            cA, cB = st.columns([1.3, 1])
+            with cA:
+                plot_chart(fig, width="stretch")
+            with cB:
+                hien = nv.copy()
+                hien["Nhân viên"] = hien["Nhân viên"].map(staff_label)
+                st.dataframe(hien, hide_index=True, width="stretch",
+                             column_config={"Đơn gán": so, "GTC": so, "%GTC": pct})
+
+    # ── 5. Năng suất tuần cao điểm ──────────────────────────────────────────
+    with t[4]:
+        section("Năng suất từng ngày trong tuần cao điểm sau 10.10")
+        ns = theo_bc(ev.get("ns_ngay"))
+        if ns is None or ns.empty:
+            note("Chưa đọc được bảng năng suất tuần cao điểm (tab Tính nhân sự).")
+        else:
+            ns = ns.copy()
+            ns["Ngày"] = pd.to_datetime(ns["Ngày"] + f"/{ev['nam']}", format="%d/%m/%Y", errors="coerce")
+            cA, cB = st.columns(2)
+            for col, (c, ten) in zip((cA, cB), (("GTC/NV", "GTC mỗi nhân viên"),
+                                                ("Đơn gán/NV", "Đơn gán mỗi nhân viên"))):
+                if c not in ns.columns:
+                    continue
+                fig = go.Figure()
+                for bc, g in ns.groupby("Bưu Cục"):
+                    fig.add_trace(go.Scatter(x=g["Ngày"], y=g[c], name=bc, mode="lines+markers+text",
+                                             text=point_labels(g[c], lambda v: f"{v:,.0f}"),
+                                             textposition="top center", textfont=LABEL_FONT, cliponaxis=False))
+                fig.update_layout(height=340, title=ten)
+                fig.update_yaxes(range=[0, float(ns[c].max()) * 1.2])
+                fig.update_xaxes(tickformat="%d/%m")
+                with col:
+                    plot_chart(fig, width="stretch")
+            hien = ns.copy()
+            hien["Ngày"] = hien["Ngày"].dt.strftime("%d/%m")
+            st.dataframe(hien, hide_index=True, width="stretch", column_config={
+                k: (pct if k.startswith("%") else so) for k in hien.columns if k not in ("Ngày", "Bưu Cục")})
+
+
+if PAGE == "van_hanh_event":
+    with st.container():
+        event_page()
+
+
 if PAGE == "ai":
     with st.container():
         z1, z2 = st.columns([1, 2])
@@ -5849,7 +6169,10 @@ if PAGE == "ai":
                 ("KHACH HANG MOI", DF_KHM, True),
                 ("PHEU KHACH HANG", DF_PHEU, True),
                 ("MOC KPI THEO THANG", DF_KPI, False),
-            ]
+            ] + [(f"EVENT 11.11 - {ten}", event_data().get(k), False) for k, ten in (
+                ("ns_can", "NHAN SU CAN NGAY DINH"), ("peak", "DU BAO SAN LUONG DINH"),
+                ("daily", "THEO DOI TUNG NGAY"), ("tuyen", "CANH BAO TUYEN"),
+                ("nv_gtc", "%GTC NHAN VIEN"), ("ns_ngay", "NANG SUAT TUAN CAO DIEM"))]
             for label, df, by_date in raw_specs:
                 if df is None or df.empty:
                     continue
