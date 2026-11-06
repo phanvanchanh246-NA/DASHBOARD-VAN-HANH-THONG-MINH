@@ -122,7 +122,45 @@ PLOTLY_CONFIG = {"displaylogo": False, "modeBarButtonsToRemove": [
     "scrollZoom": False, "doubleClick": False, "showAxisDragHandles": False}
 
 
-def plot_chart(fig, **kw):
+def fmt_ky(a, b) -> str:
+    """Khoảng thời gian ngắn gọn: '05/11/2026' hoặc '01/11 – 05/11/2026'."""
+    a, b = pd.to_datetime(a), pd.to_datetime(b)
+    if a.normalize() == b.normalize():
+        return f"Ngày {b:%d/%m/%Y}"
+    return f"{a:%d/%m}{'' if a.year == b.year else f'/{a.year}'} – {b:%d/%m/%Y}"
+
+
+def _fig_dates(fig):
+    """Ngày nhỏ nhất, lớn nhất trên trục ngày của biểu đồ (None nếu biểu đồ không theo ngày)."""
+    lo = hi = None
+    for tr in fig.data:
+        for vals in (getattr(tr, "x", None), getattr(tr, "y", None)):
+            if vals is None or len(vals) == 0:
+                continue
+            arr = np.asarray(vals)
+            if arr.dtype.kind != "M" and not (arr.dtype.kind == "O" and isinstance(arr[0], (pd.Timestamp, datetime))):
+                continue
+            d = pd.to_datetime(pd.Series(arr), errors="coerce").dropna()
+            if not d.empty:
+                lo = d.min() if lo is None else min(lo, d.min())
+                hi = d.max() if hi is None else max(hi, d.max())
+    return (lo, hi) if lo is not None else None
+
+
+def plot_chart(fig, ky: str | None = None, **kw):
+    """Vẽ biểu đồ, kèm dòng thời gian dưới tiêu đề để người xem biết số liệu của khoảng nào.
+    Biểu đồ theo ngày tự lấy khoảng từ dữ liệu; biểu đồ theo bưu cục / nhân viên phải truyền `ky`.
+    `ky=""` để không ghi (vd. biểu đồ không phụ thuộc thời gian)."""
+    if ky is None:
+        rng = _fig_dates(fig)
+        ky = fmt_ky(*rng) if rng else ""
+    title = fig.layout.title.text if fig.layout.title and fig.layout.title.text else ""
+    if ky and title and "<br><span class='ky'>" not in title:
+        fig = go.Figure(fig)    # biểu đồ có thể lấy từ bộ nhớ đệm dùng chung: không sửa bản gốc
+        fig.update_layout(title_text=f"{title}<br><span class='ky' style='font-size:12px;color:{MUTED}'>"
+                                     f"{esc(ky)}</span>")
+        if (fig.layout.margin.t or 0) < 84:
+            fig.update_layout(margin_t=84)
     return st.plotly_chart(fig, config=PLOTLY_CONFIG, **kw)
 
 
@@ -190,11 +228,13 @@ pio.templates["ghn"] = go.layout.Template(layout=dict(
     margin=dict(l=70, r=30, t=90, b=120),
     title=dict(x=0, xanchor="left", y=0.97, yanchor="top",
                font=dict(family="Montserrat, sans-serif", size=15, color=PRIMARY)),
+    # rangemode="tozero": trục số LUÔN bắt đầu từ 0 (trục ngày, trục chữ không bị ảnh hưởng).
+    # Trục tự co về 60–80% sẽ phóng đại chênh lệch: 65% và 75% trông như gấp đôi nhau.
     xaxis=dict(showgrid=False, linecolor=LINE, linewidth=1,
                ticks="outside", tickcolor=LINE, tickfont=dict(size=12),
-               automargin=True, fixedrange=True),
+               automargin=True, fixedrange=True, rangemode="tozero"),
     yaxis=dict(showgrid=True, gridcolor="#F1F3F5", zeroline=False, tickfont=dict(size=12),
-               automargin=True, fixedrange=True),
+               automargin=True, fixedrange=True, rangemode="tozero"),
     # Legend nằm DƯỚI biểu đồ. Trước đây đặt y=1.02 (phía trên) nên đè lên tiêu đề.
     # orientation="h" giúp legend tự xuống dòng khi màn hình hẹp, không tràn chữ.
     legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0,
@@ -317,6 +357,10 @@ h1, h2, h3, h4 {{
 .metric-card .m-title {{
     font-size: calc(16px * var(--fs)); font-weight: 700; color: {MUTED};
     text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;
+}}
+.metric-card .m-ky {{
+    display: inline-block; font-size: calc(13px * var(--fs)); font-weight: 600; color: {PRIMARY};
+    background: {PRIMARY_SOFT}; border-radius: 10px; padding: 1px 9px; margin-bottom: 6px;
 }}
 .metric-card .m-value {{
     font-size: calc(35.75px * var(--fs)); font-weight: 900; color: {PRIMARY};
@@ -743,6 +787,11 @@ def month_end(ts: pd.Timestamp) -> pd.Timestamp:
     return nxt - timedelta(days=nxt.day)
 
 
+def fmt_int(v: float) -> str:
+    """Số nguyên kiểu Việt Nam, dấu chấm ngăn hàng nghìn (giống cách ghi tiền): 2.930."""
+    return f"{v:,.0f}".replace(",", ".")
+
+
 def fmt_money(v: float, full: bool = True) -> str:
     """Định dạng tiền. Mặc định hiển thị ĐẦY ĐỦ số đồng, không rút gọn về 'triệu'
     và không làm tròn — vì rút gọn 1.846.505 thành '1,8 tr đ' làm mất số liệu thật."""
@@ -1084,6 +1133,26 @@ def memo(fn):
     return wrapper
 
 
+def period_bounds(ref_date) -> dict:
+    """Khung ngày của từng kỳ, tính tới ngày `ref`: kỳ trước lấy CÙNG SỐ NGÀY tính từ đầu kỳ."""
+    ref = pd.to_datetime(ref_date)
+    w_a = ref - timedelta(days=ref.weekday())
+    w1_a = w_a - timedelta(days=7)
+    m_a = ref.replace(day=1)
+    m1_a = (m_a - timedelta(days=1)).replace(day=1)
+    return {"n": (ref, ref), "n1": (ref - timedelta(days=1),) * 2,
+            "w": (w_a, ref), "w1": (w1_a, w1_a + (ref - w_a)),
+            "m": (m_a, ref), "m1": (m1_a, min(m1_a + (ref - m_a), m_a - timedelta(days=1)))}
+
+
+def period_ky(ref_date, key: str) -> str:
+    """Nhãn thời gian của ô so sánh kỳ: 'Ngày 05/11/2026 · so với 04/11'."""
+    b = period_bounds(ref_date)
+    (a, z), (pa, pz) = b[key], b[key + "1"]
+    prev = f"{pa:%d/%m}" if pa == pz else f"{pa:%d/%m}–{pz:%d/%m}"
+    return f"{fmt_ky(a, z)} · so với {prev}"
+
+
 @memo
 def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
     """So sánh N vs N-1, W vs W-1, M vs M-1.
@@ -1103,19 +1172,10 @@ def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
     # Mỗi kỳ chỉ tính tới ngày `ref` (ngày cuối của bộ lọc), kỳ trước lấy CÙNG SỐ NGÀY tính từ đầu kỳ,
     # để chọn khoảng ngày trong quá khứ thì không lẫn số của các ngày sau đó, và tuần/tháng đang dở
     # không bị so với cả tuần/tháng trước (doanh thu cộng dồn sẽ luôn báo giảm).
-    # Ngày
-    n_a = n_b = ref
-    n1_a = n1_b = ref - timedelta(days=1)
-    # Tuần (thứ Hai đầu tuần)
-    w_a = ref - timedelta(days=ref.weekday())
-    w_b = ref
-    w1_a = w_a - timedelta(days=7)
-    w1_b = w1_a + (ref - w_a)
-    # Tháng
-    m_a = ref.replace(day=1)
-    m_b = ref
-    m1_a = (m_a - timedelta(days=1)).replace(day=1)
-    m1_b = min(m1_a + (ref - m_a), m_a - timedelta(days=1))
+    pb = period_bounds(ref)
+    (n_a, n_b), (n1_a, n1_b) = pb["n"], pb["n1"]
+    (w_a, w_b), (w1_a, w1_b) = pb["w"], pb["w1"]
+    (m_a, m_b), (m1_a, m1_b) = pb["m"], pb["m1"]
 
     return {
         "n": agg(df, n_a, n_b, how), "n1": agg(df, n1_a, n1_b, how),
@@ -1161,8 +1221,9 @@ def note(msg: str):
 
 def metric_card(title: str, value: str, delta: float | None = None, unit: str = "%",
                 higher_is_better: bool = True, has_prev: bool = True,
-                accent: bool = False, sub: str = "") -> str:
-    """Ô số liệu: nền trắng, đổ bóng, bo góc 8px, viền trái màu."""
+                accent: bool = False, sub: str = "", ky: str = "") -> str:
+    """Ô số liệu: nền trắng, đổ bóng, bo góc 8px, viền trái màu.
+    `ky`: mốc thời gian của con số (vd. 'Ngày 05/11/2026', '01/11 – 05/11/2026'), hiện thành nhãn nhỏ dưới tên."""
     cls, dhtml = "", ""
     if delta is None:
         dhtml = f"<div class='m-delta flat'>{esc(sub)}</div>" if sub else ""
@@ -1179,12 +1240,13 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
         elif unit == "đ":
             txt = f"{arrow} {fmt_money(abs(delta))}"
         else:
-            txt = f"{arrow} {abs(delta):,.0f}"
+            txt = f"{arrow} {fmt_int(abs(delta))}"
         dhtml = f"<div class='m-delta {dcls}'>{txt} {esc(sub)}</div>"
     if accent:
         cls = "accent"
     vcls = "accent" if accent else ""
-    return (f"<div class='metric-card {cls}'><div class='m-title'>{esc(title)}</div>"
+    kyhtml = f"<div class='m-ky'>{esc(ky)}</div>" if ky else ""
+    return (f"<div class='metric-card {cls}'><div class='m-title'>{esc(title)}</div>{kyhtml}"
             f"<div class='m-value {vcls}'>{value}</div>{dhtml}</div>")
 
 
@@ -1226,15 +1288,16 @@ def period_cards(df: pd.DataFrame, ref, unit="%", higher_is_better=True,
     """3 ô: Ngày vs N-1, Tuần vs W-1, Tháng vs M-1, tính theo ngày `ref` (ngày cuối của bộ lọc)."""
     p = get_period_data(df, ref, how)
     fmt = (lambda v: f"{v:,.2f}%") if unit == "%" else (
-        fmt_money if unit == "đ" else (lambda v: f"{v:,.0f}"))
-    specs = [("Ngày (N vs N-1)", p["n"], p["n"] - p["n1"], p["has_n1"], p["has_n"]),
-             ("Tuần (W vs W-1)", p["w"], p["w"] - p["w1"], p["has_w1"], p["has_w"]),
-             ("Tháng (M vs M-1)", p["m"], p["m"] - p["m1"], p["has_m1"], p["has_m"])]
+        fmt_money if unit == "đ" else fmt_int)
+    don_vi = {"%": "", "đ": " (VNĐ)"}.get(unit, f" ({unit})" if unit else "")
+    specs = [("ngày", "n"), ("tuần", "w"), ("tháng", "m")]
     cols = st.columns(len(specs))
-    for col, (t, v, d, hp, has) in zip(cols, specs):
+    for col, (t, k) in zip(cols, specs):
+        v, d, hp, has = p[k], p[k] - p[k + "1"], p[f"has_{k}1"], p[f"has_{k}"]
         with col:
-            st.markdown(metric_card(f"{label} {t}".strip(), fmt(v) if has else NO_DATA, d if has else None, unit,
-                                    higher_is_better, hp and has, sub="" if has else "chưa có số liệu kỳ này"),
+            st.markdown(metric_card(f"{label}{don_vi} · {t}".strip(" ·"), fmt(v) if has else NO_DATA,
+                                    d if has else None, unit, higher_is_better, hp and has,
+                                    sub="" if has else "chưa có số liệu kỳ này", ky=period_ky(ref, k)),
                         unsafe_allow_html=True)
     return p
 
@@ -1451,7 +1514,7 @@ def _combo_fig(g: pd.DataFrame, title, bar_name, line_name, target, gan, max_lab
     return fig
 
 
-def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, title=""):
+def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, title="", ky: str = ""):
     """So sánh chỉ số giữa các bưu cục — thanh ngang, tô xanh/đỏ theo mốc."""
     if df is None or df.empty:
         note("Chưa có dữ liệu để so sánh giữa các bưu cục.")
@@ -1469,7 +1532,7 @@ def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, 
     g["r"] = g["_p"] / g["w"]
     g = g.sort_values("r")
     plot_chart(_bc_bar_fig(g[["Bưu Cục", "r", "w"]].reset_index(drop=True), target, higher_is_better, title),
-                    width="stretch")
+               ky=ky, width="stretch")
 
 
 @fig_cache
@@ -1498,8 +1561,12 @@ def _bc_bar_fig(g: pd.DataFrame, target, higher_is_better, title):
     return fig
 
 
-def gauge_chart(title: str, value: float, target: float, higher_is_better=True):
-    """Đồng hồ đo KPI. Kim xanh nếu đạt, đỏ nếu trượt."""
+def gauge_chart(title: str, value: float | None, target: float, higher_is_better=True):
+    """Đồng hồ đo KPI. Kim xanh nếu đạt, đỏ nếu trượt. value=None: khoảng đã chọn không có số liệu."""
+    if value is None:
+        st.markdown(metric_card(title, NO_DATA, None, sub="chưa có số liệu trong khoảng đã chọn"),
+                    unsafe_allow_html=True)
+        return
     target = max(float(target), 0.5)
     ok = value >= target if higher_is_better else value <= target
     needle = SUCCESS if ok else DANGER
@@ -2627,10 +2694,10 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
         section(f"{staff_label(r['ten'])} · {r['bc']}")
         k1, k2, k3, k4 = st.columns(4)
         for col, (t, v) in zip((k1, k2, k3, k4), (
-                ("Lương TB/ngày công", fmt_money(r["tb"])), ("Trung vị bưu cục/ngày", fmt_money(r["med"])),
-                ("Tổng lương trong khoảng", fmt_money(r["t"])), ("Ngày công", f"{r['n']:,.0f}"))):
+                ("Lương TB/ngày công (VNĐ)", fmt_money(r["tb"])), ("Trung vị bưu cục/ngày (VNĐ)", fmt_money(r["med"])),
+                ("Tổng lương (VNĐ)", fmt_money(r["t"])), ("Ngày công (ngày)", f"{r['n']:,.0f}"))):
             with col:
-                st.markdown(metric_card(t, v, None, accent=(t == "Lương TB/ngày công")),
+                st.markdown(metric_card(t, v, None, accent=t.startswith("Lương TB"), ky=fmt_ky(a, b)),
                             unsafe_allow_html=True)
         plot_chart(luong_staff_chart(low.index[dong[0]], a, b), width="stretch")
 
@@ -2656,12 +2723,13 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
     tong, ngay_cong = float(d["_tong"].sum()), float(d["_ngay"].sum())
     k1, k2, k3, k4 = st.columns(4)
     for col, (t, v, sub) in zip((k1, k2, k3, k4), (
-            ("Tổng lương", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu"),
-            ("Số nhân viên", f"{d['MaNV'].nunique():,}", f"{ngay_cong:,.0f} ngày công"),
-            ("Lương TB / ngày công", fmt_money(tong / ngay_cong if ngay_cong else 0), "Tổng lương ÷ ngày công"),
-            ("Đơn giao tính lương", f"{d['_giao'].sum():,.0f}", f"đơn lấy tính lương {d['_lay'].sum():,.0f}"))):
+            ("Tổng lương (VNĐ)", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu"),
+            ("Số nhân viên (người)", f"{d['MaNV'].nunique():,}", f"{ngay_cong:,.0f} ngày công"),
+            ("Lương TB / ngày công (VNĐ)", fmt_money(tong / ngay_cong if ngay_cong else 0), "Tổng lương ÷ ngày công"),
+            ("Đơn giao tính lương (đơn)", f"{d['_giao'].sum():,.0f}", f"đơn lấy tính lương {d['_lay'].sum():,.0f}"))):
         with col:
-            st.markdown(metric_card(t, v, None, sub=sub, accent=(t == "Tổng lương")), unsafe_allow_html=True)
+            st.markdown(metric_card(t, v, None, sub=sub, accent=t.startswith("Tổng lương"), ky=fmt_ky(a, b)),
+                        unsafe_allow_html=True)
 
     g_day = d.groupby("Ngày", as_index=False)["_tong"].sum()
     by_day = px.bar(g_day, x="Ngày", y="_tong", title="Tổng lương theo ngày")
@@ -2682,7 +2750,7 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
             fig_bc.update_xaxes(title_text="VNĐ")
             fig_bc.update_yaxes(title_text="")
             fig_bc.update_layout(height=340, showlegend=False, margin=dict(t=80, b=60, r=80))
-            plot_chart(fig_bc, width="stretch")
+            plot_chart(fig_bc, ky=fmt_ky(a, b), width="stretch")
     else:
         # Chọn một bưu cục: cạnh biểu đồ theo ngày là tổng lương từng nhân viên của bưu cục đó.
         cA, cB = st.columns([1.3, 1])
@@ -2698,7 +2766,7 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
                                  height=max(340, 30 * len(g_nv) + 130), margin=dict(l=10, r=90, t=70, b=50))
             fig_nv.update_xaxes(title_text="VNĐ")
             fig_nv.update_yaxes(automargin=True, tickfont=dict(size=13))
-            plot_chart(fig_nv, width="stretch")
+            plot_chart(fig_nv, ky=fmt_ky(a, b), width="stretch")
 
     section("Bảng lương theo nhân viên")
     agg_cols = {"Nhân viên": (c["nv"], "last"), "Bưu cục": ("Bưu Cục", "last"),
@@ -3883,25 +3951,27 @@ if PAGE == "tong_quan":
         _sub_tab1 = st.tabs(['Tổng hợp', 'Bưu cục diện đỏ', 'Diễn biến 30 ngày', 'Nhận định AI'],
                             key="tabs_ov")
         with _sub_tab1[0]:
-            section("Chỉ số nổi bật hôm nay (N-1)")
+            section(f"Chỉ số nổi bật ngày {REF_DATE:%d/%m/%Y} (N-1)")
             # Bấm vào ô nào thì sang đúng trang/tab chi tiết của chỉ số đó, giữ bưu cục đang xem.
             o_bc = bc_ov
             def ov_card(title, p, fmt, unit, hib=True, sub="", accent=False, key="n"):
-                """Ô chỉ số Tổng quan; kỳ không có dòng dữ liệu thì ghi "—", không ghi 0."""
+                """Ô chỉ số Tổng quan; kỳ không có dòng dữ liệu thì ghi "—", không ghi 0.
+                Mỗi ô ghi rõ ngày của con số và kỳ được so sánh."""
+                ky = period_ky(REF_DATE, key)
                 if not p.get(f"has_{key}"):
-                    return metric_card(title, NO_DATA, None, unit, hib, False, sub="chưa có số liệu")
+                    return metric_card(title, NO_DATA, None, unit, hib, False, sub="chưa có số liệu", ky=ky)
                 return metric_card(title, fmt(p[key]), p[key] - p[f"{key}1"], unit, hib, p[f"has_{key}1"],
-                                   sub=sub, accent=accent)
+                                   sub=sub, accent=accent, ky=ky)
 
             pct = lambda v: f"{v:,.2f}%"   # noqa: E731
             # Doanh thu chỉ có ở cấp vùng; xem một bưu cục (hoặc tài khoản NVXL) thì thay bằng %Gán.
             if not g_dt.empty:
-                card4 = ("dt", ov_card("Doanh thu tháng", p_dt, fmt_money, "đ", key="m"), "kinh_doanh", "Doanh thu")
+                card4 = ("dt", ov_card("Doanh thu tháng (VNĐ)", p_dt, fmt_money, "đ", key="m"), "kinh_doanh", "Doanh thu")
             else:
                 card4 = ("gan", ov_card("%Gán", get_period_data(scope(M_GAN, bc_ov), REF_DATE), pct, "%"),
                          "van_hanh", "GTC tổng")
             cards = [
-                ("vol", ov_card("Sản lượng ngày", p_vol, lambda v: f"{v:,.0f}", "đơn", accent=True),
+                ("vol", ov_card("Sản lượng (đơn)", p_vol, fmt_int, "đơn", accent=True),
                  "van_hanh", "GTC tổng"),
                 ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%"), "van_hanh", "GTC tổng"),
                 ("tts", ov_card("%GTC TikTok", p_tts, pct, "%"), "van_hanh", "TikTok Shop"),
@@ -4058,21 +4128,25 @@ if PAGE == "tong_quan":
                     with b1:
                         st.markdown(metric_card("%GTC ngày cuối", f"{r_bc['%GTC ngày cuối']:.2f}%",
                                                 r_bc["%GTC ngày cuối"] - tgt_bc, "%", True, True,
-                                                sub=f"so với mốc {tgt_bc:g}%"), unsafe_allow_html=True)
+                                                sub=f"so với mốc {tgt_bc:g}%", ky=fmt_ky(last_bc, last_bc)),
+                                    unsafe_allow_html=True)
                     with b2:
                         st.markdown(metric_card("%GTC 7 ngày", f"{p7b:.2f}%" if co7 else "—",
                                                 (p7b - ppb) if co7 and cop else None, "%", True, cop,
-                                                sub="so với 7 ngày trước"), unsafe_allow_html=True)
+                                                sub="so với 7 ngày trước",
+                                                ky=fmt_ky(last_bc - timedelta(days=6), last_bc)), unsafe_allow_html=True)
                     with b3:
                         gb = r_bc["% Gán 7 ngày"]
                         st.markdown(metric_card("% Gán đơn 7 ngày",
                                                 f"{gb:.2f}%" if gb is not None and pd.notna(gb) else "—", None,
-                                                sub=f"sản lượng 7 ngày {r_bc['Sản lượng 7 ngày']:,.0f} đơn"),
+                                                sub=f"sản lượng 7 ngày {r_bc['Sản lượng 7 ngày']:,.0f} đơn",
+                                                ky=fmt_ky(last_bc - timedelta(days=6), last_bc)),
                                     unsafe_allow_html=True)
                     with b4:
                         st.markdown(metric_card("Ngày liên tiếp dưới mốc", f"{int(r_bc['Số ngày liên tiếp dưới mốc'])} ngày",
                                                 None, sub=f"từ {pd.Timestamp(r_bc['_tu_ngay']):%d/%m} · mức {r_bc['Mức']}",
-                                                accent=r_bc["Mức"] == "Cao"), unsafe_allow_html=True)
+                                                accent=r_bc["Mức"] == "Cao", ky=f"Tính đến {pd.Timestamp(last_bc):%d/%m/%Y}"),
+                                    unsafe_allow_html=True)
                     combo_chart(g_bc, f"Sản lượng, %GTC và % gán đơn — {ten_bc} (30 ngày)", "Sản lượng", "% GTC",
                                 tgt_bc, gan_df=gan_bc)
 
@@ -4091,8 +4165,8 @@ if PAGE == "tong_quan":
                                      f"trao_doi_1_1_NVXL_{re.sub(r'[^a-z0-9]+', '_', norm(ten_bc)).strip('_')}.txt")
 
         with _sub_tab1[2]:
-            section("Diễn biến các chỉ số vận hành — 30 ngày gần nhất")
             w30 = REF_DATE - timedelta(days=29)
+            section(f"Diễn biến các chỉ số vận hành — 30 ngày gần nhất ({fmt_ky(w30, REF_DATE)})")
             series = [("%GTC tổng", daily(sl(g_gtc, w30, REF_DATE)), PRIMARY),
                       ("%GTC TikTok", daily(sl(g_tts, w30, REF_DATE)), "#00B4D8"),
                       ("ODR TikTok", daily(sl(g_odr, w30, REF_DATE)), SUCCESS),
@@ -4203,7 +4277,7 @@ if PAGE == "van_hanh":
                 combo_chart(cs(M_GTC), "Sản lượng, %GTC và % gán đơn theo ngày", "Sản lượng", "% GTC", t_gtc_vh,
                             gan_df=cs(M_GAN))
             with cB:
-                bc_bar_chart(sl(M_GTC, a_vh, b_vh), t_gtc_vh, True, "So sánh giữa bưu cục")
+                bc_bar_chart(sl(M_GTC, a_vh, b_vh), t_gtc_vh, True, "So sánh giữa bưu cục", ky=fmt_ky(a_vh, b_vh))
 
         with _sub_tab2[1]:
             # 2.2 Sản lượng và %GTC theo ca
@@ -4280,7 +4354,7 @@ if PAGE == "van_hanh":
                 combo_chart(cs(M_TTS), "Sản lượng, %GTC và % gán đơn TikTok Shop", "Sản lượng TTS", "% GTC TTS",
                             t_tts_vh, gan_df=cs(M_GAN_TTS))
             with cH:
-                bc_bar_chart(sl(M_TTS, a_vh, b_vh), t_tts_vh, True, "So sánh giữa bưu cục")
+                bc_bar_chart(sl(M_TTS, a_vh, b_vh), t_tts_vh, True, "So sánh giữa bưu cục", ky=fmt_ky(a_vh, b_vh))
 
             # 2.4 ODR TTS
             section("4. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
@@ -4295,7 +4369,7 @@ if PAGE == "van_hanh":
                 combo_chart(cs(M_OPR), "Đơn lấy thành công và %OPR TikTok Shop", "Đơn lấy thành công", "% OPR",
                             t_opr_vh, max_labels=9)
             with cP:
-                bc_bar_chart(sl(M_OPR, a_vh, b_vh), t_opr_vh, True, "So sánh giữa bưu cục")
+                bc_bar_chart(sl(M_OPR, a_vh, b_vh), t_opr_vh, True, "So sánh giữa bưu cục", ky=fmt_ky(a_vh, b_vh))
 
         with _sub_tab2[3]:
             # 2.5 Trả hàng
@@ -4305,7 +4379,7 @@ if PAGE == "van_hanh":
             with cE:
                 line_chart(cs(M_TRA), "Tỷ lệ trả hàng theo ngày", DANGER, "%", t_tra_vh)
             with cF:
-                bc_bar_chart(sl(M_TRA, a_vh, b_vh), t_tra_vh, False, "So sánh giữa bưu cục")
+                bc_bar_chart(sl(M_TRA, a_vh, b_vh), t_tra_vh, False, "So sánh giữa bưu cục", ky=fmt_ky(a_vh, b_vh))
 
             # 2.6 GTB thu tiền
             section("7. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
@@ -4314,7 +4388,7 @@ if PAGE == "van_hanh":
             with cQ:
                 line_chart(cs(M_GTB), "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
             with cR:
-                bc_bar_chart(sl(M_GTB, a_vh, b_vh), None, True, "So sánh giữa bưu cục")
+                bc_bar_chart(sl(M_GTB, a_vh, b_vh), None, True, "So sánh giữa bưu cục", ky=fmt_ky(a_vh, b_vh))
 
         with _sub_tab2[4]:
             def _w(d):
@@ -4394,8 +4468,9 @@ if PAGE == "kinh_doanh":
 
             d1, d2 = st.columns([1, 2.2])
             with d1:
-                st.markdown(metric_card("Mục tiêu doanh thu tháng", fmt_money(target_dt), None,
-                                        sub="theo sheet KPI" if kpi_dt_sheet > 0 else "mốc mặc định"),
+                st.markdown(metric_card("Mục tiêu doanh thu tháng (VNĐ)", fmt_money(target_dt), None,
+                                        sub="theo sheet KPI" if kpi_dt_sheet > 0 else "mốc mặc định",
+                                        ky=f"Tháng {b_kd:%m/%Y}"),
                             unsafe_allow_html=True)
 
             # Tiến độ tính theo tháng chứa ngày cuối của bộ lọc (khớp ô "Tháng" ở trên).
@@ -4407,17 +4482,19 @@ if PAGE == "kinh_doanh":
             with d2:
                 e1, e2, e3 = st.columns(3)
                 with e1:
-                    st.markdown(metric_card("Lũy kế tháng này", fmt_money(p_kd["m"]), None,
-                                            sub=f"đã qua {days_done}/{days_total} ngày"),
+                    st.markdown(metric_card("Lũy kế tháng (VNĐ)", fmt_money(p_kd["m"]), None,
+                                            sub=f"đã qua {days_done}/{days_total} ngày", ky=fmt_ky(m_start, b_kd)),
                                 unsafe_allow_html=True)
                 with e2:
-                    st.markdown(metric_card("Dự kiến cuối tháng", fmt_money(forecast_dt), None,
-                                            sub="theo tốc độ hiện tại", accent=True),
+                    st.markdown(metric_card("Dự kiến cuối tháng (VNĐ)", fmt_money(forecast_dt), None,
+                                            sub="theo tốc độ hiện tại", accent=True,
+                                            ky=f"Đến {month_end(m_start):%d/%m/%Y}"),
                                 unsafe_allow_html=True)
                 with e3:
                     thieu = max(target_dt - forecast_dt, 0)
-                    st.markdown(metric_card("Còn thiếu so với mục tiêu", fmt_money(thieu), None,
-                                            sub="nếu giữ nguyên tốc độ"), unsafe_allow_html=True)
+                    st.markdown(metric_card("Còn thiếu so với mục tiêu (VNĐ)", fmt_money(thieu), None,
+                                            sub="nếu giữ nguyên tốc độ", ky=f"Tháng {b_kd:%m/%Y}"),
+                                unsafe_allow_html=True)
 
             section("3. Biểu đồ doanh thu theo ngày")
             # Lọc 1 ngày / vài ngày thì biểu đồ vẫn vẽ 7 ngày gần nhất để thấy diễn biến.
@@ -4561,7 +4638,8 @@ if PAGE == "canh_bao_ns":
                     (k4, "gan", "Sản lượng gán thấp", f"dưới {hr_ratio}% trung vị bưu cục")):
                 with col_:
                     st.markdown(metric_card(ttl, f"{n_flag[k]} người", None, sub=sub,
-                                            accent=n_flag[k] > 0), unsafe_allow_html=True)
+                                            accent=n_flag[k] > 0, ky=f"Tính đến {hr_ref:%d/%m/%Y}"),
+                                unsafe_allow_html=True)
             if hr.empty:
                 st.markdown(
                     "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ỔN ĐỊNH</span>"
@@ -4599,20 +4677,24 @@ if PAGE == "canh_bao_ns":
                         with m1:
                             st.markdown(metric_card("%GTC 7 ngày", f"{p7:.2f}%" if co_p7 else "—",
                                                     (p7 - p_prev) if co_p7 and co_prev else None, "%", True,
-                                                    co_prev, sub="so với 7 ngày trước"), unsafe_allow_html=True)
+                                                    co_prev, sub="so với 7 ngày trước",
+                                                    ky=fmt_ky(hr_ref - timedelta(days=6), hr_ref)), unsafe_allow_html=True)
                         with m2:
                             tong_gan = float(co_lam["Gán"].sum())
                             st.markdown(metric_card("%GTC 30 ngày",
                                                     f"{co_lam['GTC'].sum() / tong_gan * 100:.2f}%" if tong_gan else "—",
-                                                    None, sub=f"{int(co_lam['GTC'].sum()):,}/{int(tong_gan):,} đơn"),
+                                                    None, sub=f"{int(co_lam['GTC'].sum()):,}/{int(tong_gan):,} đơn",
+                                                    ky=fmt_ky(hr_ref - timedelta(days=29), hr_ref)),
                                         unsafe_allow_html=True)
                         with m3:
                             st.markdown(metric_card("Ngày có đơn (30 ngày)", f"{len(co_lam)} ngày", None,
-                                                    sub=f"làm gần nhất {pd.Timestamp(r_nv['Ngày làm cuối']):%d/%m}"),
+                                                    sub=f"làm gần nhất {pd.Timestamp(r_nv['Ngày làm cuối']):%d/%m}",
+                                                    ky=fmt_ky(hr_ref - timedelta(days=29), hr_ref)),
                                         unsafe_allow_html=True)
                         with m4:
                             st.markdown(metric_card("Mức cảnh báo", str(r_nv["Mức"]), None,
-                                                    sub=r_nv["_tags"].replace("|", " · "), accent=r_nv["Mức"] == "Cao"),
+                                                    sub=r_nv["_tags"].replace("|", " · "), accent=r_nv["Mức"] == "Cao",
+                                                    ky=f"Tính đến {hr_ref:%d/%m/%Y}"),
                                         unsafe_allow_html=True)
                         plot_chart(fig_nv, width="stretch", key="chart_hr_staff")
 
@@ -5063,16 +5145,17 @@ if PAGE == "kpi":
                 t_opr = st.number_input("OPR TTS tối thiểu", 0.0, 100.0, float(t_opr), 0.5,
                                         key=f"kpi_opr_{bc_kpi}")
 
-        a_gtc = agg(scope(M_GTC, bc_kpi), a_kpi, b_kpi)
-        a_tts = agg(scope(M_TTS, bc_kpi), a_kpi, b_kpi)
-        a_tra = agg(scope(M_TRA, bc_kpi), a_kpi, b_kpi)
-        a_odr = agg(scope(M_ODR, bc_kpi), a_kpi, b_kpi)
-        a_opr = agg(scope(M_OPR, bc_kpi), a_kpi, b_kpi)
+        def agg_kpi(frame):
+            """Khoảng không có dòng số liệu nào thì trả None (hiện "—"), không tính thành 0%."""
+            f = scope(frame, bc_kpi)
+            return agg(f, a_kpi, b_kpi) if not sl(f, a_kpi, b_kpi).empty else None
+
+        a_gtc, a_tts, a_tra, a_odr, a_opr = (agg_kpi(f) for f in (M_GTC, M_TTS, M_TRA, M_ODR, M_OPR))
 
         _sub_tab5 = st.tabs(['Đồng hồ KPI', 'Đối chiếu chi tiết', 'Bám mốc theo ngày', 'Nhận định AI'],
                             key="tabs_kpi")
         with _sub_tab5[0]:
-            section("Đồng hồ đo tiến độ KPI")
+            section(f"Đồng hồ đo tiến độ KPI · {fmt_ky(a_kpi, min(b_kpi, REF_DATE))}")
             gc1, gc2, gc3 = st.columns(3)
             with gc1:
                 gauge_chart("%GTC Tổng", a_gtc, t_gtc, True)
@@ -5089,6 +5172,8 @@ if PAGE == "kpi":
         with _sub_tab5[1]:
             section("Đối chiếu chi tiết")
             def kpi_row(name, actual, target, hib):
+                if actual is None:
+                    return [esc(name), NO_DATA, f"{target:,.2f}%", NO_DATA, "<span>Chưa có số liệu</span>"]
                 ok = actual >= target if hib else actual <= target
                 gap = (actual - target) if hib else (target - actual)
                 status = ("<span class='up'>ĐẠT</span>" if ok else "<span class='down'>CHƯA ĐẠT</span>")
@@ -5156,16 +5241,23 @@ if PAGE == "kpi":
                 note("Chưa có dữ liệu KPI trong khoảng đã chọn.")
 
         with _sub_tab5[3]:
+            def kpi_ai(name, actual, target, hib) -> str:
+                moc = "mốc tối thiểu" if hib else "ngưỡng tối đa"
+                if actual is None:
+                    return f"- {name}: chưa có số liệu trong khoảng này / {moc} {target:.2f}%"
+                ok = actual >= target if hib else actual <= target
+                return f"- {name}: thực tế {actual:.2f}% / {moc} {target:.2f}% -> {'ĐẠT' if ok else 'CHƯA ĐẠT'}"
+
             ai_advisor(
                 "kpi", "Tiến độ KPI",
                 f"""Khoảng ngày: {a_kpi:%d/%m/%Y} – {b_kpi:%d/%m/%Y}. Bưu cục: {bc_kpi}.
 
 ĐỐI CHIẾU VỚI MỐC KPI:
-- %GTC tổng: thực tế {a_gtc:.2f}% / mốc tối thiểu {t_gtc:.2f}% -> {'ĐẠT' if a_gtc >= t_gtc else 'CHƯA ĐẠT'}
-- %GTC TikTok: thực tế {a_tts:.2f}% / mốc tối thiểu {t_tts:.2f}% -> {'ĐẠT' if a_tts >= t_tts else 'CHƯA ĐẠT'}
-- %Trả hàng: thực tế {a_tra:.2f}% / ngưỡng tối đa {t_tra:.2f}% -> {'ĐẠT' if a_tra <= t_tra else 'CHƯA ĐẠT'}
-- ODR TikTok: thực tế {a_odr:.2f}% / mốc tối thiểu {t_odr:.2f}% -> {'ĐẠT' if a_odr >= t_odr else 'CHƯA ĐẠT'}
-- OPR TikTok: thực tế {a_opr:.2f}% / mốc tối thiểu {t_opr:.2f}% -> {'ĐẠT' if a_opr >= t_opr else 'CHƯA ĐẠT'}
+{kpi_ai("%GTC tổng", a_gtc, t_gtc, True)}
+{kpi_ai("%GTC TikTok", a_tts, t_tts, True)}
+{kpi_ai("%Trả hàng", a_tra, t_tra, False)}
+{kpi_ai("ODR TikTok", a_odr, t_odr, True)}
+{kpi_ai("OPR TikTok", a_opr, t_opr, True)}
 
 Đã qua {(b_kpi - a_kpi).days + 1} ngày trong kỳ theo dõi.""",
             extra_note="Hãy ước lượng khả năng về đích của từng chỉ số nếu giữ nguyên tốc độ hiện tại, "
@@ -5414,21 +5506,21 @@ if PAGE == "thi_dua":
                     n_dat = int((bxh[col_now] >= 80).sum())
                     m1, m2, m3 = st.columns(3)
                     with m1:
-                        st.markdown(metric_card("Số nhân viên dự thi", f"{len(bxh):,}", None,
-                                                sub=ten_n_th), unsafe_allow_html=True)
+                        st.markdown(metric_card("Số nhân viên dự thi (người)", f"{len(bxh):,}", None,
+                                                ky=ten_n), unsafe_allow_html=True)
                     with m2:
-                        st.markdown(metric_card("Đạt điều kiện ≥80%", f"{n_dat:,}", None,
+                        st.markdown(metric_card("Đạt điều kiện ≥80% (người)", f"{n_dat:,}", None,
                                                 sub=f"trên tổng {len(bxh)} người",
-                                                accent=True), unsafe_allow_html=True)
+                                                accent=True, ky=ten_n), unsafe_allow_html=True)
                     with m3:
                         # Tổng thưởng = cộng đúng các suất đã trao (theo Hạng Thưởng), không
                         # cộng theo hạng tổng vì hạng tổng có thể rơi vào người chưa đủ điều kiện.
                         tong_thuong = (sum(THUONG[int(h)] for h in bxh["Hạng Thưởng"].dropna())
                                        if theo_thang else 0)
-                        st.markdown(metric_card("Tổng tiền thưởng phải chi",
+                        st.markdown(metric_card("Tổng tiền thưởng phải chi (VNĐ)",
                                                 fmt_money(tong_thuong) if theo_thang else "—", None,
                                                 sub="theo kết quả hiện tại" if theo_thang
-                                                else "thưởng tiền chỉ tính theo tháng"),
+                                                else "thưởng tiền chỉ tính theo tháng", ky=ten_n),
                                     unsafe_allow_html=True)
 
                     pham_vi = f"Bưu cục: {bc_td}"
@@ -5546,7 +5638,7 @@ if PAGE == "thi_dua":
                     fig_td.update_yaxes(automargin=True, tickfont=dict(size=12))
                     fig_td.update_layout(height=max(360, 60 * len(chart_td) + 140),
                                          margin=dict(l=20, r=90, t=60, b=70), showlegend=False)
-                    plot_chart(fig_td, width="stretch")
+                    plot_chart(fig_td, ky=f"{ten_n} so với {ten_n1}", width="stretch")
 
                     # ── Ảnh mức cải thiện ──────────────────────────────────────────
                     section("Ảnh mức cải thiện & AI đánh giá, nhận xét")
@@ -5729,14 +5821,15 @@ def truy_thu_page() -> None:
     top_loai = by_loai.index[0]
     k1, k2, k3 = st.columns(3)
     for col, (t, v, sub, acc) in zip((k1, k2, k3), (
-            ("Tổng phải truy thu", fmt_money(d["_phai"].sum()),
+            ("Tổng phải truy thu (VNĐ)", fmt_money(d["_phai"].sum()),
              f"{len(d)} khoản · {d['MaNV'].nunique()} nhân viên", True),
-            ("Đã truy thu", fmt_money(d["_da"].sum()),
+            ("Đã truy thu (VNĐ)", fmt_money(d["_da"].sum()),
              f"{d['_da'].sum() / d['_phai'].sum() * 100:.0f}% số phải thu" if d["_phai"].sum() else "", False),
-            ("Còn phải truy thu", fmt_money(d["_con"].sum()),
+            ("Còn phải truy thu (VNĐ)", fmt_money(d["_con"].sum()),
              f"{int((d['_con'] > 0).sum())} khoản chưa thu đủ", False))):
         with col:
-            st.markdown(metric_card(t, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+            st.markdown(metric_card(t, v, None, sub=sub, accent=acc, ky=fmt_ky(a_tt, b_tt)),
+                        unsafe_allow_html=True)
 
     # Hàng dưới: loại truy thu nhiều tiền nhất và nhiều khoản nhất (tên loại dài nên để ô rộng).
     loai_khoan = by_loai["so_vu"].idxmax()
@@ -5764,7 +5857,7 @@ def truy_thu_page() -> None:
                                margin=dict(l=10, r=130, t=60, b=40), showlegend=False)
         fig_loai.update_xaxes(title_text="VNĐ")
         fig_loai.update_yaxes(automargin=True)
-        plot_chart(fig_loai, width="stretch")
+        plot_chart(fig_loai, ky=fmt_ky(a_tt, b_tt), width="stretch")
     with cR:
         g_nv = (d.groupby("MaNV")["_phai"].sum().sort_values(ascending=False).head(10)
                 .sort_values())
@@ -5778,7 +5871,7 @@ def truy_thu_page() -> None:
                              margin=dict(l=10, r=90, t=60, b=40), showlegend=False)
         fig_nv.update_xaxes(title_text="VNĐ")
         fig_nv.update_yaxes(automargin=True)
-        plot_chart(fig_nv, width="stretch")
+        plot_chart(fig_nv, ky=fmt_ky(a_tt, b_tt), width="stretch")
 
     def ds_ma_don(by: str) -> pd.Series:
         """Các mã đơn hàng (không lặp) của từng nhóm, nối bằng dấu phẩy."""
@@ -6023,7 +6116,7 @@ def event_page() -> None:
             ymax = max(float(b[c].max()) for k, *_, c in cach if (b := bang.get(k)) is not None and c in b)
             fig.update_layout(barmode="group", height=380, title="Nhân viên hiện có và cần cho ngày đỉnh")
             fig.update_yaxes(title_text="Nhân viên", range=[0, max(ymax, float(co["NV hiện có"].max())) * 1.3])
-            plot_chart(fig, width="stretch")
+            plot_chart(fig, ky=ev.get("tieu_de") or "Ngày đỉnh", width="stretch")
 
             for k, ten, giai_thich, _ in cach:
                 b = bang.get(k)
@@ -6173,7 +6266,7 @@ def event_page() -> None:
                                   title="Tải đơn gán so với ngày thường", margin=dict(l=10, r=200, t=60, b=40))
                 fig.update_xaxes(title_text="% so với ngày thường")
                 fig.update_yaxes(automargin=True, tickfont=dict(size=11))
-                plot_chart(fig, width="stretch")
+                plot_chart(fig, ky=f"Ngày {ev.get('ngay_xem', '')}", width="stretch")
             hien = tu.copy()
             hien["Nhân viên (tuyến)"] = hien["Nhân viên (tuyến)"].map(staff_label)
             st.dataframe(hien, hide_index=True, width="stretch", column_config={
@@ -6204,7 +6297,7 @@ def event_page() -> None:
             fig.update_yaxes(automargin=True, tickfont=dict(size=11))
             cA, cB = st.columns([1.3, 1])
             with cA:
-                plot_chart(fig, width="stretch")
+                plot_chart(fig, ky=tieu_de, width="stretch")
             with cB:
                 hien = nv.copy()
                 hien["Nhân viên"] = hien["Nhân viên"].map(staff_label)
