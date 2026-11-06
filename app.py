@@ -147,16 +147,35 @@ def _fig_dates(fig):
     return (lo, hi) if lo is not None else None
 
 
+def _x_is_date(fig) -> bool:
+    """Trục ngang là trục ngày (có ít nhất một đường/cột vẽ theo ngày trên trục x)."""
+    for tr in fig.data:
+        x = getattr(tr, "x", None)
+        if x is not None and len(x) and getattr(tr, "orientation", None) != "h":
+            arr = np.asarray(x)
+            if arr.dtype.kind == "M" or (arr.dtype.kind == "O" and isinstance(arr[0], (pd.Timestamp, datetime))):
+                return True
+    return False
+
+
 def plot_chart(fig, ky: str | None = None, **kw):
     """Vẽ biểu đồ, kèm dòng thời gian dưới tiêu đề để người xem biết số liệu của khoảng nào.
     Biểu đồ theo ngày tự lấy khoảng từ dữ liệu; biểu đồ theo bưu cục / nhân viên phải truyền `ky`.
     `ky=""` để không ghi (vd. biểu đồ không phụ thuộc thời gian)."""
+    rng = _fig_dates(fig)
     if ky is None:
-        rng = _fig_dates(fig)
         ky = fmt_ky(*rng) if rng else ""
+    fig = go.Figure(fig)        # biểu đồ có thể lấy từ bộ nhớ đệm dùng chung: không sửa bản gốc
+    if rng and _x_is_date(fig):
+        # Trục ngày ghi ĐỦ từng ngày (Plotly mặc định chỉ ghi cách ngày). Nhiều ngày thì xoay chữ cho khỏi đè.
+        n_ngay = (rng[1] - rng[0]).days + 1
+        # Khung trục vừa khít ngày đầu – ngày cuối có dữ liệu (không ghi thừa ngày trống ở hai đầu).
+        fig.update_xaxes(dtick=86_400_000, tickformat="%d/%m", tick0=rng[0], autorange=False,
+                         range=[rng[0] - timedelta(hours=12), rng[1] + timedelta(hours=12)],
+                         tickangle=0 if n_ngay <= 14 else (-45 if n_ngay <= 40 else -90),
+                         tickfont=dict(size=12 if n_ngay <= 40 else 10))
     title = fig.layout.title.text if fig.layout.title and fig.layout.title.text else ""
     if ky and title and "<br><span class='ky'>" not in title:
-        fig = go.Figure(fig)    # biểu đồ có thể lấy từ bộ nhớ đệm dùng chung: không sửa bản gốc
         fig.update_layout(title_text=f"{title}<br><span class='ky' style='font-size:12px;color:{MUTED}'>"
                                      f"{esc(ky)}</span>")
         if (fig.layout.margin.t or 0) < 84:
@@ -1396,17 +1415,9 @@ fig_cache = memo   # biểu đồ plotly: xem memo
 
 
 def point_labels(values, fmt, max_labels: int = 16, offset: int = 0) -> list[str]:
-    """Nhãn dữ liệu cho từng điểm. Nhiều điểm quá thì cách vài điểm ghi một nhãn (luôn ghi điểm cuối)
-    để nhãn không đè lên nhau; di chuột vẫn xem được số của mọi điểm.
-    `offset` lệch vị trí ghi nhãn giữa các đường trên cùng biểu đồ để nhãn so le nhau."""
-    vals = list(values)
-    n = len(vals)
-    step = max(1, -(-n // max_labels))
-    out = []
-    for i, v in enumerate(vals):
-        keep = i == n - 1 or ((i + offset) % step == 0 and n - 1 - i >= max(1, step // 2))
-        out.append(fmt(v) if keep and v is not None and pd.notna(v) else "")
-    return out
+    """Nhãn dữ liệu cho TỪNG điểm, không bỏ điểm nào (theo yêu cầu: hiển thị nhãn đầy đủ).
+    `max_labels`, `offset` giữ lại cho tương thích chỗ gọi cũ, không còn dùng để lược nhãn."""
+    return [fmt(v) if v is not None and pd.notna(v) else "" for v in values]
 
 
 def label_layout(series_values: list, gap: float = 12.0) -> list[tuple[str, int]]:
@@ -1433,7 +1444,7 @@ def pct_label(v) -> str:
 
 
 def num_label(v) -> str:
-    return f"{v:,.0f}"
+    return fmt_int(v)
 
 
 def money_label(v) -> str:
@@ -4910,7 +4921,7 @@ if PAGE == "nang_suat":
                     fig_price.update_traces(line=dict(color=PRIMARY, width=3),
                                             marker=dict(size=7, color=PRIMARY),
                                             mode="lines+markers+text", cliponaxis=False,
-                                            text=point_labels(g_price[col_price], lambda v: f"{v:,.0f}"),
+                                            text=point_labels(g_price[col_price], fmt_int),
                                             textposition="top center",
                                             textfont=dict(color=PRIMARY, **LABEL_FONT))
                     fig_price.update_yaxes(title_text="VNĐ")
@@ -6321,7 +6332,7 @@ def event_page() -> None:
                 fig = go.Figure()
                 for bc, g in ns.groupby("Bưu Cục"):
                     fig.add_trace(go.Scatter(x=g["Ngày"], y=g[c], name=bc, mode="lines+markers+text",
-                                             text=point_labels(g[c], lambda v: f"{v:,.0f}"),
+                                             text=point_labels(g[c], fmt_int),
                                              textposition="top center", textfont=LABEL_FONT, cliponaxis=False))
                 fig.update_layout(height=340, title=ten)
                 fig.update_yaxes(range=[0, float(ns[c].max()) * 1.2])
