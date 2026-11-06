@@ -1096,7 +1096,7 @@ def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
     """
     ref = pd.to_datetime(ref_date)
     empty_result = {k: 0.0 for k in ("n", "n1", "w", "w1", "m", "m1")}
-    empty_result.update({"has_n1": False, "has_w1": False, "has_m1": False})
+    empty_result.update({k: False for k in ("has_n", "has_w", "has_m", "has_n1", "has_w1", "has_m1")})
     if df is None or df.empty or "Ngày" not in df.columns:
         return empty_result
 
@@ -1121,6 +1121,11 @@ def get_period_data(df: pd.DataFrame, ref_date, how: str = "wavg") -> dict:
         "n": agg(df, n_a, n_b, how), "n1": agg(df, n1_a, n1_b, how),
         "w": agg(df, w_a, w_b, how), "w1": agg(df, w1_a, w1_b, how),
         "m": agg(df, m_a, m_b, how), "m1": agg(df, m1_a, m1_b, how),
+        # has_n/has_w/has_m: kỳ đó CÓ dòng dữ liệu hay không. Không có thì phải hiện "chưa có số",
+        # không được hiện 0% (bưu cục không có đơn OPR, hoặc sheet chưa cập nhật ngày đó) rồi báo động sai.
+        "has_n": not sl(df, n_a, n_b).empty,
+        "has_w": not sl(df, w_a, w_b).empty,
+        "has_m": not sl(df, m_a, m_b).empty,
         "has_n1": not sl(df, n1_a, n1_b).empty,
         "has_w1": not sl(df, w1_a, w1_b).empty,
         "has_m1": not sl(df, m1_a, m1_b).empty,
@@ -1213,20 +1218,24 @@ def link_box(html: str, key: str, page: str, tab: str | None = None, bc: str | N
                   width="stretch")
 
 
+NO_DATA = "—"     # ô chỉ số khi kỳ đó không có dòng dữ liệu nào (khác với giá trị 0 thật)
+
+
 def period_cards(df: pd.DataFrame, ref, unit="%", higher_is_better=True,
                  how="wavg", label=""):
     """3 ô: Ngày vs N-1, Tuần vs W-1, Tháng vs M-1, tính theo ngày `ref` (ngày cuối của bộ lọc)."""
     p = get_period_data(df, ref, how)
     fmt = (lambda v: f"{v:,.2f}%") if unit == "%" else (
         fmt_money if unit == "đ" else (lambda v: f"{v:,.0f}"))
-    specs = [("Ngày (N vs N-1)", p["n"], p["n"] - p["n1"], p["has_n1"]),
-             ("Tuần (W vs W-1)", p["w"], p["w"] - p["w1"], p["has_w1"]),
-             ("Tháng (M vs M-1)", p["m"], p["m"] - p["m1"], p["has_m1"])]
+    specs = [("Ngày (N vs N-1)", p["n"], p["n"] - p["n1"], p["has_n1"], p["has_n"]),
+             ("Tuần (W vs W-1)", p["w"], p["w"] - p["w1"], p["has_w1"], p["has_w"]),
+             ("Tháng (M vs M-1)", p["m"], p["m"] - p["m1"], p["has_m1"], p["has_m"])]
     cols = st.columns(len(specs))
-    for col, (t, v, d, hp) in zip(cols, specs):
+    for col, (t, v, d, hp, has) in zip(cols, specs):
         with col:
-            st.markdown(metric_card(f"{label} {t}".strip(), fmt(v), d, unit,
-                                    higher_is_better, hp), unsafe_allow_html=True)
+            st.markdown(metric_card(f"{label} {t}".strip(), fmt(v) if has else NO_DATA, d if has else None, unit,
+                                    higher_is_better, hp and has, sub="" if has else "chưa có số liệu kỳ này"),
+                        unsafe_allow_html=True)
     return p
 
 
@@ -2576,7 +2585,7 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
 
     p = d.groupby("MaNV").agg(ten=(nv_col, "last"), bc=("Bưu Cục", "last"), t=("_tong", "sum"),
                               n=("_ngay", "sum"))
-    p = p[(p["n"] >= ngay_min) & ~p.index.isin(NGHI_VIEC)]
+    p = p[(p["n"] >= ngay_min) & ~p.index.isin(nghi_viec(b))]
     if p.empty:
         st.markdown(f"<div class='ghn-alert ok'><span class='a-tag tag-ok'>CHƯA ĐỦ DỮ LIỆU</span>"
                     f"Chưa có nhân viên nào đủ {ngay_min} ngày công trong khoảng ngày đã chọn.</div>",
@@ -2739,15 +2748,23 @@ def format_rank_notice(text: str) -> str:
 # ── Cảnh báo nhân sự ────────────────────────────────────────────────────
 HR_DEFAULTS = {"low": 70.0, "streak": 3, "drop": 10.0, "absent": 3, "ratio": 50}
 HR_QUIT_DAYS = 7     # không phát sinh đơn từ 7 ngày trở lên: coi như đã nghỉ việc, không hiển thị
-# Thi đua và Xếp hạng & gửi thông báo: không có đơn gán QUÁ 5 ngày (tính tới ngày mới nhất của sheet
-# năng suất) thì coi như nghỉ việc / không làm, tự loại khỏi bảng xếp hạng.
+# Thi đua và Xếp hạng & gửi thông báo: không có đơn gán QUÁ 5 ngày (tính tới ngày cuối của kỳ đang xem,
+# theo sheet năng suất) thì coi như nghỉ việc / không làm, tự loại khỏi bảng xếp hạng.
 RANK_INACTIVE_DAYS = 5
+# Xếp hạng %GTC: chỉ xếp người có số đơn gán từ 50% số đơn gán của người đứng giữa (trung vị) trở lên.
+RANK_MIN_GAN_PCT = 50
 
 
-def inactive_staff(daily: pd.DataFrame) -> dict[str, str]:
-    """Mã NV -> tên của người không có đơn gán quá RANK_INACTIVE_DAYS ngày (daily lấy từ hr_daily)."""
+def inactive_staff(daily: pd.DataFrame, ref=None) -> dict[str, str]:
+    """Mã NV -> tên của người không có đơn gán quá RANK_INACTIVE_DAYS ngày tính tới ngày `ref`
+    (daily lấy từ hr_daily). `ref` phải là NGÀY CUỐI CỦA KỲ ĐANG XEM: người nghỉ cuối tháng 10 vẫn được
+    tính trong bảng tháng 10, chỉ bị loại khỏi các kỳ sau đó. Bỏ trống = ngày mới nhất của dữ liệu."""
     if daily is None or daily.empty:
         return {}
+    if ref is not None:
+        daily = daily[daily["Ngày"] <= pd.to_datetime(ref)]
+        if daily.empty:
+            return {}
     ref = daily["Ngày"].max()
     last = daily[daily["Gán"] > 0].groupby("MaNV")["Ngày"].max()
     names = daily.groupby("MaNV")["Nhân viên"].last()
@@ -3543,10 +3560,15 @@ def _build_frames() -> dict:
     M_LEAD = metric_frame("gtc_tong", [["leadtime"], ["lead time"]], is_pct=False)
     M_CA = metric_frame("sl_theo_ca", [["% gtc"], ["gtc"]], extra_dim=[["loai hang"], ["ca"]])
     M_TRA = metric_frame("tra_hang", [["% return"], ["return"], ["chuyen tra"], ["tra hang"], ["tra"]])
+    # %Đã Thu/Chuyển trả = đơn đã thu ÷ "Đơn chuyển thành công", nên trọng số phải là cột đó
+    # (không phải "Đơn chuyển trả"), nếu không gộp nhiều ngày sẽ lệch.
     M_GTB = metric_frame("gtb_thu_tien",
-                         [["da thu chuyen tra"], ["da thu"], ["gtb"], ["thu tien"]])
+                         [["da thu chuyen tra"], ["da thu"], ["gtb"], ["thu tien"]],
+                         weight_keys=[["chuyen thanh cong"]] + VOL_KEYS)
     M_TTS = metric_frame("gtc_tts", [["% gtc"], ["gtc tts"], ["gtc"]])
-    M_ODR = metric_frame("odr_tts", [["odr"], ["ontime"], ["dung han"]])
+    # ODR TikTok: Ngày | Quản Lý | Bưu cục | GTC | %ODR TTS — không có dòng tổng nên "Tất cả" phải gộp
+    # có trọng số theo số đơn GTC, không lấy trung bình cộng 3 bưu cục.
+    M_ODR = metric_frame("odr_tts", [["odr"], ["ontime"], ["dung han"]], weight_keys=[["gtc"]] + VOL_KEYS)
     # OPR TikTok: Ngày | Quản Lý | Bưu cục | LTC (đơn lấy thành công) | %OPR TTS — trọng số là LTC
     M_OPR = metric_frame("opr_tts", [["opr"]], weight_keys=[["ltc"], ["lay thanh cong"]] + VOL_KEYS)
     M_DT = metric_frame("doanh_thu", [["doanh thu"]], weight_keys=None, is_pct=False)
@@ -3626,7 +3648,12 @@ st.session_state["dataframes"] = {
 }
 
 ALL_BC = bc_options(M_GTC, M_DT, DF_LUONG, DF_NSGTC) if not USER_BC else [USER_BC]
-NGHI_VIEC = inactive_staff(hr_daily(DF_NSGTC))
+
+
+
+def nghi_viec(ref) -> dict[str, str]:
+    """Danh sách nghỉ việc / không làm tính tới ngày cuối của kỳ đang xem."""
+    return inactive_staff(hr_daily(DF_NSGTC), ref)
 
 def today_vn() -> pd.Timestamp:
     """Ngày hiện tại theo giờ Việt Nam (UTC+7), không phụ thuộc múi giờ máy chủ.
@@ -3644,7 +3671,9 @@ _ALL_FRAMES = [M_GTC, M_CA, M_TRA, M_GTB, M_TTS, M_ODR, M_OPR, M_DT,
 _dates = [f["Ngày"].max() for f in _ALL_FRAMES
           if f is not None and not f.empty and "Ngày" in f.columns and f["Ngày"].notna().any()]
 REF_DATE = max(_dates) if _dates else TODAY_VN
-_mins = [f["Ngày"].min() for f in _ALL_FRAMES
+# Ngày nhỏ nhất chỉ tính trên số liệu vận hành, lương: sheet Khách hàng mới / Phễu có vài dòng rất cũ
+# làm ô chọn ngày cho lùi về những ngày không có số vận hành nào.
+_mins = [f["Ngày"].min() for f in _ALL_FRAMES if f is not DF_KHM and f is not DF_PHEU
          if f is not None and not f.empty and "Ngày" in f.columns and f["Ngày"].notna().any()]
 DATA_MIN = min(_mins) if _mins else REF_DATE - timedelta(days=90)
 
@@ -3675,8 +3704,10 @@ SHEET_LABELS = {
 }
 
 
-def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả") -> float:
+def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả", when=None) -> float:
     """Đọc mốc KPI từ sheet KPI (Tháng | Bưu cục | %GTC Tổng | %GTC TTS | %Trả hàng | Doanh thu).
+    Lấy mốc của THÁNG ĐANG XEM (`when` = ngày cuối của bộ lọc), không phải tháng mới nhất: xem tháng 10
+    thì phải so với mốc tháng 10. Tháng đó chưa có dòng nào thì dùng tháng gần nhất trước nó.
     Sheet có thể còn trống — khi bạn điền số vào là dashboard tự nhận, không phải sửa code."""
     if DF_KPI.empty:
         return float(fallback)
@@ -3684,9 +3715,10 @@ def kpi_target(keys, fallback: float, exclude=(), bc="Tất cả") -> float:
     mcol = pick_col(df, [["thang"]])
     if mcol is not None:
         months = pd.to_numeric(df[mcol], errors="coerce")
-        same = df[months == REF_DATE.month]
-        if not same.empty:
-            df = same
+        want = pd.to_datetime(when if when is not None else REF_DATE).month
+        have = sorted(m for m in months.dropna().unique() if m <= want) or sorted(months.dropna().unique())
+        if have:
+            df = df[months == (want if want in have else have[-1])]
     if "Bưu Cục" in df.columns:
         pick = (df[df["Bưu Cục"].map(norm) == norm(bc)] if bc != "Tất cả"
                 else df[df["Bưu Cục"].map(is_total_row)])
@@ -3854,24 +3886,32 @@ if PAGE == "tong_quan":
             section("Chỉ số nổi bật hôm nay (N-1)")
             # Bấm vào ô nào thì sang đúng trang/tab chi tiết của chỉ số đó, giữ bưu cục đang xem.
             o_bc = bc_ov
+            def ov_card(title, p, fmt, unit, hib=True, sub="", accent=False, key="n"):
+                """Ô chỉ số Tổng quan; kỳ không có dòng dữ liệu thì ghi "—", không ghi 0."""
+                if not p.get(f"has_{key}"):
+                    return metric_card(title, NO_DATA, None, unit, hib, False, sub="chưa có số liệu")
+                return metric_card(title, fmt(p[key]), p[key] - p[f"{key}1"], unit, hib, p[f"has_{key}1"],
+                                   sub=sub, accent=accent)
+
+            pct = lambda v: f"{v:,.2f}%"   # noqa: E731
+            # Doanh thu chỉ có ở cấp vùng; xem một bưu cục (hoặc tài khoản NVXL) thì thay bằng %Gán.
+            if not g_dt.empty:
+                card4 = ("dt", ov_card("Doanh thu tháng", p_dt, fmt_money, "đ", key="m"), "kinh_doanh", "Doanh thu")
+            else:
+                card4 = ("gan", ov_card("%Gán", get_period_data(scope(M_GAN, bc_ov), REF_DATE), pct, "%"),
+                         "van_hanh", "GTC tổng")
             cards = [
-                ("vol", metric_card("Sản lượng hôm nay", f"{p_vol['n']:,.0f}", p_vol["n"] - p_vol["n1"], "đơn",
-                                    True, p_vol["has_n1"], accent=True), "van_hanh", "GTC tổng"),
-                ("gtc", metric_card("%GTC tổng", f"{p_gtc['n']:,.2f}%", p_gtc["n"] - p_gtc["n1"], "%", True,
-                                    p_gtc["has_n1"]), "van_hanh", "GTC tổng"),
-                ("tts", metric_card("%GTC TikTok", f"{p_tts['n']:,.2f}%", p_tts["n"] - p_tts["n1"], "%", True,
-                                    p_tts["has_n1"]), "van_hanh", "TikTok Shop"),
-                ("dt", metric_card("Doanh thu tháng", fmt_money(p_dt["m"]), p_dt["m"] - p_dt["m1"], "đ", True,
-                                   p_dt["has_m1"]), "kinh_doanh", "Doanh thu"),
-                ("odr", metric_card("ODR TikTok", f"{p_odr['n']:,.2f}%", p_odr["n"] - p_odr["n1"], "%", True,
-                                    p_odr["has_n1"], sub=f"· mốc {t_odr_ov:g}%"), "van_hanh", "TikTok Shop"),
-                ("opr", metric_card("OPR TikTok", f"{p_opr['n']:,.2f}%", p_opr["n"] - p_opr["n1"], "%", True,
-                                    p_opr["has_n1"], sub=f"· mốc {t_opr_ov:g}%"), "van_hanh", "TikTok Shop"),
+                ("vol", ov_card("Sản lượng ngày", p_vol, lambda v: f"{v:,.0f}", "đơn", accent=True),
+                 "van_hanh", "GTC tổng"),
+                ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%"), "van_hanh", "GTC tổng"),
+                ("tts", ov_card("%GTC TikTok", p_tts, pct, "%"), "van_hanh", "TikTok Shop"),
+                card4,
+                ("odr", ov_card("ODR TikTok", p_odr, pct, "%", sub=f"· mốc {t_odr_ov:g}%"), "van_hanh", "TikTok Shop"),
+                ("opr", ov_card("OPR TikTok", p_opr, pct, "%", sub=f"· mốc {t_opr_ov:g}%"), "van_hanh", "TikTok Shop"),
                 # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
-                ("tra", metric_card("Tỷ lệ trả hàng", f"{p_tra['n']:,.2f}%", p_tra["n"] - p_tra["n1"], "%", False,
-                                    p_tra["has_n1"], sub=f"· tối đa {t_tra_ov:g}%"), "van_hanh", "Trả hàng & GTB"),
-                ("gtb", metric_card("GTB - Thu tiền", f"{p_gtb['n']:,.2f}%", p_gtb["n"] - p_gtb["n1"], "%", True,
-                                    p_gtb["has_n1"], sub=f"· mốc {t_gtb_ov:g}%" if t_gtb_ov else ""),
+                ("tra", ov_card("Tỷ lệ trả hàng", p_tra, pct, "%", False, sub=f"· tối đa {t_tra_ov:g}%"),
+                 "van_hanh", "Trả hàng & GTB"),
+                ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", sub=f"· mốc {t_gtb_ov:g}%" if t_gtb_ov else ""),
                  "van_hanh", "Trả hàng & GTB"),
             ]
             for row in (cards[:4], cards[4:]):
@@ -3880,13 +3920,15 @@ if PAGE == "tong_quan":
                         link_box(html, f"ov_{k}", page, tab, o_bc)
 
             section("Cảnh báo — chỉ số chưa đạt mốc")
-            checks = [
-                ("GTC tổng", p_gtc["n"], t_gtc_ov, True, "tỷ lệ giao thành công toàn khu vực"),
-                ("GTC TikTok", p_tts["n"], t_tts_ov, True, "đơn sàn TikTok Shop"),
-                ("ODR TikTok", p_odr["n"], t_odr_ov, True, "cam kết đúng hạn với sàn, thấp là bị phạt"),
-                ("OPR TikTok", p_opr["n"], t_opr_ov, True, "lấy hàng đúng hạn với sàn"),
-                ("Tỷ lệ trả hàng", p_tra["n"], t_tra_ov, False, "đơn quay đầu về kho"),
-            ]
+            # Chỉ số nào ngày đó không có dòng dữ liệu (vd. bưu cục không có đơn OPR) thì không xét,
+            # tránh báo "0% — CẦN XỬ LÝ" sai.
+            checks = [c for c, has in (
+                (("GTC tổng", p_gtc["n"], t_gtc_ov, True, "tỷ lệ giao thành công toàn khu vực"), p_gtc["has_n"]),
+                (("GTC TikTok", p_tts["n"], t_tts_ov, True, "đơn sàn TikTok Shop"), p_tts["has_n"]),
+                (("ODR TikTok", p_odr["n"], t_odr_ov, True, "cam kết đúng hạn với sàn, thấp là bị phạt"), p_odr["has_n"]),
+                (("OPR TikTok", p_opr["n"], t_opr_ov, True, "lấy hàng đúng hạn với sàn"), p_opr["has_n"]),
+                (("Tỷ lệ trả hàng", p_tra["n"], t_tra_ov, False, "đơn quay đầu về kho"), p_tra["has_n"]),
+            ) if has]
             tab_of = {"GTC tổng": "GTC tổng", "GTC TikTok": "TikTok Shop", "ODR TikTok": "TikTok Shop",
                       "OPR TikTok": "TikTok Shop", "Tỷ lệ trả hàng": "Trả hàng & GTB"}
             issues = []
@@ -4132,9 +4174,9 @@ if PAGE == "van_hanh":
 
 
         t_gtc_vh = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
-                              exclude=["tts", "tiktok"], bc=bc_vh)
-        t_tts_vh = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc_vh)
-        t_tra_vh = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc_vh)
+                              exclude=["tts", "tiktok"], bc=bc_vh, when=b_vh)
+        t_tts_vh = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc_vh, when=b_vh)
+        t_tra_vh = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc_vh, when=b_vh)
 
         s_gtc = sl(scope(M_GTC, bc_vh), a_vh, b_vh)
         s_tra = sl(scope(M_TRA, bc_vh), a_vh, b_vh)
@@ -4143,8 +4185,8 @@ if PAGE == "van_hanh":
         s_odr = sl(scope(M_ODR, bc_vh), a_vh, b_vh)
         s_opr = sl(scope(M_OPR, bc_vh), a_vh, b_vh)
         # Mốc OPR lấy ở sheet KPI nếu có cột OPR; chưa có thì không vẽ đường mốc (không tự đặt số).
-        t_opr_vh = kpi_target([["opr"]], 0.0, bc=bc_vh) or None
-        t_odr_vh = kpi_target([["odr"]], 98.0, bc=bc_vh)
+        t_opr_vh = kpi_target([["opr"]], 0.0, bc=bc_vh, when=b_vh) or None
+        t_odr_vh = kpi_target([["odr"]], 98.0, bc=bc_vh, when=b_vh)
         s_gan = sl(scope(M_GAN, bc_vh), a_vh, b_vh)
         s_gan_tts = sl(scope(M_GAN_TTS, bc_vh), a_vh, b_vh)
         s_lead = sl(scope(M_LEAD, bc_vh), a_vh, b_vh)
@@ -4346,7 +4388,7 @@ if PAGE == "kinh_doanh":
             p_kd = period_cards(dt_scope, b_kd, "đ", True, "sum", "Doanh thu")
 
             section("2. Tiến độ doanh thu tháng so với KPI")
-            kpi_dt_sheet = kpi_target([["doanh thu"]], 0.0, bc=bc_kd)
+            kpi_dt_sheet = kpi_target([["doanh thu"]], 0.0, bc=bc_kd, when=b_kd)
             # Mục tiêu cố định, chỉ hiển thị (không cho chỉnh trên dashboard); muốn đổi thì sửa sheet KPI.
             target_dt = kpi_dt_sheet if kpi_dt_sheet > 0 else 71_000_000.0
 
@@ -4871,9 +4913,20 @@ if PAGE == "nang_suat":
             if col_gan and col_gtc and nv_col_gtc and not G_range.empty:
                 section("5. Xếp hạng nhân viên theo %GTC")
                 rank = G_range.groupby(nv_col_gtc, as_index=False).agg({col_gan: "sum", col_gtc: "sum"})
-                _nghi = rank[nv_col_gtc].map(staff_id).isin(NGHI_VIEC)
+                _nghi = rank[nv_col_gtc].map(staff_id).isin(nghi_viec(b_ns))
                 inactive_note(list(rank.loc[_nghi, nv_col_gtc].map(staff_label)))
                 rank = rank[~_nghi]
+                # Người có quá ít đơn gán dễ đạt %GTC rất cao (49 đơn giao 47 = 95,9%) nên không đưa vào xếp hạng:
+                # cần tối thiểu RANK_MIN_GAN_PCT% số đơn gán của người đứng giữa.
+                _gan = pd.to_numeric(rank[col_gan], errors="coerce").fillna(0)
+                _san = float(_gan[_gan > 0].median()) * RANK_MIN_GAN_PCT / 100 if (_gan > 0).any() else 0.0
+                _it = _gan < _san
+                if _it.any():
+                    with st.expander(f"Không xếp hạng {int(_it.sum())} nhân viên có dưới {_san:,.0f} đơn gán "
+                                     f"({RANK_MIN_GAN_PCT}% số đơn gán của người đứng giữa)"):
+                        st.markdown("\n".join(f"- {esc(staff_label(n))}: {g:,.0f} đơn gán"
+                                              for n, g in zip(rank.loc[_it, nv_col_gtc], _gan[_it])))
+                rank = rank[~_it]
                 rank["%GTC"] = np.where(rank[col_gan] > 0, rank[col_gtc] / rank[col_gan] * 100, 0.0)
                 rank = rank.sort_values("%GTC", ascending=False).reset_index(drop=True)
                 medals = ["🥇", "🥈", "🥉"]
@@ -4982,11 +5035,11 @@ if PAGE == "kpi":
                 "Khoảng ngày (tháng này)", TODAY_VN.replace(day=1), TODAY_VN, "date_kpi")
 
         t_gtc = kpi_target([["kpi", "gtc"], ["% gtc"], ["gtc"]], 70.0,
-                           exclude=["tts", "tiktok"], bc=bc_kpi)
-        t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc_kpi)
-        t_tra = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc_kpi)
-        t_odr = kpi_target([["odr"]], 98.0, bc=bc_kpi)
-        t_opr = kpi_target([["opr"]], 100.0, bc=bc_kpi)
+                           exclude=["tts", "tiktok"], bc=bc_kpi, when=b_kpi)
+        t_tts = kpi_target([["gtc tts"], ["tts"], ["tiktok"]], 80.0, bc=bc_kpi, when=b_kpi)
+        t_tra = kpi_target([["tra hang"], ["tra"]], 5.0, bc=bc_kpi, when=b_kpi)
+        t_odr = kpi_target([["odr"]], 98.0, bc=bc_kpi, when=b_kpi)
+        t_opr = kpi_target([["opr"]], 100.0, bc=bc_kpi, when=b_kpi)
 
         if DF_KPI.empty or DF_KPI.select_dtypes("number").notna().sum().sum() == 0:
             st.warning("Sheet KPI chưa có số liệu. Đang dùng mốc tạm — bạn chỉnh ở dưới, "
@@ -5226,10 +5279,6 @@ if PAGE == "thi_dua":
         co_du_lieu_goc = not kho.empty
         if bc_td != "Tất cả" and not kho.empty:
             kho = kho[kho["Bưu Cục"].map(norm) == norm(bc_td)]
-        if not kho.empty:
-            _nghi = kho["MaNV"].isin(NGHI_VIEC)
-            inactive_note([NGHI_VIEC[m] for m in kho.loc[_nghi, "MaNV"].unique()])
-            kho = kho[~_nghi]
         chi_thieu_buu_cuc = co_du_lieu_goc and kho.empty
 
         if chi_thieu_buu_cuc:
@@ -5245,6 +5294,11 @@ if PAGE == "thi_dua":
                 ky_now = st.selectbox("Kỳ thi đua", ky_list, format_func=ten_ky,
                                       key=f"td_ky_{td_mode}")
             ky_prev = ky_now - 1
+            # Loại người nghỉ việc tính tới NGÀY CUỐI CỦA KỲ ĐANG XEM, không phải ngày mới nhất của dữ liệu.
+            _nv_nghi = nghi_viec(min(pd.Timestamp(ky_now.end_time).normalize(), kho["Ngày"].max()))
+            _nghi = kho["MaNV"].isin(_nv_nghi)
+            inactive_note([_nv_nghi[m] for m in kho.loc[_nghi, "MaNV"].unique()])
+            kho = kho[~_nghi]
 
             def gom_ky(ky) -> pd.DataFrame:
                 """Gộp theo nhân viên trong một kỳ (tuần hoặc tháng).
