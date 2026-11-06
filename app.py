@@ -1236,7 +1236,7 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
         cls = "" if flat else ("ok" if good else "bad")
         arrow = "" if flat else ("▲" if delta > 0 else "▼")
         if unit == "%":
-            txt = f"{arrow} {abs(delta):,.2f} điểm %"
+            txt = f"{arrow} {abs(delta):,.2f}%"
         elif unit == "đ":
             txt = f"{arrow} {fmt_money(abs(delta))}"
         else:
@@ -1587,7 +1587,7 @@ def gauge_chart(title: str, value: float | None, target: float, higher_is_better
                 "font": {"size": 39, "color": needle, "family": "Montserrat, sans-serif"}},
         # "position": "bottom" xếp delta XUỐNG DƯỚI số chính. Mặc định Plotly đặt
         # delta nằm cạnh số, khiến cụm số bị đẩy lệch sang một bên tâm đồng hồ.
-        delta={"reference": target, "suffix": " điểm %", "position": "bottom",
+        delta={"reference": target, "suffix": "%", "position": "bottom",
                "font": {"size": 17, "family": "Montserrat, sans-serif"},
                "increasing": {"color": SUCCESS if higher_is_better else DANGER},
                "decreasing": {"color": DANGER if higher_is_better else SUCCESS}},
@@ -1883,7 +1883,7 @@ def render_improve_image(rows: pd.DataFrame, title: str, subtitle: str, footer: 
     d.text((r_now, mid), now_label.upper(), font=f_th, fill=c_primary, anchor="rm")
     d.text((bar_c - 12 * S, mid), "GIẢM", font=f_th, fill=c_bad, anchor="rm")
     d.text((bar_c + 12 * S, mid), "TĂNG", font=f_th, fill=c_ok, anchor="lm")
-    d.text((r_val, mid), "ĐIỂM %", font=f_th, fill=c_primary, anchor="rm")
+    d.text((r_val, mid), "CẢI THIỆN", font=f_th, fill=c_primary, anchor="rm")
     y += TH_H
 
     for i, r in enumerate(rows.itertuples(index=False)):
@@ -1915,7 +1915,7 @@ def render_improve_image(rows: pd.DataFrame, title: str, subtitle: str, footer: 
             box = ([bar_c, cy - bh // 2, bar_c + w, cy + bh // 2] if v >= 0
                    else [bar_c - w, cy - bh // 2, bar_c, cy + bh // 2])
             d.rounded_rectangle(box, radius=6 * S, fill=c_ok if v >= 0 else c_bad)
-            d.text((r_val, cy), f"{v:+.2f}", font=f_tdb, fill=c_ok if v >= 0 else c_bad, anchor="rm")
+            d.text((r_val, cy), f"{v:+.2f}%", font=f_tdb, fill=c_ok if v >= 0 else c_bad, anchor="rm")
         else:
             d.text((r_val, cy), "Mới", font=f_td, fill=c_muted, anchor="rm")
         y += ROW_H
@@ -1946,8 +1946,8 @@ YÊU CẦU:
 - Bố cục, giữa các phần có MỘT DÒNG TRỐNG:
   1) Tiêu đề ngắn kèm kỳ đánh giá.
   2) Nhận xét chung 1–2 câu: bao nhiêu người tăng/giảm, xu hướng chung.
-  3) Tuyên dương: mỗi người cải thiện tốt một dòng "▲ Tên: +x,xx điểm % (a% → b%)".
-  4) Cần cố gắng: mỗi người giảm một dòng "▼ Tên: -x,xx điểm % (a% → b%)" kèm MỘT gợi ý ngắn, cụ thể
+  3) Tuyên dương: mỗi người cải thiện tốt một dòng "▲ Tên: +x,xx% (a% → b%)".
+  4) Cần cố gắng: mỗi người giảm một dòng "▼ Tên: -x,xx% (a% → b%)" kèm MỘT gợi ý ngắn, cụ thể
      (ví dụ gọi khách trước khi giao, sắp tuyến hợp lý, báo NVXL đơn khó). Giọng xây dựng, không chê bai.
   5) Một câu chốt động viên cả đội cho kỳ tới.
 - Giữ nguyên cách viết tên như trong số liệu (bỏ mã số). Không bịa thêm số liệu hay thưởng phạt.
@@ -4894,7 +4894,7 @@ if PAGE == "nang_suat":
                 ky_row("Đơn giá trung bình", avg_price, lambda v: f"{v:,.3f} đ", L_cur, L_prev, " đ", 3),
                 # Sản lượng GTC = Đơn GTC + Đơn GTBTT, lấy từ sheet Đơn Giá - Lương.
                 ky_row("Sản lượng GTC", sum_gtc, lambda v: f"{v:,.0f} đơn", L_cur, L_prev, " đơn", 0),
-                ky_row("%GTC", pct_gtc, lambda v: f"{v:,.2f}%", G_cur, G_prev, " điểm %", 2),
+                ky_row("%GTC", pct_gtc, lambda v: f"{v:,.2f}%", G_cur, G_prev, "%", 2),
                 ky_row("Tổng lương", total_salary, fmt_money, L_cur, L_prev, " đ", 0),
             ]
             st.markdown(html_table(["Chỉ tiêu", cur_name, prev_name, "Chênh lệch"], rows_ky),
@@ -5178,7 +5178,7 @@ if PAGE == "kpi":
                 gap = (actual - target) if hib else (target - actual)
                 status = ("<span class='up'>ĐẠT</span>" if ok else "<span class='down'>CHƯA ĐẠT</span>")
                 return [esc(name), f"{actual:,.2f}%", f"{target:,.2f}%",
-                        arrow_span(gap, " điểm %", 2, True), status]
+                        arrow_span(gap, "%", 2, True), status]
 
             st.markdown(html_table(
                 ["Chỉ tiêu", "Thực tế", "Mục tiêu", "Chênh lệch", "Trạng thái"],
@@ -5573,7 +5573,7 @@ if PAGE == "thi_dua":
                             "GTC": st.column_config.NumberColumn("Tổng Đơn GTC", format="%,d"),
                             col_now: st.column_config.NumberColumn(col_now, format="%.2f%%"),
                             col_prev: st.column_config.NumberColumn(col_prev, format="%.2f%%"),
-                            "Tỷ Lệ Cải Thiện": st.column_config.NumberColumn("Cải Thiện (điểm %)", format="%+.2f"),
+                            "Tỷ Lệ Cải Thiện": st.column_config.NumberColumn("Cải Thiện", format="%+.2f%%"),
                             "Tổng Điểm": st.column_config.NumberColumn("Tổng Điểm", format="%.2f"),
                         })
                     ti1, ti2, ti3 = st.columns([1.3, 1, 1], vertical_alignment="bottom")
@@ -5686,7 +5686,7 @@ if PAGE == "thi_dua":
                             return re.sub(r"^\d+\s*·\s*", "", staff_label(x))
 
                         def dong(r):
-                            return (f"  - {ten_ci(r['Nhân Viên'])} ({r['Bưu Cục']}): {r['_imp']:+.2f} điểm % "
+                            return (f"  - {ten_ci(r['Nhân Viên'])} ({r['Bưu Cục']}): {r['_imp']:+.2f}% "
                                     f"({r[col_prev]:.2f}% → {r[col_now]:.2f}%)")
                         co = ci[ci["_imp"].notna()]
                         tang = co[co["_imp"] > 0].head(5)
@@ -5742,13 +5742,13 @@ if PAGE == "thi_dua":
                     top_txt = "\n".join(
                         f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
                         f"({r['Bưu Cục']}) — gán {r['Gán']:,.0f}, GTC {r['GTC']:,.0f}, "
-                        f"%GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} điểm %, "
+                        f"%GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f}%, "
                         f"tổng điểm {r['Tổng Điểm']:.2f}, "
                         f"{'ĐƯỢC THƯỞNG hạng ' + str(int(r['Hạng Thưởng'])) if pd.notna(r['Hạng Thưởng']) else ('đủ điều kiện nhưng ngoài top 3' if r[col_now] >= 80 else 'CHƯA đủ điều kiện 80%')}"
                         for _, r in bxh.head(10).iterrows())
                     cuoi_txt = "\n".join(
                         f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
-                        f"— %GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} điểm %"
+                        f"— %GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f}%"
                         for _, r in bxh.tail(5).iterrows())
 
                     ai_advisor(
