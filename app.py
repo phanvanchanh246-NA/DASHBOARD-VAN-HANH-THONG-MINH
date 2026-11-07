@@ -4055,22 +4055,9 @@ if PAGE == "tong_quan":
                 ds = bc_keo_xuong(frame, REF_DATE, hib, tgt)
                 if not ds:
                     return ""
-                # Bưu cục có tỷ lệ kém nhất (thấp nhất; riêng trả hàng là cao nhất), kèm mức kéo chỉ số chung.
-                ds = sorted(ds, key=lambda z: z["v"], reverse=not hib)
-                x = ds[0]
-                tu = "thấp nhất" if hib else "cao nhất"
-                txt = (f" Bưu cục {tu}: <b>{esc(x['bc'])}</b> {x['v']:,.2f}% (mốc {x['t']:g}%"
-                       + (f", {fmt_int(x['w'])} đơn" if x["co_trong_so"] else "") + ")")
-                if x["anh_huong"]:
-                    txt += (f" — kéo {esc(name)} toàn khu vực {'xuống' if hib else 'lên'} "
-                            f"<b>{x['anh_huong']:,.2f}%</b>")
-                elif x["thieu"] <= 0:
-                    txt += " — vẫn đạt mốc riêng của bưu cục"
-                txt += "."
-                if len(ds) > 1:
-                    txt += " Các bưu cục khác: " + ", ".join(
-                        f"{esc(z['bc'])} {z['v']:,.2f}% (mốc {z['t']:g}%{', chưa đạt' if z['thieu'] > 0 else ''})"
-                        for z in ds[1:]) + "."
+                # Chỉ ghi bưu cục có tỷ lệ kém nhất (thấp nhất; riêng trả hàng là cao nhất).
+                x = min(ds, key=lambda z: z["v"]) if hib else max(ds, key=lambda z: z["v"])
+                txt = f" Bưu cục {'thấp nhất' if hib else 'cao nhất'}: <b>{esc(x['bc'])}</b> ({x['v']:,.2f}%)."
                 return txt
             tab_of = {"GTC tổng": "GTC tổng", "GTC TikTok": "TikTok Shop", "ODR TikTok": "TikTok Shop",
                       "OPR TikTok": "TikTok Shop", "Tỷ lệ trả hàng": "Trả hàng & GTB"}
