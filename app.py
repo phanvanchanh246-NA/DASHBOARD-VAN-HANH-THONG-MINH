@@ -158,6 +158,23 @@ def _x_is_date(fig) -> bool:
     return False
 
 
+def _data_dates(fig) -> list:
+    """Các ngày THỰC SỰ có số liệu trên trục ngang (bỏ đường tham chiếu như KPI/ngưỡng: hoverinfo='skip',
+    và bỏ điểm trống). Dùng làm nhãn trục: ngày không có dữ liệu thì không ghi nhãn."""
+    out = set()
+    for tr in fig.data:
+        x = getattr(tr, "x", None)
+        if x is None or not len(x) or getattr(tr, "orientation", None) == "h" or getattr(tr, "hoverinfo", None) == "skip":
+            continue
+        xs = pd.to_datetime(pd.Series(np.asarray(x)), errors="coerce")
+        y = getattr(tr, "y", None)
+        ys = pd.to_numeric(pd.Series(np.asarray(y) if y is not None else [np.nan] * len(xs)), errors="coerce")
+        if len(ys) != len(xs):
+            continue
+        out |= set(xs[ys.notna().values & xs.notna().values].dt.normalize())
+    return sorted(out)
+
+
 def plot_chart(fig, ky: str | None = None, **kw):
     """Vẽ biểu đồ, kèm dòng thời gian dưới tiêu đề để người xem biết số liệu của khoảng nào.
     Biểu đồ theo ngày tự lấy khoảng từ dữ liệu; biểu đồ theo bưu cục / nhân viên phải truyền `ky`.
@@ -166,14 +183,15 @@ def plot_chart(fig, ky: str | None = None, **kw):
     if ky is None:
         ky = fmt_ky(*rng) if rng else ""
     fig = go.Figure(fig)        # biểu đồ có thể lấy từ bộ nhớ đệm dùng chung: không sửa bản gốc
-    if rng and _x_is_date(fig):
-        # Trục ngày ghi ĐỦ từng ngày (Plotly mặc định chỉ ghi cách ngày). Nhiều ngày thì xoay chữ cho khỏi đè.
-        n_ngay = (rng[1] - rng[0]).days + 1
-        # Khung trục vừa khít ngày đầu – ngày cuối có dữ liệu (không ghi thừa ngày trống ở hai đầu).
-        fig.update_xaxes(dtick=86_400_000, tickformat="%d/%m", tick0=rng[0], autorange=False,
-                         range=[rng[0] - timedelta(hours=12), rng[1] + timedelta(hours=12)],
-                         tickangle=0 if n_ngay <= 14 else (-45 if n_ngay <= 40 else -90),
-                         tickfont=dict(size=12 if n_ngay <= 40 else 10))
+    ngay = _data_dates(fig) if rng and _x_is_date(fig) else []
+    if ngay:
+        # Trục ngày ghi nhãn ĐÚNG những ngày có số liệu: đủ từng ngày có dữ liệu, KHÔNG ghi ngày trống
+        # (ngày nghỉ, ngày sheet chưa có số). Khung trục vừa khít ngày đầu – ngày cuối có dữ liệu.
+        n = len(ngay)
+        fig.update_xaxes(tickmode="array", tickvals=ngay, ticktext=[f"{d:%d/%m}" for d in ngay],
+                         autorange=False, range=[ngay[0] - timedelta(hours=12), ngay[-1] + timedelta(hours=12)],
+                         tickangle=0 if n <= 14 else (-45 if n <= 40 else -90),
+                         tickfont=dict(size=12 if n <= 40 else 10))
     title = fig.layout.title.text if fig.layout.title and fig.layout.title.text else ""
     if ky and title and "<br><span class='ky'>" not in title:
         fig.update_layout(title_text=f"{title}<br><span class='ky' style='font-size:12px;color:{MUTED}'>"
@@ -642,9 +660,6 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
     .section-title {{ margin: 20px 0 10px; }}
     table.ghn-table th, table.ghn-table td {{ padding: 8px 6px; }}
     .ghn-hero {{ padding: 14px 16px !important; }}
-    /* Nhãn dữ liệu trên biểu đồ: màn hẹp chỉ hiện cách một nhãn cho khỏi chồng chữ */
-    .stPlotlyChart g.textpoint:nth-child(even),
-    .stPlotlyChart g.point:nth-child(even) text.bartext {{ display: none; }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -2610,21 +2625,31 @@ def luong_staff_chart(ma: str, a, b):
     (sheet Lương). Khoảng ngắn thì kéo về đủ 14 ngày tính tới ngày cuối để thấy diễn biến."""
     b = pd.Timestamp(b).normalize()
     a = min(pd.Timestamp(a).normalize(), b - pd.Timedelta(days=13))
-    days = pd.date_range(a, b, freq="D")
     ns = hr_daily(DF_NSGTC)
     ns = ns[(ns["MaNV"] == ma) & (ns["Ngày"] >= a) & (ns["Ngày"] <= b)]
-    ns = ns.groupby("Ngày")[["Gán", "GTC"]].sum().reindex(days, fill_value=0)
+    ns = ns.groupby("Ngày")[["Gán", "GTC"]].sum()
+    ns = ns[(ns["Gán"] > 0) | (ns["GTC"] > 0)]
     ln = DF_LUONG_NGAY
     c_nv, c_t = pick_col(ln, [["nhan vien"]]), pick_col(ln, [["tong luong"]])
-    luong = pd.Series(np.nan, index=days)
+    luong = pd.Series(dtype=float)
     if c_nv and c_t:
         x = ln[(ln[c_nv].map(staff_id) == ma) & (ln["Ngày"] >= a) & (ln["Ngày"] <= b)]
-        luong = x.groupby("Ngày")[c_t].sum().reindex(days)
+        luong = x.groupby("Ngày")[c_t].sum()
+    # Chỉ những ngày có đơn hoặc có lương; ngày nghỉ không hiện trên trục.
+    days = pd.DatetimeIndex(sorted(set(ns.index) | set(luong.dropna().index))) if len(ns) or len(luong) \
+        else pd.DatetimeIndex([b])
+    ns = ns.reindex(days)
+    luong = luong.reindex(days)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=days, y=ns["Gán"], name="Đơn gán", marker_color=PRIMARY_SOFT,
-                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+                         marker_line_width=0, hoverinfo="x+y+name",
+                         text=point_labels(ns["Gán"], num_label), textposition="outside",
+                         textfont=dict(color=MUTED, **LABEL_FONT), cliponaxis=False), secondary_y=False)
     fig.add_trace(go.Bar(x=days, y=ns["GTC"], name="Đơn GTC", marker_color=PRIMARY,
-                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+                         marker_line_width=0, hoverinfo="x+y+name",
+                         text=point_labels(ns["GTC"], num_label), textposition="inside", insidetextanchor="end",
+                         textangle=-90 if len(days) > 10 else 0,
+                         textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
     fig.add_trace(go.Scatter(x=days, y=luong, name="Lương ngày (đ)", mode="lines+markers+text",
                              connectgaps=False, line=dict(color=SUCCESS, width=3), marker=dict(size=7),
                              hovertemplate="%{x|%d/%m}<br>Lương %{y:,.0f} đ<extra></extra>",
@@ -2632,10 +2657,11 @@ def luong_staff_chart(ma: str, a, b):
                              cliponaxis=False, textfont=dict(color=SUCCESS, **LABEL_FONT)),
                   secondary_y=True)
     fig.update_layout(barmode="overlay", height=440,
-                      title=f"Đơn gán · GTC · Lương ngày — {a:%d/%m} đến {b:%d/%m/%Y}")
+                      title="Đơn gán · GTC · Lương ngày")   # khoảng ngày thật ghi ở dòng dưới tiêu đề
     fig.update_yaxes(title_text="Số đơn", secondary_y=False)
     # Cột dồn xuống dải dưới, đường lương lên dải trên để nhãn không đè nhau (như band_axes nhưng trục tiền).
-    fig.update_yaxes(range=[0, max(float(ns["Gán"].max()), 1.0) * 1.6], secondary_y=False)
+    fig.update_yaxes(range=[0, max(float(ns["Gán"].max()) if ns["Gán"].notna().any() else 1.0, 1.0) * 1.6],
+                     secondary_y=False)
     lmax = float(luong.max()) if luong.notna().any() else 1.0
     fig.update_yaxes(title_text="Lương (đ)", secondary_y=True, showgrid=False,
                      range=[-1.4 * lmax, 1.15 * lmax], tickvals=[0, lmax / 2, lmax],
@@ -3159,18 +3185,25 @@ YÊU CẦU — CHỈ GHI VIỆC NVXL PHẢI LÀM VÀ HẠN BÁO CÁO:
 # ── Chi tiết một nhân viên + hướng dẫn trao đổi 1:1 ─────────────────────
 def hr_staff_chart(daily: pd.DataFrame, ma: str, ref: pd.Timestamp, low: float, days: int = 30):
     """Biểu đồ 30 ngày của một nhân viên: cột đơn gán, đơn GTC và đường %GTC.
-    Ngày không có đơn vẫn giữ trên trục (cột trống) để thấy rõ ngày nghỉ / vắng."""
+    Chỉ vẽ những ngày có đơn: ngày nghỉ / vắng không hiện trên trục (số ngày có đơn ghi ở ô bên trên)."""
     ref = pd.Timestamp(ref).normalize()
     a = ref - pd.Timedelta(days=days - 1)
     d = daily[(daily["MaNV"] == ma) & (daily["Ngày"] >= a) & (daily["Ngày"] <= ref)]
-    d = (d.groupby("Ngày")[["Gán", "GTC"]].sum()
-          .reindex(pd.date_range(a, ref, freq="D"), fill_value=0).rename_axis("Ngày").reset_index())
+    d = d.groupby("Ngày", as_index=False)[["Gán", "GTC"]].sum()
+    d = d[(d["Gán"] > 0) | (d["GTC"] > 0)].sort_values("Ngày").reset_index(drop=True)
+    if d.empty:     # cả 30 ngày không có đơn: trả khung rỗng, nơi gọi tự báo
+        d = pd.DataFrame({"Ngày": [ref], "Gán": [0], "GTC": [0]})
     d["r"] = np.where(d["Gán"] > 0, d["GTC"] / d["Gán"].where(d["Gán"] > 0) * 100, np.nan)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(x=d["Ngày"], y=d["Gán"], name="Đơn gán", marker_color=PRIMARY_SOFT,
-                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+                         marker_line_width=0, hoverinfo="x+y+name",
+                         text=point_labels(d["Gán"], num_label), textposition="outside",
+                         textfont=dict(color=MUTED, **LABEL_FONT), cliponaxis=False), secondary_y=False)
     fig.add_trace(go.Bar(x=d["Ngày"], y=d["GTC"], name="Đơn GTC", marker_color=PRIMARY,
-                         marker_line_width=0, hoverinfo="x+y+name"), secondary_y=False)
+                         marker_line_width=0, hoverinfo="x+y+name",
+                         text=point_labels(d["GTC"], num_label), textposition="inside", insidetextanchor="end",
+                         textangle=-90 if len(d) > 10 else 0,
+                         textfont=dict(color="#FFFFFF", **LABEL_FONT)), secondary_y=False)
     fig.add_trace(go.Scatter(x=d["Ngày"], y=d["r"], name="% GTC", mode="lines+markers+text",
                              connectgaps=False, line=dict(color=ACCENT, width=3), marker=dict(size=7),
                              hoverinfo="x+y+name", text=point_labels(d["r"], pct_label, 12),
@@ -6216,15 +6249,15 @@ def event_page() -> None:
             g_db = du_bao.groupby("Ngày")["Đơn nhập"].sum()
             k1, k2, k3, k4 = st.columns(4)
             for col, (tt, v, sub, acc) in zip((k1, k2, k3, k4), (
-                    ("Đơn nhập TB/ngày (thực)", f"{g_thuc.mean():,.0f}" if len(g_thuc) else "—",
+                    ("Đơn nhập TB/ngày (thực)", fmt_int(g_thuc.mean()) if len(g_thuc) else "—",
                      f"{len(g_thuc)} ngày thực tế", False),
-                    ("Ngày nhập cao nhất (thực)", f"{g_thuc.max():,.0f}" if len(g_thuc) else "—",
+                    ("Ngày nhập cao nhất (thực)", fmt_int(g_thuc.max()) if len(g_thuc) else "—",
                      f"{g_thuc.idxmax():%d/%m}" if len(g_thuc) else "", False),
                     # "Gấp" tính như tab Tính nhân sự: dự báo ngày cao nhất ÷ đơn nhập TB thực tế.
-                    ("Dự báo cao nhất", f"{g_db.max():,.0f}" if len(g_db) else "—",
+                    ("Dự báo cao nhất", fmt_int(g_db.max()) if len(g_db) else "—",
                      (f"{g_db.idxmax():%d/%m} · gấp {g_db.max() / g_thuc.mean():.2f} lần TB thực tế"
                       if len(g_db) and len(g_thuc) and g_thuc.mean() else ""), True),
-                    ("Dự báo TB/ngày", f"{g_db.mean():,.0f}" if len(g_db) else "—",
+                    ("Dự báo TB/ngày", fmt_int(g_db.mean()) if len(g_db) else "—",
                      f"{len(g_db)} ngày dự báo", False))):
                 with col:
                     st.markdown(metric_card(tt, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
@@ -6233,15 +6266,18 @@ def event_page() -> None:
                 g = g.sort_values("Ngày")
                 gt, gd = g[g["Loại"] == "Thực"], g[g["Loại"] != "Thực"]
                 fig.add_trace(go.Scatter(x=gt["Ngày"], y=gt["Đơn nhập"], name=f"{bc} (thực)",
-                                         mode="lines+markers", legendgroup=bc, line=dict(color=mau)))
+                                         mode="lines+markers+text", legendgroup=bc, line=dict(color=mau),
+                                         text=point_labels(gt["Đơn nhập"], fmt_int), textposition="top center",
+                                         textfont=dict(color=mau, **LABEL_FONT), cliponaxis=False))
                 # Nối điểm thực cuối với dự báo để đường liền mạch, phần dự báo vẽ nét đứt.
                 gd2 = pd.concat([gt.tail(1), gd]) if not gt.empty else gd
                 fig.add_trace(go.Scatter(x=gd2["Ngày"], y=gd2["Đơn nhập"], name=f"{bc} (dự báo)",
                                          mode="lines+markers+text", legendgroup=bc,
                                          line=dict(dash="dash", color=mau),
-                                         text=[""] * (len(gd2) - len(gd)) + point_labels(gd["Đơn nhập"],
-                                                                                        lambda v: f"{v:,.0f}"),
-                                         textposition="top center", textfont=LABEL_FONT, cliponaxis=False))
+                                         # điểm nối (ngày thực cuối) đã có nhãn ở đường thực, không ghi lặp
+                                         text=[""] * (len(gd2) - len(gd)) + point_labels(gd["Đơn nhập"], fmt_int),
+                                         textposition="top center", textfont=dict(color=mau, **LABEL_FONT),
+                                         cliponaxis=False))
             if len(g_db):
                 fig.add_vline(x=g_db.index.min(), line_color=MUTED, line_dash="dot")
             fig.update_layout(height=400, title="Đơn nhập từng ngày (nét đứt: dự báo)")
