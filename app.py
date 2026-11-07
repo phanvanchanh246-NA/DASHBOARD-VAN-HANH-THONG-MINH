@@ -1499,7 +1499,7 @@ def _line_fig(g: pd.DataFrame, title: str, color: str, unit: str, target, y_titl
                       cliponaxis=False)
     if target:
         fig.add_hline(y=target, line_dash="dot", line_color=ACCENT, line_width=2,
-                      annotation_text="Mốc KPI", annotation_position="top left")
+                      annotation_text="KPI", annotation_position="top left")
     fig.update_yaxes(ticksuffix="%" if unit == "%" else "",
                      title_text=y_title or ("Tỷ lệ (%)" if unit == "%" else "Giá trị"))
     fig.update_xaxes(tickformat="%d/%m", title_text=None)
@@ -1541,7 +1541,7 @@ def _combo_fig(g: pd.DataFrame, title, bar_name, line_name, target, gan, max_lab
     if target:
         # Mốc vẽ thành đường có tên trong chú thích (add_hline kèm chữ bị lệch chỗ khi có hai trục).
         fig.add_trace(go.Scatter(x=[g["Ngày"].iloc[0], g["Ngày"].iloc[-1]], y=[target, target], mode="lines",
-                                 name=f"Mốc KPI {target:g}%", hoverinfo="skip",
+                                 name=f"KPI {target:g}%", hoverinfo="skip",
                                  line=dict(color=DANGER, width=2, dash="dot")), secondary_y=True)
     fig.update_layout(title=title, height=490)
     fig.update_yaxes(title_text=bar_name, secondary_y=False)
@@ -1552,7 +1552,7 @@ def _combo_fig(g: pd.DataFrame, title, bar_name, line_name, target, gan, max_lab
 
 
 def bc_bar_chart(df: pd.DataFrame, target: float | None, higher_is_better=True, title="", ky: str = ""):
-    """So sánh chỉ số giữa các bưu cục — thanh ngang, tô xanh/đỏ theo mốc."""
+    """So sánh chỉ số giữa các bưu cục — thanh ngang, tô xanh/đỏ theo KPI."""
     if df is None or df.empty:
         note("Chưa có dữ liệu để so sánh giữa các bưu cục.")
         return
@@ -3339,8 +3339,8 @@ def bc_daily(df: pd.DataFrame) -> pd.DataFrame:
 def bc_warnings(gtc_day: pd.DataFrame, gan_day: pd.DataFrame, targets: dict, min_days: int = 3) -> pd.DataFrame:
     """Bưu cục có %GTC dưới mốc KPI liên tục từ `min_days` ngày có số liệu gần nhất trở lên.
     `targets`: {tên bưu cục: mốc %GTC}. Mức Cao khi kéo dài từ min_days+2 ngày hoặc ngày cuối thấp hơn mốc ≥ 10 điểm."""
-    cols = ["Mức", "Bưu cục", "Số ngày liên tiếp dưới mốc", "%GTC ngày cuối", "%GTC 7 ngày",
-            "%GTC 7 ngày trước", "Mốc KPI", "% Gán 7 ngày", "Sản lượng 7 ngày", "Ngày dữ liệu cuối",
+    cols = ["Mức", "Bưu cục", "Số ngày liên tiếp dưới KPI", "%GTC ngày cuối", "%GTC 7 ngày",
+            "%GTC 7 ngày trước", "KPI", "% Gán 7 ngày", "Sản lượng 7 ngày", "Ngày dữ liệu cuối",
             "_tu_ngay", "_score"]
     if gtc_day is None or gtc_day.empty:
         return pd.DataFrame(columns=cols)
@@ -3370,8 +3370,8 @@ def bc_warnings(gtc_day: pd.DataFrame, gan_day: pd.DataFrame, targets: dict, min
         score = (2 if run >= min_days + 2 else 1) + (1 if tgt - p_last >= 10 else 0)
         rows.append({
             "Mức": "Cao" if score >= 2 else "Trung bình", "Bưu cục": bc,
-            "Số ngày liên tiếp dưới mốc": run, "%GTC ngày cuối": p_last, "%GTC 7 ngày": wv(w7),
-            "%GTC 7 ngày trước": wv(wp) if not wp.empty else None, "Mốc KPI": tgt,
+            "Số ngày liên tiếp dưới KPI": run, "%GTC ngày cuối": p_last, "%GTC 7 ngày": wv(w7),
+            "%GTC 7 ngày trước": wv(wp) if not wp.empty else None, "KPI": tgt,
             "% Gán 7 ngày": wv(gn) if gn is not None and not gn.empty else None,
             "Sản lượng 7 ngày": float(w7["Trọng Số"].sum()), "Ngày dữ liệu cuối": last,
             "_tu_ngay": tu, "_score": score,
@@ -3379,16 +3379,16 @@ def bc_warnings(gtc_day: pd.DataFrame, gan_day: pd.DataFrame, targets: dict, min
     if not rows:
         return pd.DataFrame(columns=cols)
     out = pd.DataFrame(rows, columns=cols)
-    return out.sort_values(["_score", "Số ngày liên tiếp dưới mốc"], ascending=False).reset_index(drop=True)
+    return out.sort_values(["_score", "Số ngày liên tiếp dưới KPI"], ascending=False).reset_index(drop=True)
 
 
 def bc_1on1_guide(r, extra: dict) -> str:
     """Hướng dẫn Quản lý khu vực trao đổi 1:1 với NVXL (người phụ trách) của một bưu cục có %GTC thấp liên tục.
     `extra`: số liệu bổ sung đã tính sẵn (ca thấp nhất, TTS, nhân viên bị cảnh báo, biến động sản lượng)."""
-    tgt = r["Mốc KPI"]
-    so_lieu = [f"%GTC dưới mốc {tgt:g}% liên tục {r['Số ngày liên tiếp dưới mốc']} ngày "
+    tgt = r["KPI"]
+    so_lieu = [f"%GTC dưới KPI {tgt:g}% liên tục {r['Số ngày liên tiếp dưới KPI']} ngày "
                f"(từ {pd.Timestamp(r['_tu_ngay']):%d/%m} đến {pd.Timestamp(r['Ngày dữ liệu cuối']):%d/%m})",
-               f"%GTC ngày cuối: {r['%GTC ngày cuối']:.2f}% — thấp hơn mốc {tgt - r['%GTC ngày cuối']:.2f}%"]
+               f"%GTC ngày cuối: {r['%GTC ngày cuối']:.2f}% — thấp hơn KPI {tgt - r['%GTC ngày cuối']:.2f}%"]
     if r["%GTC 7 ngày"] is not None and pd.notna(r["%GTC 7 ngày"]):
         so_lieu.append(f"%GTC 7 ngày: {r['%GTC 7 ngày']:.2f}%"
                        + (f" (7 ngày trước: {r['%GTC 7 ngày trước']:.2f}%)"
@@ -3421,9 +3421,9 @@ def bc_1on1_guide(r, extra: dict) -> str:
            "- Hẹn riêng 20–30 phút (gặp trực tiếp hoặc gọi video), không trao đổi trong nhóm chung.",
            "**2. Mở đầu**",
            "- Ghi nhận nỗ lực của NVXL và bưu cục (ngày làm tốt, việc đã cải thiện).",
-           "- Nói rõ mục đích: cùng tìm nguyên nhân và cách đưa %GTC về trên mốc, không phải để khiển trách.",
+           "- Nói rõ mục đích: cùng tìm nguyên nhân và cách đưa %GTC về trên KPI, không phải để khiển trách.",
            "**3. Cùng nhìn số liệu**",
-           "- Đưa số liệu thật, hỏi NVXL tự đánh giá trước: theo em vì sao bưu cục đang dưới mốc?",
+           "- Đưa số liệu thật, hỏi NVXL tự đánh giá trước: theo em vì sao bưu cục đang dưới KPI?",
            "**4. Tìm nguyên nhân — câu hỏi gợi ý**",
            *[f"- {q}" for q in hoi],
            "**5. Thống nhất việc cần làm và hỗ trợ**",
@@ -3439,11 +3439,11 @@ def bc_1on1_guide(r, extra: dict) -> str:
 
 def bc_1on1_prompt(r, extra: dict, ngay_txt: str) -> str:
     return f"""Bạn là Quản lý khu vực của GHN. Soạn KỊCH BẢN TRAO ĐỔI 1:1 để bạn nói chuyện riêng với NVXL
-(người phụ trách) của một bưu cục đang có %GTC dưới mốc KPI nhiều ngày liên tục.
+(người phụ trách) của một bưu cục đang có %GTC dưới KPI nhiều ngày liên tục.
 
 SỐ LIỆU THẬT (chỉ dùng đúng những số này):
-- Bưu cục {r['Bưu cục']} — mức cảnh báo {r['Mức']}. Mốc %GTC {r['Mốc KPI']:g}%.
-- %GTC dưới mốc liên tục {r['Số ngày liên tiếp dưới mốc']} ngày, ngày cuối {r['%GTC ngày cuối']:.2f}%.
+- Bưu cục {r['Bưu cục']} — mức cảnh báo {r['Mức']}. KPI %GTC {r['KPI']:g}%.
+- %GTC dưới KPI liên tục {r['Số ngày liên tiếp dưới KPI']} ngày, ngày cuối {r['%GTC ngày cuối']:.2f}%.
 - Số liệu bổ sung: {'; '.join(v for v in (extra.get('vol'), extra.get('ca'), extra.get('tts'), extra.get('staff')) if v) or 'không có'}.
 - Theo ngày gần nhất (ngày: sản lượng / %GTC / % gán):
 {ngay_txt}
@@ -3803,7 +3803,7 @@ SHEET_LABELS = {
     "gtc_tong": "GTC tổng", "sl_theo_ca": "Sản lượng theo ca", "tra_hang": "Tỷ lệ trả hàng",
     "gtb_thu_tien": "GTB thu tiền", "gtc_tts": "GTC TikTok", "odr_tts": "ODR TikTok",
     "opr_tts": "OPR TikTok",
-    "kpi": "Mốc KPI", "doanh_thu": "Doanh thu", "kh_moi": "Khách hàng mới",
+    "kpi": "KPI", "doanh_thu": "Doanh thu", "kh_moi": "Khách hàng mới",
     "pheu_kh": "Phễu khách hàng", "ns_luong": "Lương nhân viên", "ns_gtc": "Năng suất GTC",
     "luong": "Lương theo ngày", "truy_thu": "Truy thu",
 }
@@ -4013,12 +4013,12 @@ if PAGE == "tong_quan":
                 ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%"), "van_hanh", "GTC tổng"),
                 ("tts", ov_card("%GTC TikTok", p_tts, pct, "%"), "van_hanh", "TikTok Shop"),
                 card4,
-                ("odr", ov_card("ODR TikTok", p_odr, pct, "%", sub=f"· mốc {t_odr_ov:g}%"), "van_hanh", "TikTok Shop"),
-                ("opr", ov_card("OPR TikTok", p_opr, pct, "%", sub=f"· mốc {t_opr_ov:g}%"), "van_hanh", "TikTok Shop"),
+                ("odr", ov_card("ODR TikTok", p_odr, pct, "%", sub=f"· KPI {t_odr_ov:g}%"), "van_hanh", "TikTok Shop"),
+                ("opr", ov_card("OPR TikTok", p_opr, pct, "%", sub=f"· KPI {t_opr_ov:g}%"), "van_hanh", "TikTok Shop"),
                 # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
-                ("tra", ov_card("Tỷ lệ trả hàng", p_tra, pct, "%", False, sub=f"· tối đa {t_tra_ov:g}%"),
+                ("tra", ov_card("Tỷ lệ trả hàng", p_tra, pct, "%", False, sub=f"· KPI tối đa {t_tra_ov:g}%"),
                  "van_hanh", "Trả hàng & GTB"),
-                ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", sub=f"· mốc {t_gtb_ov:g}%" if t_gtb_ov else ""),
+                ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", sub=f"· KPI {t_gtb_ov:g}%" if t_gtb_ov else ""),
                  "van_hanh", "Trả hàng & GTB"),
             ]
             for row in (cards[:4], cards[4:]):
@@ -4026,7 +4026,7 @@ if PAGE == "tong_quan":
                     with col:
                         link_box(html, f"ov_{k}", page, tab, o_bc)
 
-            section("Cảnh báo — chỉ số chưa đạt mốc")
+            section("Cảnh báo — chỉ số chưa đạt KPI")
             # Chỉ số nào ngày đó không có dòng dữ liệu (vd. bưu cục không có đơn OPR) thì không xét,
             # tránh báo "0% — CẦN XỬ LÝ" sai.
             checks = [c for c, has in (
@@ -4077,13 +4077,13 @@ if PAGE == "tong_quan":
                     cls = "danger" if sev > 0.05 else ""
                     link_box(
                         f"<div class='ghn-alert {cls}'><span class='a-tag {tag}'>{label}</span>"
-                        f"<b>{esc(name)}</b> đang ở <b>{actual:,.2f}%</b>, mốc là <b>{target:,.2f}%</b> — "
-                        f"lệch <b>{abs(gap):,.2f}%</b>. {esc(why[:1].upper() + why[1:])}.{bc_note(name, hib)}</div>",
+                        f"<b>{esc(name)}</b> <b>{actual:,.2f}%</b> · KPI {'' if hib else 'tối đa '}{target:,.2f}% · "
+                        f"lệch <b>{abs(gap):,.2f}%</b>.{bc_note(name, hib)}</div>",
                         f"ovw_{norm(name).replace(' ', '_')}", "van_hanh", tab_of.get(name), o_bc)
             else:
                 st.markdown(
-                    "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ĐẠT MỐC</span>"
-                    "Toàn bộ chỉ số đang bám sát hoặc vượt mục tiêu đề ra.</div>",
+                    "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ĐẠT KPI</span>"
+                    "Mọi chỉ số đạt KPI.</div>",
                     unsafe_allow_html=True)
 
             # Tóm tắt cảnh báo nhân sự (chi tiết ở tab riêng), dùng ngưỡng đang chỉnh bên tab đó
@@ -4099,18 +4099,19 @@ if PAGE == "tong_quan":
                                     ss.get("hr_ratio", HR_DEFAULTS["ratio"]))
                 if not hr_ov.empty:
                     n_cao_ov = int((hr_ov["Mức"] == "Cao").sum())
-                    st.markdown(
+                    # Bấm vào dòng này để sang trang Cảnh báo nhân sự (không cần câu hướng dẫn).
+                    link_box(
                         f"<div class='ghn-alert {'danger' if n_cao_ov else ''}'>"
                         f"<span class='a-tag {'tag-danger' if n_cao_ov else 'tag-warn'}'>NHÂN SỰ</span>"
-                        f"<b>{len(hr_ov)}</b> nhân viên cần chú ý, <b>{n_cao_ov}</b> người mức Cao. "
-                        f"Xem chi tiết, tải ảnh và gửi thông báo ở mục <b>Cảnh báo nhân sự</b>.</div>",
-                        unsafe_allow_html=True)
+                        f"<b>{len(hr_ov)}</b> nhân viên cần chú ý"
+                        + (f" (<b>{n_cao_ov}</b> mức Cao)" if n_cao_ov else "") + ".</div>",
+                        "ovw_nhan_su", "canh_bao_ns", None, o_bc)
 
         with _sub_tab1[1]:
             # ── Cảnh báo bưu cục %GTC thấp liên tục ────────────────────────────
             section("Cảnh báo bưu cục — %GTC thấp liên tục")
             with st.columns([1.1, 2.9])[0]:
-                bcw_days = st.number_input("Dưới mốc KPI từ (ngày liên tiếp)", 2, 14, 3, 1, key="bcw_days")
+                bcw_days = st.number_input("Dưới KPI từ (ngày liên tiếp)", 2, 14, 3, 1, key="bcw_days")
             gtc_day = bc_daily(M_GTC)
             gan_day = bc_daily(M_GAN)
             if bc_ov != "Tất cả" and not gtc_day.empty:
@@ -4123,7 +4124,7 @@ if PAGE == "tong_quan":
             elif bw.empty:
                 st.markdown(
                     "<div class='ghn-alert ok'><span class='a-tag tag-ok'>ỔN ĐỊNH</span>"
-                    f"Không có bưu cục nào dưới mốc %GTC từ {int(bcw_days)} ngày liên tiếp.</div>",
+                    f"Không có bưu cục nào dưới KPI %GTC từ {int(bcw_days)} ngày liên tiếp.</div>",
                     unsafe_allow_html=True)
             else:
                 n_cao_bc = int((bw["Mức"] == "Cao").sum())
@@ -4131,24 +4132,24 @@ if PAGE == "tong_quan":
                     f"<div class='ghn-alert {'danger' if n_cao_bc else ''}'>"
                     f"<span class='a-tag {'tag-danger' if n_cao_bc else 'tag-warn'}'>"
                     f"{'CẦN XỬ LÝ' if n_cao_bc else 'THEO DÕI'}</span>"
-                    f"<b>{len(bw)}</b> bưu cục có %GTC dưới mốc từ {int(bcw_days)} ngày liên tiếp, "
+                    f"<b>{len(bw)}</b> bưu cục có %GTC dưới KPI từ {int(bcw_days)} ngày liên tiếp, "
                     f"<b>{n_cao_bc}</b> bưu cục mức Cao.</div>", unsafe_allow_html=True)
                 chon_bc = st.dataframe(
                     bw.drop(columns=["_tu_ngay", "_score"]), width="stretch", hide_index=True,
                     on_select="rerun", selection_mode="single-row", key="tbl_bc_warn",
                     column_config={
-                        "Số ngày liên tiếp dưới mốc": st.column_config.NumberColumn(format="%d ngày"),
+                        "Số ngày liên tiếp dưới KPI": st.column_config.NumberColumn(format="%d ngày"),
                         "%GTC ngày cuối": st.column_config.NumberColumn(format="%.2f%%"),
                         "%GTC 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
                         "%GTC 7 ngày trước": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Mốc KPI": st.column_config.NumberColumn(format="%.0f%%"),
+                        "KPI": st.column_config.NumberColumn(format="%.0f%%"),
                         "% Gán 7 ngày": st.column_config.NumberColumn(format="%.2f%%"),
                         "Sản lượng 7 ngày": st.column_config.NumberColumn(format="%,d"),
                         "Ngày dữ liệu cuối": st.column_config.DateColumn(format="DD/MM/YYYY")})
                 dong_bc = [i for i in chon_bc.selection.rows if 0 <= i < len(bw)]
                 if dong_bc:
                     r_bc = bw.iloc[dong_bc[0]]
-                    ten_bc, tgt_bc, last_bc = r_bc["Bưu cục"], float(r_bc["Mốc KPI"]), r_bc["Ngày dữ liệu cuối"]
+                    ten_bc, tgt_bc, last_bc = r_bc["Bưu cục"], float(r_bc["KPI"]), r_bc["Ngày dữ liệu cuối"]
                     section(f"Chi tiết bưu cục: {ten_bc}")
                     a30 = last_bc - timedelta(days=29)
                     g_bc = sl(scope(M_GTC, ten_bc), a30, last_bc)
@@ -4188,7 +4189,7 @@ if PAGE == "tong_quan":
                     with b1:
                         st.markdown(metric_card("%GTC ngày cuối", f"{r_bc['%GTC ngày cuối']:.2f}%",
                                                 r_bc["%GTC ngày cuối"] - tgt_bc, "%", True, True,
-                                                sub=f"so với mốc {tgt_bc:g}%", ky=fmt_ky(last_bc, last_bc)),
+                                                sub=f"so với KPI {tgt_bc:g}%", ky=fmt_ky(last_bc, last_bc)),
                                     unsafe_allow_html=True)
                     with b2:
                         st.markdown(metric_card("%GTC 7 ngày", f"{p7b:.2f}%" if co7 else "—",
@@ -4203,7 +4204,7 @@ if PAGE == "tong_quan":
                                                 ky=fmt_ky(last_bc - timedelta(days=6), last_bc)),
                                     unsafe_allow_html=True)
                     with b4:
-                        st.markdown(metric_card("Ngày liên tiếp dưới mốc", f"{int(r_bc['Số ngày liên tiếp dưới mốc'])} ngày",
+                        st.markdown(metric_card("Ngày liên tiếp dưới KPI", f"{int(r_bc['Số ngày liên tiếp dưới KPI'])} ngày",
                                                 None, sub=f"từ {pd.Timestamp(r_bc['_tu_ngay']):%d/%m} · mức {r_bc['Mức']}",
                                                 accent=r_bc["Mức"] == "Cao", ky=f"Tính đến {pd.Timestamp(last_bc):%d/%m/%Y}"),
                                     unsafe_allow_html=True)
@@ -4244,7 +4245,7 @@ if PAGE == "tong_quan":
                                                 textposition=tpos, cliponaxis=False,
                                                 textfont=dict(color=color, **LABEL_FONT)))
                 fig_ov.add_hline(y=t_gtc_ov, line_dash="dot", line_color=ACCENT, line_width=2,
-                                 annotation_text="Mốc GTC", annotation_position="top left")
+                                 annotation_text="KPI GTC", annotation_position="top left")
                 fig_ov.update_yaxes(ticksuffix="%")
                 fig_ov.update_xaxes(tickformat="%d/%m")
                 fig_ov.update_layout(height=480)
@@ -4261,10 +4262,10 @@ if PAGE == "tong_quan":
 
 CHỈ SỐ HÔM NAY (so với hôm trước):
 - Sản lượng: {p_vol['n']:,.0f} đơn (hôm trước {p_vol['n1']:,.0f})
-- %GTC tổng: {p_gtc['n']:.2f}% (hôm trước {p_gtc['n1']:.2f}%) — mốc KPI {t_gtc_ov:.2f}%
-- %GTC TikTok: {p_tts['n']:.2f}% (hôm trước {p_tts['n1']:.2f}%) — mốc KPI {t_tts_ov:.2f}%
-- ODR TikTok: {p_odr['n']:.2f}% (hôm trước {p_odr['n1']:.2f}%) — mốc {t_odr_ov:.2f}%
-- Tỷ lệ trả hàng: {p_tra['n']:.2f}% (hôm trước {p_tra['n1']:.2f}%) — ngưỡng tối đa {t_tra_ov:.2f}%
+- %GTC tổng: {p_gtc['n']:.2f}% (hôm trước {p_gtc['n1']:.2f}%) — KPI {t_gtc_ov:.2f}%
+- %GTC TikTok: {p_tts['n']:.2f}% (hôm trước {p_tts['n1']:.2f}%) — KPI {t_tts_ov:.2f}%
+- ODR TikTok: {p_odr['n']:.2f}% (hôm trước {p_odr['n1']:.2f}%) — KPI {t_odr_ov:.2f}%
+- Tỷ lệ trả hàng: {p_tra['n']:.2f}% (hôm trước {p_tra['n1']:.2f}%) — KPI tối đa {t_tra_ov:.2f}%
 
 LŨY KẾ THÁNG:
 - Doanh thu tháng: {fmt_money(p_dt['m'])} (tháng trước {fmt_money(p_dt['m1'])})
@@ -4274,8 +4275,8 @@ NHỊP TUẦN:
 - %Trả hàng tuần này {p_tra['w']:.2f}% so với tuần trước {p_tra['w1']:.2f}%
 
 CHỈ SỐ ĐANG TRƯỢT MỐC (kèm bưu cục kéo chỉ số xuống):
-{chr(10).join(f"- {n} ({a:.2f}% / mốc {t:.2f}%).{re.sub('<[^>]+>', '', bc_note(n, h))}"
-              for _, n, a, t, _, _, h in issues) if issues else 'không có, mọi chỉ số đạt mốc'}""")
+{chr(10).join(f"- {n} ({a:.2f}% / KPI {t:.2f}%).{re.sub('<[^>]+>', '', bc_note(n, h))}"
+              for _, n, a, t, _, _, h in issues) if issues else 'không có, mọi chỉ số đạt KPI'}""")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -4462,12 +4463,12 @@ if PAGE == "van_hanh":
 Loại hàng đang lọc: {', '.join(lh_pick) if lh_pick else 'tất cả'}.
 
 BÌNH QUÂN TRONG KHOẢNG ĐÃ LỌC:
-- %GTC tổng: {_w(s_gtc):.2f}% (mốc KPI {t_gtc_vh:.2f}%)
-- %Trả hàng: {_w(s_tra):.2f}% (ngưỡng tối đa {t_tra_vh:.2f}%)
+- %GTC tổng: {_w(s_gtc):.2f}% (KPI {t_gtc_vh:.2f}%)
+- %Trả hàng: {_w(s_tra):.2f}% (KPI tối đa {t_tra_vh:.2f}%)
 - %GTB thu tiền: {_w(s_gtb):.2f}%
-- %GTC TikTok: {_w(s_tts):.2f}% (mốc KPI {t_tts_vh:.2f}%)
-- ODR TikTok: {_w(s_odr):.2f}% (mốc {t_odr_vh:.2f}%)
-- OPR TikTok (lấy hàng đúng hạn): {_w(s_opr):.2f}%{f" (mốc {t_opr_vh:.2f}%)" if t_opr_vh else ""}
+- %GTC TikTok: {_w(s_tts):.2f}% (KPI {t_tts_vh:.2f}%)
+- ODR TikTok: {_w(s_odr):.2f}% (KPI {t_odr_vh:.2f}%)
+- OPR TikTok (lấy hàng đúng hạn): {_w(s_opr):.2f}%{f" (KPI {t_opr_vh:.2f}%)" if t_opr_vh else ""}
 - Tỷ lệ gán: {_w(s_gan):.2f}%
 - Leadtime bình quân: {s_lead['Giá Trị'].mean() if not s_lead.empty else 0:.2f} giờ
 - Tổng sản lượng: {s_gtc['Trọng Số'].sum() if not s_gtc.empty else 0:,.0f} đơn""")
@@ -4531,7 +4532,7 @@ if PAGE == "kinh_doanh":
             d1, d2 = st.columns([1, 2.2])
             with d1:
                 st.markdown(metric_card("Mục tiêu doanh thu tháng (VNĐ)", fmt_money(target_dt), None,
-                                        sub="theo sheet KPI" if kpi_dt_sheet > 0 else "mốc mặc định",
+                                        sub="theo sheet KPI" if kpi_dt_sheet > 0 else "KPI mặc định",
                                         ky=f"Tháng {b_kd:%m/%Y}"),
                             unsafe_allow_html=True)
 
@@ -5186,10 +5187,10 @@ if PAGE == "kpi":
         t_opr = kpi_target([["opr"]], 100.0, bc=bc_kpi, when=b_kpi)
 
         if DF_KPI.empty or DF_KPI.select_dtypes("number").notna().sum().sum() == 0:
-            st.warning("Sheet KPI chưa có số liệu. Đang dùng mốc tạm — bạn chỉnh ở dưới, "
+            st.warning("Sheet KPI chưa có số liệu. Đang dùng KPI tạm — bạn chỉnh ở dưới, "
                        "hoặc điền vào sheet KPI là dashboard tự nhận.", icon="⚠️")
 
-        with st.expander("Chỉnh mốc KPI thủ công"):
+        with st.expander("Chỉnh KPI thủ công"):
             x1, x2, x3, x4, x5 = st.columns(5)
             with x1:
                 t_gtc = st.number_input("%GTC tổng tối thiểu", 0.0, 100.0, float(t_gtc), 0.5,
@@ -5214,7 +5215,7 @@ if PAGE == "kpi":
 
         a_gtc, a_tts, a_tra, a_odr, a_opr = (agg_kpi(f) for f in (M_GTC, M_TTS, M_TRA, M_ODR, M_OPR))
 
-        _sub_tab5 = st.tabs(['Đồng hồ KPI', 'Đối chiếu chi tiết', 'Bám mốc theo ngày', 'Nhận định AI'],
+        _sub_tab5 = st.tabs(['Đồng hồ KPI', 'Đối chiếu chi tiết', 'Bám KPI theo ngày', 'Nhận định AI'],
                             key="tabs_kpi")
         with _sub_tab5[0]:
             section(f"Đồng hồ đo tiến độ KPI · {fmt_ky(a_kpi, min(b_kpi, REF_DATE))}")
@@ -5251,7 +5252,7 @@ if PAGE == "kpi":
                  kpi_row("OPR TikTok Shop", a_opr, t_opr, True)]), unsafe_allow_html=True)
 
         with _sub_tab5[2]:
-            section("Bám mốc theo ngày")
+            section("Bám KPI theo ngày")
             kpi_series = []
             for frame, name, color, tgt in ((M_GTC, "%GTC Tổng", PRIMARY, t_gtc),
                                             (M_TTS, "%GTC TTS", SUCCESS, t_tts),
@@ -5286,7 +5287,7 @@ if PAGE == "kpi":
                         columns={"Giá Trị": nm})
                     tbl_kpi = tbl_kpi.merge(d, on="Ngày", how="outer")
                 tbl_kpi = tbl_kpi.sort_values("Ngày", ascending=False)
-                tbl_kpi["Đạt mốc GTC"] = np.where(tbl_kpi["%GTC"] >= t_gtc, "Đạt", "Chưa")
+                tbl_kpi["Đạt KPI GTC"] = np.where(tbl_kpi["%GTC"] >= t_gtc, "Đạt", "Chưa")
                 st.dataframe(tbl_kpi, width="stretch", hide_index=True, height=320,
                              column_config={
                                  "Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
@@ -5304,7 +5305,7 @@ if PAGE == "kpi":
 
         with _sub_tab5[3]:
             def kpi_ai(name, actual, target, hib) -> str:
-                moc = "mốc tối thiểu" if hib else "ngưỡng tối đa"
+                moc = "KPI tối thiểu" if hib else "KPI tối đa"
                 if actual is None:
                     return f"- {name}: chưa có số liệu trong khoảng này / {moc} {target:.2f}%"
                 ok = actual >= target if hib else actual <= target
