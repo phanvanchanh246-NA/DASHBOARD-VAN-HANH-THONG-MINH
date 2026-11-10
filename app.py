@@ -2620,6 +2620,37 @@ Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đí
 LUONG_LOW = {"min": 300_000, "pct": 75, "ngay": 3}   # mặc định cảnh báo lương thấp
 
 
+def luong_don_fig(g: pd.DataFrame, title: str = "Tổng lương, đơn GTC và LTC theo ngày"):
+    """Tổng lương theo ngày kèm số đơn: cột Đơn GTC và Đơn LTC (trục trái, dải dưới),
+    đường Tổng lương (trục phải, dải trên) để nhãn số của cột và của đường không đè nhau.
+    `g`: Ngày | Lương | GTC | LTC (mỗi ngày một dòng, chỉ những ngày có dữ liệu)."""
+    g = g.sort_values("Ngày")
+    many = len(g) > 10
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(x=g["Ngày"], y=g["GTC"], name="Đơn GTC", marker_color=PRIMARY, marker_line_width=0,
+                         text=point_labels(g["GTC"], num_label), textposition="outside", cliponaxis=False,
+                         textangle=-90 if many else 0, textfont=dict(color=PRIMARY, **LABEL_FONT),
+                         hovertemplate="%{x|%d/%m}<br>Đơn GTC %{y:,.0f}<extra></extra>"), secondary_y=False)
+    fig.add_trace(go.Bar(x=g["Ngày"], y=g["LTC"], name="Đơn LTC", marker_color=ACCENT, marker_line_width=0,
+                         text=point_labels(g["LTC"], num_label), textposition="outside",
+                         textangle=-90 if many else 0, textfont=dict(color=ACCENT, **LABEL_FONT), cliponaxis=False,
+                         hovertemplate="%{x|%d/%m}<br>Đơn LTC %{y:,.0f}<extra></extra>"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=g["Ngày"], y=g["Lương"], name="Tổng lương (đ)", mode="lines+markers+text",
+                             line=dict(color=SUCCESS, width=3), marker=dict(size=7),
+                             text=point_labels(g["Lương"], money_label), textposition="top center",
+                             textfont=dict(color=SUCCESS, **LABEL_FONT), cliponaxis=False,
+                             hovertemplate="%{x|%d/%m}<br>Tổng lương %{y:,.0f} đ<extra></extra>"), secondary_y=True)
+    fig.update_layout(title=title, barmode="group", bargap=0.25, height=420, margin=dict(t=90, b=90))
+    don_max = float(pd.concat([g["GTC"], g["LTC"]]).max()) if len(g) else 1.0
+    fig.update_yaxes(title_text="Số đơn", range=[0, max(don_max, 1.0) * 1.7], secondary_y=False)
+    lmax = float(g["Lương"].max()) if g["Lương"].notna().any() else 1.0
+    fig.update_yaxes(title_text="Tổng lương (đ)", secondary_y=True, showgrid=False,
+                     range=[-1.4 * lmax, 1.2 * lmax], tickvals=[0, lmax / 2, lmax],
+                     ticktext=[money_label(v) for v in (0, lmax / 2, lmax)])
+    fig.update_xaxes(title_text="", tickformat="%d/%m")
+    return fig
+
+
 def luong_staff_chart(ma: str, a, b):
     """Biểu đồ theo ngày của một nhân viên: cột đơn gán, đơn GTC (sheet năng suất) và đường lương ngày
     (sheet Lương). Khoảng ngắn thì kéo về đủ 14 ngày tính tới ngày cuối để thấy diễn biến."""
@@ -2787,20 +2818,18 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
     k1, k2, k3, k4 = st.columns(4)
     for col, (t, v, sub) in zip((k1, k2, k3, k4), (
             ("Tổng lương (VNĐ)", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu"),
-            ("Số nhân viên (người)", f"{d['MaNV'].nunique():,}", f"{ngay_cong:,.0f} ngày công"),
+            ("Số nhân viên (người)", fmt_int(d['MaNV'].nunique()), f"{fmt_int(ngay_cong)} ngày công"),
             ("Lương TB / ngày công (VNĐ)", fmt_money(tong / ngay_cong if ngay_cong else 0), "Tổng lương ÷ ngày công"),
-            ("Đơn giao tính lương (đơn)", f"{d['_giao'].sum():,.0f}", f"đơn lấy tính lương {d['_lay'].sum():,.0f}"))):
+            ("Đơn GTC tính lương (đơn)", fmt_int(d['_giao'].sum()), f"đơn LTC tính lương {fmt_int(d['_lay'].sum())}"))):
         with col:
             st.markdown(metric_card(t, v, None, sub=sub, accent=t.startswith("Tổng lương"), ky=fmt_ky(a, b)),
                         unsafe_allow_html=True)
 
-    g_day = d.groupby("Ngày", as_index=False)["_tong"].sum()
-    by_day = px.bar(g_day, x="Ngày", y="_tong", title="Tổng lương theo ngày")
-    by_day.update_traces(marker_color=PRIMARY, text=point_labels(g_day["_tong"], money_label),
-                         textposition="outside", cliponaxis=False)
-    by_day.update_yaxes(title_text="VNĐ")
-    by_day.update_xaxes(title_text="", tickformat="%d/%m")
-    by_day.update_layout(height=340, showlegend=False, margin=dict(t=80, b=60))
+    # Đơn GTC = "Đơn giao tính lương", Đơn LTC = "Đơn lấy tính lương" của chính sheet Lương
+    # (đã đối chiếu: khớp số GTC của sheet Năng suất nhân viên).
+    g_day = (d.assign(_g=pd.to_numeric(d["_giao"], errors="coerce"), _l=pd.to_numeric(d["_lay"], errors="coerce"))
+               .groupby("Ngày", as_index=False).agg(Lương=("_tong", "sum"), GTC=("_g", "sum"), LTC=("_l", "sum")))
+    by_day = luong_don_fig(g_day)
     if all_bc:
         cA, cB = st.columns([1.6, 1])
         with cA:
@@ -5019,19 +5048,12 @@ if PAGE == "nang_suat":
                 if pay_cols and not L_range.empty:
                     tmp = L_range.copy()
                     tmp["Tổng Lương"] = tmp[list(pay_cols.values())].sum(axis=1)
-                    g_pay = tmp.groupby("Ngày", as_index=False)["Tổng Lương"].sum()
-                    fig_pay = px.line(g_pay, x="Ngày", y="Tổng Lương", markers=True,
-                                      title="Tổng lương theo ngày")
-                    fig_pay.update_traces(line=dict(color=SUCCESS, width=3),
-                                          marker=dict(size=7, color=SUCCESS),
-                                          mode="lines+markers+text", cliponaxis=False,
-                                          text=point_labels(g_pay["Tổng Lương"], money_label),
-                                          textposition="top center",
-                                          textfont=dict(color=SUCCESS, **LABEL_FONT))
-                    fig_pay.update_yaxes(title_text="VNĐ")
-                    fig_pay.update_xaxes(tickformat="%d/%m")
-                    fig_pay.update_layout(height=330, showlegend=False, margin=dict(t=90, b=70))
-                    plot_chart(fig_pay, width="stretch")
+                    c_gtc_l, c_ltc_l = pick_col(tmp, [["don gtc"]]), pick_col(tmp, [["don ltc"]])
+                    tmp["_g"] = pd.to_numeric(tmp[c_gtc_l], errors="coerce") if c_gtc_l else np.nan
+                    tmp["_l"] = pd.to_numeric(tmp[c_ltc_l], errors="coerce") if c_ltc_l else np.nan
+                    g_pay = tmp.groupby("Ngày", as_index=False).agg(Lương=("Tổng Lương", "sum"),
+                                                                    GTC=("_g", "sum"), LTC=("_l", "sum"))
+                    plot_chart(luong_don_fig(g_pay), width="stretch")
                 else:
                     note("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
 
