@@ -395,6 +395,22 @@ h1, h2, h3, h4 {{
     font-size: calc(16px * var(--fs)); font-weight: 700; color: {MUTED};
     text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;
 }}
+.kpi-box {{
+    background: #FFFFFF; border-radius: 8px; border-left: 5px solid {MUTED}; padding: 10px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}}
+.kpi-box.ok {{ border-left-color: {SUCCESS}; }}
+.kpi-box.bad {{ border-left-color: {DANGER}; }}
+.kpi-name {{ font-size: calc(15px * var(--fs)); font-weight: 800; color: {MUTED}; text-transform: uppercase; }}
+.kpi-val {{ font-size: calc(32px * var(--fs)); font-weight: 900; line-height: 1.15; font-variant-numeric: tabular-nums; }}
+.kpi-val.ok {{ color: {SUCCESS}; }}
+.kpi-val.bad {{ color: {DANGER}; }}
+.kpi-val.muted {{ color: {MUTED}; }}
+.kpi-target {{ font-size: calc(15px * var(--fs)); font-weight: 700; color: {TEXT}; margin: 2px 0 6px; }}
+.kpi-chip {{ display: inline-block; font-size: calc(13px * var(--fs)); font-weight: 800; padding: 2px 10px;
+            border-radius: 12px; background: #F1F3F5; color: {MUTED}; }}
+.kpi-chip.ok {{ background: #E8F6EC; color: {SUCCESS}; }}
+.kpi-chip.bad {{ background: #FDECEE; color: {DANGER}; }}
 .metric-card .m-ky {{
     display: inline-block; font-size: calc(13px * var(--fs)); font-weight: 600; color: {PRIMARY};
     background: {PRIMARY_SOFT}; border-radius: 10px; padding: 1px 9px; margin-bottom: 6px;
@@ -1613,48 +1629,54 @@ def _bc_bar_fig(g: pd.DataFrame, target, higher_is_better, title):
     return fig
 
 
-def gauge_chart(title: str, value: float | None, target: float, higher_is_better=True):
-    """Đồng hồ đo KPI. Kim xanh nếu đạt, đỏ nếu trượt. value=None: khoảng đã chọn không có số liệu."""
+def kpi_progress(name: str, value: float | None, target: float, hib: bool = True) -> bool | None:
+    """Một dòng tiến độ KPI: ô số bên trái (thực tế, KPI, đạt/chưa, thiếu bao nhiêu) và thanh ngang bên phải
+    có vùng đỏ/xanh, thanh thực tế và vạch KPI — nhìn là biết KPI bao nhiêu, đang đứng ở đâu.
+    hib=False: chỉ số càng thấp càng tốt (tỷ lệ trả hàng). Trả về True/False (đạt/chưa), None nếu không có số."""
+    c1, c2 = st.columns([1, 2.3], vertical_alignment="center")
+    kpi_txt = f"KPI {'≥' if hib else '≤'} {target:,.2f}%"
     if value is None:
-        st.markdown(metric_card(title, NO_DATA, None, sub="chưa có số liệu trong khoảng đã chọn"),
-                    unsafe_allow_html=True)
-        return
-    target = max(float(target), 0.5)
-    ok = value >= target if higher_is_better else value <= target
-    needle = SUCCESS if ok else DANGER
-    if higher_is_better:
-        steps = [{"range": [0, target * 0.8], "color": "#FDECEE"},
-                 {"range": [target * 0.8, target], "color": "#FFF4E5"},
-                 {"range": [target, 100], "color": "#E8F6EC"}]
-    else:
-        steps = [{"range": [0, target], "color": "#E8F6EC"},
-                 {"range": [target, min(target * 1.6, 100)], "color": "#FFF4E5"},
-                 {"range": [min(target * 1.6, 100), 100], "color": "#FDECEE"}]
+        with c1:
+            st.markdown(f"<div class='kpi-box'><div class='kpi-name'>{esc(name)}</div>"
+                        f"<div class='kpi-val muted'>{NO_DATA}</div><div class='kpi-target'>{kpi_txt}</div>"
+                        f"<span class='kpi-chip'>Chưa có số liệu</span></div>", unsafe_allow_html=True)
+        return None
+    ok = value >= target if hib else value <= target
+    gap = abs(value - target)
+    chip = (f"<span class='kpi-chip ok'>ĐẠT · {'vượt' if hib else 'thấp hơn'} {gap:,.2f}%</span>" if ok else
+            f"<span class='kpi-chip bad'>CHƯA ĐẠT · {'thiếu' if hib else 'vượt'} {gap:,.2f}%</span>")
+    with c1:
+        st.markdown(f"<div class='kpi-box {'ok' if ok else 'bad'}'><div class='kpi-name'>{esc(name)}</div>"
+                    f"<div class='kpi-val {'ok' if ok else 'bad'}'>{value:,.2f}%</div>"
+                    f"<div class='kpi-target'>{kpi_txt}</div>{chip}</div>", unsafe_allow_html=True)
+    scale = 100.0 if hib else max(target * 2.0, value * 1.25, 10.0)
+    xanh, do = "#E8F6EC", "#FDECEE"
+    steps = ([{"range": [0, target], "color": do}, {"range": [target, scale], "color": xanh}] if hib else
+             [{"range": [0, target], "color": xanh}, {"range": [target, scale], "color": do}])
     fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=float(value),
-        # domain rõ ràng để đồng hồ nằm giữa khung.
-        domain={"x": [0, 1], "y": [0, 1]},
-        number={"suffix": "%", "valueformat": ".2f",
-                "font": {"size": 39, "color": needle, "family": "Montserrat, sans-serif"}},
-        # "position": "bottom" xếp delta XUỐNG DƯỚI số chính. Mặc định Plotly đặt
-        # delta nằm cạnh số, khiến cụm số bị đẩy lệch sang một bên tâm đồng hồ.
-        delta={"reference": target, "suffix": "%", "position": "bottom",
-               "font": {"size": 17, "family": "Montserrat, sans-serif"},
-               "increasing": {"color": SUCCESS if higher_is_better else DANGER},
-               "decreasing": {"color": DANGER if higher_is_better else SUCCESS}},
-        title={"text": f"<b>{esc(title)}</b>",
-               "font": {"size": 19, "color": PRIMARY, "family": "Montserrat, sans-serif"},
-               "align": "center"},
-        gauge={"axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": MUTED},
-               "bar": {"color": needle, "thickness": 0.3},
-               "bgcolor": BG, "borderwidth": 1, "bordercolor": LINE,
-               "steps": steps,
-               "threshold": {"line": {"color": PRIMARY, "width": 4},
-                             "thickness": 0.85, "value": target}}))
-    fig.update_layout(height=360, margin=dict(l=40, r=40, t=90, b=30),
-                      showlegend=False)
-    plot_chart(fig, width="stretch")
+        mode="gauge", value=min(float(value), scale), domain={"x": [0, 1], "y": [0.12, 0.62]},
+        gauge={"shape": "bullet",
+               "axis": {"range": [0, scale], "ticksuffix": "%", "tickfont": {"size": 11, "color": MUTED},
+                        "nticks": 11},
+               "bar": {"color": SUCCESS if ok else DANGER, "thickness": 0.45},
+               "bgcolor": BG, "borderwidth": 0, "steps": steps,
+               "threshold": {"line": {"color": TEXT, "width": 3}, "thickness": 1.0, "value": target}}))
+    # Nhãn KPI phía trên vạch, nhãn thực tế phía trên đầu thanh (đẩy lệch nếu hai nhãn quá gần nhau).
+    xk, xv = target / scale, min(float(value), scale) / scale
+    gan = abs(xk - xv) < 0.12
+    fig.add_annotation(x=xk, y=0.66, xref="paper", yref="paper", yanchor="bottom", showarrow=False,
+                       xanchor=("right" if gan and xk < xv else "left" if gan else "center"),
+                       text=f"<b>KPI {target:g}%</b>", font=dict(size=13, color=TEXT))
+    # Số thực tế ghi TRONG đầu thanh (chữ trắng); thanh quá ngắn thì ghi ngay sau đầu thanh.
+    trong = xv >= 0.15
+    fig.add_annotation(x=xv - 0.006 if trong else xv + 0.006, y=0.37, xref="paper", yref="paper",
+                       xanchor="right" if trong else "left", yanchor="middle", showarrow=False,
+                       text=f"<b>{value:,.2f}%</b>",
+                       font=dict(size=13, color="#FFFFFF" if trong else (SUCCESS if ok else DANGER)))
+    fig.update_layout(height=130, margin=dict(l=10, r=24, t=8, b=8))
+    with c2:
+        plot_chart(fig, ky="", width="stretch")
+    return ok
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -4166,7 +4188,12 @@ if PAGE == "tong_quan":
                         f"<div class='ghn-alert {'danger' if n_cao_ov else ''}'>"
                         f"<span class='a-tag {'tag-danger' if n_cao_ov else 'tag-warn'}'>NHÂN SỰ</span>"
                         f"<b>{len(hr_ov)}</b> nhân viên cần chú ý"
-                        + (f" (<b>{n_cao_ov}</b> mức Cao)" if n_cao_ov else "") + ".</div>",
+                        + (f" (<b>{n_cao_ov}</b> mức Cao)" if n_cao_ov else "") + ":"
+                        + "".join(f"<br>• <b>{esc(str(r['Nhân viên']).split(' · ')[-1])}</b>"
+                                  f"{' (' + esc(str(r['Bưu cục']).replace('(QBI) ', '')) + ')' if bc_ov == 'Tất cả' else ''}"
+                                  f": {esc(str(r['_tags']).replace('|', ', '))}"
+                                  for _, r in hr_ov.head(8).iterrows())
+                        + (f"<br>… và {len(hr_ov) - 8} người khác." if len(hr_ov) > 8 else "") + "</div>",
                         "ovw_nhan_su", "canh_bao_ns", None, o_bc)
 
         with _sub_tab1[1]:
@@ -5270,22 +5297,23 @@ if PAGE == "kpi":
 
         a_gtc, a_tts, a_tra, a_odr, a_opr = (agg_kpi(f) for f in (M_GTC, M_TTS, M_TRA, M_ODR, M_OPR))
 
-        _sub_tab5 = st.tabs(['Đồng hồ KPI', 'Đối chiếu chi tiết', 'Bám KPI theo ngày', 'Nhận định AI'],
+        _sub_tab5 = st.tabs(['Thực tế so với KPI', 'Đối chiếu chi tiết', 'Bám KPI theo ngày', 'Nhận định AI'],
                             key="tabs_kpi")
         with _sub_tab5[0]:
-            section(f"Đồng hồ đo tiến độ KPI · {fmt_ky(a_kpi, min(b_kpi, REF_DATE))}")
-            gc1, gc2, gc3 = st.columns(3)
-            with gc1:
-                gauge_chart("%GTC Tổng", a_gtc, t_gtc, True)
-            with gc2:
-                gauge_chart("%GTC TikTok Shop", a_tts, t_tts, True)
-            with gc3:
-                gauge_chart("%Trả hàng (thấp là tốt)", a_tra, t_tra, False)
-            gc4, gc5, _ = st.columns(3)
-            with gc4:
-                gauge_chart("ODR TikTok Shop", a_odr, t_odr, True)
-            with gc5:
-                gauge_chart("OPR TikTok Shop", a_opr, t_opr, True)
+            section(f"Thực tế so với KPI · {fmt_ky(a_kpi, min(b_kpi, REF_DATE))}")
+            tom_tat = st.empty()
+            kq = [kpi_progress("%GTC tổng", a_gtc, t_gtc, True),
+                  kpi_progress("%GTC TikTok Shop", a_tts, t_tts, True),
+                  kpi_progress("Tỷ lệ trả hàng (càng thấp càng tốt)", a_tra, t_tra, False),
+                  kpi_progress("ODR TikTok Shop", a_odr, t_odr, True),
+                  kpi_progress("OPR TikTok Shop", a_opr, t_opr, True)]
+            co_so = [k for k in kq if k is not None]
+            n_dat = sum(1 for k in co_so if k)
+            tom_tat.markdown(
+                f"<div class='ghn-alert {'ok' if n_dat == len(co_so) else 'danger' if n_dat < len(co_so) / 2 else ''}'>"
+                f"<span class='a-tag {'tag-ok' if n_dat == len(co_so) else 'tag-warn'}'>TIẾN ĐỘ</span>"
+                f"Đạt <b>{n_dat}/{len(co_so)}</b> chỉ tiêu KPI. Thanh màu là số thực tế, vạch đen là KPI; "
+                f"nền xanh là vùng đạt, nền đỏ là vùng chưa đạt.</div>", unsafe_allow_html=True)
 
         with _sub_tab5[1]:
             section("Đối chiếu chi tiết")
