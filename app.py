@@ -411,6 +411,7 @@ h1, h2, h3, h4 {{
             border-radius: 12px; background: #F1F3F5; color: {MUTED}; }}
 .kpi-chip.ok {{ background: #E8F6EC; color: {SUCCESS}; }}
 .kpi-chip.bad {{ background: #FDECEE; color: {DANGER}; }}
+.metric-card .m-spark {{ display: block; width: 100%; height: 30px; margin-top: 8px; overflow: visible; }}
 .metric-card .m-ky {{
     display: inline-block; font-size: calc(13px * var(--fs)); font-weight: 600; color: {PRIMARY};
     background: {PRIMARY_SOFT}; border-radius: 10px; padding: 1px 9px; margin-bottom: 6px;
@@ -1271,9 +1272,10 @@ def note(msg: str):
 
 def metric_card(title: str, value: str, delta: float | None = None, unit: str = "%",
                 higher_is_better: bool = True, has_prev: bool = True,
-                accent: bool = False, sub: str = "", ky: str = "") -> str:
+                accent: bool = False, sub: str = "", ky: str = "", spark=None) -> str:
     """Ô số liệu: nền trắng, đổ bóng, bo góc 8px, viền trái màu.
-    `ky`: mốc thời gian của con số (vd. 'Ngày 05/11/2026', '01/11 – 05/11/2026'), hiện thành nhãn nhỏ dưới tên."""
+    `ky`: mốc thời gian của con số (vd. 'Ngày 05/11/2026', '01/11 – 05/11/2026'), hiện thành nhãn nhỏ dưới tên.
+    `spark`: chuỗi (ngày, giá trị) của SPARK_DAYS ngày có số liệu gần nhất -> đường xu hướng nhỏ cuối ô."""
     cls, dhtml = "", ""
     if delta is None:
         dhtml = f"<div class='m-delta flat'>{esc(sub)}</div>" if sub else ""
@@ -1297,7 +1299,52 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
     vcls = "accent" if accent else ""
     kyhtml = f"<div class='m-ky'>{esc(ky)}</div>" if ky else ""
     return (f"<div class='metric-card {cls}'><div class='m-title'>{esc(title)}</div>{kyhtml}"
-            f"<div class='m-value {vcls}'>{value}</div>{dhtml}</div>")
+            f"<div class='m-value {vcls}'>{value}</div>{dhtml}"
+            f"{sparkline_svg(spark, higher_is_better, unit)}</div>")
+
+
+SPARK_DAYS = 7     # đường xu hướng nhỏ trong ô số liệu: 7 ngày có số liệu gần nhất
+
+
+def sparkline_svg(spark, higher_is_better: bool = True, unit: str = "%") -> str:
+    """Đường xu hướng nhỏ (SVG, không cần thư viện vẽ) cho ô số liệu. `spark`: list (ngày, giá trị).
+    Màu theo hướng đi của 7 ngày: tốt lên xanh, xấu đi đỏ, đi ngang xanh dương. Di chuột xem số từng ngày."""
+    if spark is None:
+        return ""
+    pts = [(d, float(v)) for d, v in spark if v is not None and pd.notna(v)]
+    if len(pts) < 2:
+        return ""
+    ys = [v for _, v in pts]
+    lo, hi = min(ys), max(ys)
+    span = (hi - lo) or 1.0
+    n = len(pts)
+    xy = " ".join(f"{i * 100 / (n - 1):.2f},{27 - (v - lo) / span * 24:.2f}" for i, (_, v) in enumerate(pts))
+    di = ys[-1] - ys[0]
+    mau = PRIMARY if abs(di) < 1e-9 else (SUCCESS if (di > 0) == higher_is_better else DANGER)
+    fmt = (lambda v: f"{v:,.2f}%") if unit == "%" else (fmt_money if unit == "đ" else fmt_int)
+    tip = " · ".join(f"{pd.Timestamp(d):%d/%m}: {fmt(v)}" for d, v in pts)
+    return (f"<svg class='m-spark' viewBox='0 0 100 30' preserveAspectRatio='none' aria-label='{esc(tip)}'>"
+            f"<title>{esc(tip)}</title>"
+            f"<polyline points='0,30 {xy} 100,30' fill='{mau}' fill-opacity='0.08' stroke='none'/>"
+            f"<polyline points='{xy}' fill='none' stroke='{mau}' stroke-width='2' "
+            f"vector-effect='non-scaling-stroke' stroke-linejoin='round' stroke-linecap='round'/></svg>")
+
+
+def spark_of(frame: pd.DataFrame, end, how: str = "wavg"):
+    """SPARK_DAYS ngày có số liệu gần nhất (tính tới `end`) của khung Ngày | Giá Trị | Trọng Số."""
+    if frame is None or frame.empty or "Ngày" not in frame.columns:
+        return None
+    f = frame[frame["Ngày"] <= pd.to_datetime(end)]
+    if f.empty:
+        return None
+    g = daily(f, how).dropna(subset=["Giá Trị"]).tail(SPARK_DAYS)
+    return list(zip(g["Ngày"], g["Giá Trị"]))
+
+
+def spark_by_day(s: pd.Series):
+    """SPARK_DAYS ngày gần nhất của một chuỗi đã gộp theo ngày (index là ngày)."""
+    s = s.dropna().sort_index().tail(SPARK_DAYS)
+    return list(zip(s.index, s.values))
 
 
 _BC_KEY_OF_PAGE = {"van_hanh": "bc_vh", "kinh_doanh": "bc_kd"}
@@ -1367,13 +1414,15 @@ def period_cards(df: pd.DataFrame, ref, unit="%", higher_is_better=True,
         fmt_money if unit == "đ" else fmt_int)
     don_vi = {"%": "", "đ": " (VNĐ)"}.get(unit, f" ({unit})" if unit else "")
     specs = [("ngày", "n"), ("tuần", "w"), ("tháng", "m")]
+    spark = spark_of(df, ref, how)      # xu hướng 7 ngày có số liệu gần nhất tính tới ngày cuối của bộ lọc
     cols = st.columns(len(specs))
     for col, (t, k) in zip(cols, specs):
         v, d, hp, has = p[k], p[k] - p[k + "1"], p[f"has_{k}1"], p[f"has_{k}"]
         with col:
             st.markdown(metric_card(f"{label}{don_vi} · {t}".strip(" ·"), fmt(v) if has else NO_DATA,
                                     d if has else None, unit, higher_is_better, hp and has,
-                                    sub="" if has else "chưa có số liệu kỳ này", ky=period_ky(ref, k)),
+                                    sub="" if has else "chưa có số liệu kỳ này", ky=period_ky(ref, k),
+                                    spark=spark),
                         unsafe_allow_html=True)
     return p
 
@@ -2809,12 +2858,16 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
         r = low.iloc[dong[0]]
         section(f"{staff_label(r['ten'])} · {r['bc']}")
         k1, k2, k3, k4 = st.columns(4)
-        for col, (t, v) in zip((k1, k2, k3, k4), (
-                ("Lương TB/ngày công (VNĐ)", fmt_money(r["tb"])), ("Trung vị bưu cục/ngày (VNĐ)", fmt_money(r["med"])),
-                ("Tổng lương (VNĐ)", fmt_money(r["t"])), ("Ngày công (ngày)", f"{r['n']:,.0f}"))):
+        nv_ngay = d[d["MaNV"] == low.index[dong[0]]].groupby("Ngày").agg(t=("_tong", "sum"), n=("_ngay", "sum"))
+        sp_tb = spark_by_day(nv_ngay["t"] / nv_ngay["n"].where(nv_ngay["n"] > 0))
+        for col, (t, v, sp) in zip((k1, k2, k3, k4), (
+                ("Lương TB/ngày công (VNĐ)", fmt_money(r["tb"]), sp_tb),
+                ("Trung vị bưu cục/ngày (VNĐ)", fmt_money(r["med"]), None),
+                ("Tổng lương (VNĐ)", fmt_money(r["t"]), spark_by_day(nv_ngay["t"])),
+                ("Ngày công (ngày)", f"{r['n']:,.0f}", None))):
             with col:
-                st.markdown(metric_card(t, v, None, accent=t.startswith("Lương TB"), ky=fmt_ky(a, b)),
-                            unsafe_allow_html=True)
+                st.markdown(metric_card(t, v, None, "đ", accent=t.startswith("Lương TB"), ky=fmt_ky(a, b),
+                                        spark=sp), unsafe_allow_html=True)
         plot_chart(luong_staff_chart(low.index[dong[0]], a, b), width="stretch")
 
 
@@ -2837,15 +2890,21 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
     d["_gan"], d["_giao"], d["_lay"], d["_db"] = num("gan_giao"), num("giao"), num("lay"), num("db")
 
     tong, ngay_cong = float(d["_tong"].sum()), float(d["_ngay"].sum())
+    theo_ngay = d.assign(_g=pd.to_numeric(d["_giao"], errors="coerce")).groupby("Ngày").agg(
+        t=("_tong", "sum"), n=("_ngay", "sum"), nv=("MaNV", "nunique"), g=("_g", "sum"))
     k1, k2, k3, k4 = st.columns(4)
-    for col, (t, v, sub) in zip((k1, k2, k3, k4), (
-            ("Tổng lương (VNĐ)", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu"),
-            ("Số nhân viên (người)", fmt_int(d['MaNV'].nunique()), f"{fmt_int(ngay_cong)} ngày công"),
-            ("Lương TB / ngày công (VNĐ)", fmt_money(tong / ngay_cong if ngay_cong else 0), "Tổng lương ÷ ngày công"),
-            ("Đơn GTC tính lương (đơn)", fmt_int(d['_giao'].sum()), f"đơn LTC tính lương {fmt_int(d['_lay'].sum())}"))):
+    for col, (t, v, sub, sp, u) in zip((k1, k2, k3, k4), (
+            ("Tổng lương (VNĐ)", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu",
+             spark_by_day(theo_ngay["t"]), "đ"),
+            ("Số nhân viên (người)", fmt_int(d['MaNV'].nunique()), f"{fmt_int(ngay_cong)} ngày công",
+             spark_by_day(theo_ngay["nv"]), "người"),
+            ("Lương TB / ngày công (VNĐ)", fmt_money(tong / ngay_cong if ngay_cong else 0), "Tổng lương ÷ ngày công",
+             spark_by_day(theo_ngay["t"] / theo_ngay["n"].where(theo_ngay["n"] > 0)), "đ"),
+            ("Đơn GTC tính lương (đơn)", fmt_int(d['_giao'].sum()), f"đơn LTC tính lương {fmt_int(d['_lay'].sum())}",
+             spark_by_day(theo_ngay["g"]), "đơn"))):
         with col:
-            st.markdown(metric_card(t, v, None, sub=sub, accent=t.startswith("Tổng lương"), ky=fmt_ky(a, b)),
-                        unsafe_allow_html=True)
+            st.markdown(metric_card(t, v, None, u, sub=sub, accent=t.startswith("Tổng lương"), ky=fmt_ky(a, b),
+                                    spark=sp), unsafe_allow_html=True)
 
     # Đơn GTC = "Đơn giao tính lương", Đơn LTC = "Đơn lấy tính lương" của chính sheet Lương
     # (đã đối chiếu: khớp số GTC của sheet Năng suất nhân viên).
@@ -4075,34 +4134,42 @@ if PAGE == "tong_quan":
             section(f"Chỉ số nổi bật ngày {REF_DATE:%d/%m/%Y} (N-1)")
             # Bấm vào ô nào thì sang đúng trang/tab chi tiết của chỉ số đó, giữ bưu cục đang xem.
             o_bc = bc_ov
-            def ov_card(title, p, fmt, unit, hib=True, sub="", accent=False, key="n"):
+            def ov_card(title, p, fmt, unit, hib=True, sub="", accent=False, key="n", spark=None):
                 """Ô chỉ số Tổng quan; kỳ không có dòng dữ liệu thì ghi "—", không ghi 0.
                 Mỗi ô ghi rõ ngày của con số và kỳ được so sánh."""
                 ky = period_ky(REF_DATE, key)
                 if not p.get(f"has_{key}"):
-                    return metric_card(title, NO_DATA, None, unit, hib, False, sub="chưa có số liệu", ky=ky)
+                    return metric_card(title, NO_DATA, None, unit, hib, False, sub="chưa có số liệu", ky=ky,
+                                       spark=spark)
                 return metric_card(title, fmt(p[key]), p[key] - p[f"{key}1"], unit, hib, p[f"has_{key}1"],
-                                   sub=sub, accent=accent, ky=ky)
+                                   sub=sub, accent=accent, ky=ky, spark=spark)
 
             pct = lambda v: f"{v:,.2f}%"   # noqa: E731
             # Doanh thu chỉ có ở cấp vùng; xem một bưu cục (hoặc tài khoản NVXL) thì thay bằng %Gán.
             if not g_dt.empty:
-                card4 = ("dt", ov_card("Doanh thu tháng (VNĐ)", p_dt, fmt_money, "đ", key="m"), "kinh_doanh", "Doanh thu")
+                card4 = ("dt", ov_card("Doanh thu tháng (VNĐ)", p_dt, fmt_money, "đ", key="m",
+                                       spark=spark_of(g_dt, REF_DATE, "sum")), "kinh_doanh", "Doanh thu")
             else:
-                card4 = ("gan", ov_card("%Gán", get_period_data(scope(M_GAN, bc_ov), REF_DATE), pct, "%"),
+                card4 = ("gan", ov_card("%Gán", get_period_data(scope(M_GAN, bc_ov), REF_DATE), pct, "%",
+                                        spark=spark_of(scope(M_GAN, bc_ov), REF_DATE)),
                          "van_hanh", "GTC tổng")
             cards = [
-                ("vol", ov_card("Sản lượng (đơn)", p_vol, fmt_int, "đơn", accent=True),
+                ("vol", ov_card("Sản lượng (đơn)", p_vol, fmt_int, "đơn", accent=True,
+                                spark=spark_of(vol_frame, REF_DATE, "sum")),
                  "van_hanh", "GTC tổng"),
-                ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%"), "van_hanh", "GTC tổng"),
-                ("tts", ov_card("%GTC TikTok", p_tts, pct, "%"), "van_hanh", "TikTok Shop"),
+                ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%", spark=spark_of(g_gtc, REF_DATE)), "van_hanh", "GTC tổng"),
+                ("tts", ov_card("%GTC TikTok", p_tts, pct, "%", spark=spark_of(g_tts, REF_DATE)), "van_hanh", "TikTok Shop"),
                 card4,
-                ("odr", ov_card("ODR TikTok", p_odr, pct, "%", sub=f"· KPI {t_odr_ov:g}%"), "van_hanh", "TikTok Shop"),
-                ("opr", ov_card("OPR TikTok", p_opr, pct, "%", sub=f"· KPI {t_opr_ov:g}%"), "van_hanh", "TikTok Shop"),
+                ("odr", ov_card("ODR TikTok", p_odr, pct, "%", sub=f"· KPI {t_odr_ov:g}%",
+                                        spark=spark_of(g_odr, REF_DATE)), "van_hanh", "TikTok Shop"),
+                ("opr", ov_card("OPR TikTok", p_opr, pct, "%", sub=f"· KPI {t_opr_ov:g}%",
+                                        spark=spark_of(g_opr, REF_DATE)), "van_hanh", "TikTok Shop"),
                 # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
-                ("tra", ov_card("Tỷ lệ trả hàng", p_tra, pct, "%", False, sub=f"· KPI tối đa {t_tra_ov:g}%"),
+                ("tra", ov_card("Tỷ lệ trả hàng", p_tra, pct, "%", False, sub=f"· KPI tối đa {t_tra_ov:g}%",
+                                spark=spark_of(g_tra, REF_DATE)),
                  "van_hanh", "Trả hàng & GTB"),
-                ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", sub=f"· KPI {t_gtb_ov:g}%" if t_gtb_ov else ""),
+                ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", sub=f"· KPI {t_gtb_ov:g}%" if t_gtb_ov else "",
+                                spark=spark_of(g_gtb, REF_DATE)),
                  "van_hanh", "Trả hàng & GTB"),
             ]
             for row in (cards[:4], cards[4:]):
@@ -4278,19 +4345,22 @@ if PAGE == "tong_quan":
                     with b1:
                         st.markdown(metric_card("%GTC ngày cuối", f"{r_bc['%GTC ngày cuối']:.2f}%",
                                                 r_bc["%GTC ngày cuối"] - tgt_bc, "%", True, True,
-                                                sub=f"so với KPI {tgt_bc:g}%", ky=fmt_ky(last_bc, last_bc)),
+                                                sub=f"so với KPI {tgt_bc:g}%", ky=fmt_ky(last_bc, last_bc),
+                                                spark=spark_of(scope(M_GTC, ten_bc), last_bc)),
                                     unsafe_allow_html=True)
                     with b2:
                         st.markdown(metric_card("%GTC 7 ngày", f"{p7b:.2f}%" if co7 else "—",
                                                 (p7b - ppb) if co7 and cop else None, "%", True, cop,
                                                 sub="so với 7 ngày trước",
-                                                ky=fmt_ky(last_bc - timedelta(days=6), last_bc)), unsafe_allow_html=True)
+                                                ky=fmt_ky(last_bc - timedelta(days=6), last_bc),
+                                                spark=spark_of(scope(M_GTC, ten_bc), last_bc)), unsafe_allow_html=True)
                     with b3:
                         gb = r_bc["% Gán 7 ngày"]
                         st.markdown(metric_card("% Gán đơn 7 ngày",
                                                 f"{gb:.2f}%" if gb is not None and pd.notna(gb) else "—", None,
-                                                sub=f"sản lượng 7 ngày {r_bc['Sản lượng 7 ngày']:,.0f} đơn",
-                                                ky=fmt_ky(last_bc - timedelta(days=6), last_bc)),
+                                                sub=f"sản lượng 7 ngày {fmt_int(r_bc['Sản lượng 7 ngày'])} đơn",
+                                                ky=fmt_ky(last_bc - timedelta(days=6), last_bc),
+                                                spark=spark_of(scope(M_GAN, ten_bc), last_bc)),
                                     unsafe_allow_html=True)
                     with b4:
                         st.markdown(metric_card("Ngày liên tiếp dưới KPI", f"{int(r_bc['Số ngày liên tiếp dưới KPI'])} ngày",
@@ -4635,7 +4705,8 @@ if PAGE == "kinh_doanh":
                 e1, e2, e3 = st.columns(3)
                 with e1:
                     st.markdown(metric_card("Lũy kế tháng (VNĐ)", fmt_money(p_kd["m"]), None,
-                                            sub=f"đã qua {days_done}/{days_total} ngày", ky=fmt_ky(m_start, b_kd)),
+                                            sub=f"đã qua {days_done}/{days_total} ngày", ky=fmt_ky(m_start, b_kd),
+                                            unit="đ", spark=spark_of(dt_scope, b_kd, "sum")),
                                 unsafe_allow_html=True)
                 with e2:
                     st.markdown(metric_card("Dự kiến cuối tháng (VNĐ)", fmt_money(forecast_dt), None,
@@ -4830,13 +4901,16 @@ if PAGE == "canh_bao_ns":
                             st.markdown(metric_card("%GTC 7 ngày", f"{p7:.2f}%" if co_p7 else "—",
                                                     (p7 - p_prev) if co_p7 and co_prev else None, "%", True,
                                                     co_prev, sub="so với 7 ngày trước",
-                                                    ky=fmt_ky(hr_ref - timedelta(days=6), hr_ref)), unsafe_allow_html=True)
+                                                    ky=fmt_ky(hr_ref - timedelta(days=6), hr_ref),
+                                                    spark=spark_by_day(d_nv.set_index("Ngày")["r"])),
+                                        unsafe_allow_html=True)
                         with m2:
                             tong_gan = float(co_lam["Gán"].sum())
                             st.markdown(metric_card("%GTC 30 ngày",
                                                     f"{co_lam['GTC'].sum() / tong_gan * 100:.2f}%" if tong_gan else "—",
-                                                    None, sub=f"{int(co_lam['GTC'].sum()):,}/{int(tong_gan):,} đơn",
-                                                    ky=fmt_ky(hr_ref - timedelta(days=29), hr_ref)),
+                                                    None, sub=f"{fmt_int(co_lam['GTC'].sum())}/{fmt_int(tong_gan)} đơn",
+                                                    ky=fmt_ky(hr_ref - timedelta(days=29), hr_ref),
+                                                    spark=spark_by_day(d_nv.set_index("Ngày")["r"])),
                                         unsafe_allow_html=True)
                         with m3:
                             st.markdown(metric_card("Ngày có đơn (30 ngày)", f"{len(co_lam)} ngày", None,
@@ -5966,15 +6040,18 @@ def truy_thu_page() -> None:
                .sort_values(["tien", "so_vu"], ascending=False))
     top_loai = by_loai.index[0]
     k1, k2, k3 = st.columns(3)
-    for col, (t, v, sub, acc) in zip((k1, k2, k3), (
+    tt_ngay = d.groupby(d["Ngày"].dt.normalize())[["_phai", "_da", "_con"]].sum()
+    for col, (t, v, sub, acc, sp, hib) in zip((k1, k2, k3), (
             ("Tổng phải truy thu (VNĐ)", fmt_money(d["_phai"].sum()),
-             f"{len(d)} khoản · {d['MaNV'].nunique()} nhân viên", True),
+             f"{len(d)} khoản · {d['MaNV'].nunique()} nhân viên", True, spark_by_day(tt_ngay["_phai"]), False),
             ("Đã truy thu (VNĐ)", fmt_money(d["_da"].sum()),
-             f"{d['_da'].sum() / d['_phai'].sum() * 100:.0f}% số phải thu" if d["_phai"].sum() else "", False),
+             f"{d['_da'].sum() / d['_phai'].sum() * 100:.0f}% số phải thu" if d["_phai"].sum() else "", False,
+             spark_by_day(tt_ngay["_da"]), True),
             ("Còn phải truy thu (VNĐ)", fmt_money(d["_con"].sum()),
-             f"{int((d['_con'] > 0).sum())} khoản chưa thu đủ", False))):
+             f"{int((d['_con'] > 0).sum())} khoản chưa thu đủ", False, spark_by_day(tt_ngay["_con"]), False))):
         with col:
-            st.markdown(metric_card(t, v, None, sub=sub, accent=acc, ky=fmt_ky(a_tt, b_tt)),
+            # Truy thu: tiền phải thu / còn nợ tăng là xấu (đỏ); tiền đã thu tăng là tốt.
+            st.markdown(metric_card(t, v, None, "đ", hib, sub=sub, accent=acc, ky=fmt_ky(a_tt, b_tt), spark=sp),
                         unsafe_allow_html=True)
 
     # Hàng dưới: loại truy thu nhiều tiền nhất và nhiều khoản nhất (tên loại dài nên để ô rộng).
@@ -6310,7 +6387,10 @@ def event_page() -> None:
                     ("Dự báo TB/ngày", fmt_int(g_db.mean()) if len(g_db) else "—",
                      f"{len(g_db)} ngày dự báo", False))):
                 with col:
-                    st.markdown(metric_card(tt, v, None, sub=sub, accent=acc), unsafe_allow_html=True)
+                    # Ô thực tế: xu hướng 7 ngày thực gần nhất; ô dự báo: 7 ngày dự báo cuối (sát ngày đỉnh).
+                    sp = spark_by_day(g_thuc if "thực" in tt else g_db)
+                    st.markdown(metric_card(tt, v, None, "đơn", sub=sub, accent=acc, spark=sp),
+                                unsafe_allow_html=True)
             fig = go.Figure()
             for (bc, g), mau in zip(cap.groupby("Bưu Cục"), (PRIMARY, ACCENT, SUCCESS, DANGER, MUTED)):
                 g = g.sort_values("Ngày")
