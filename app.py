@@ -5356,6 +5356,67 @@ def tham_nien_staff(LN: pd.DataFrame, a, b) -> pd.DataFrame:
     return g[cols]
 
 
+# 3 nhóm đơn hàng lỗi (Hư hỏng / Mất hàng / Backlog). Sheet có 2 bảng cạnh nhau:
+#  trái  — theo ngày từng bưu cục: Ngày | CapQuanLy | Bưu cục | Volume (số đơn lỗi) | Tỷ lệ lỗi | Giá trị
+#  phải  — danh sách đơn lỗi: Mã đơn hàng | Mã shop | Ngày kết luận | Loại rủi ro | Loại lỗi | Nơi vi phạm | ID BC |
+#          Giá trị ban đầu | Giá trị điều chỉnh | Đã truy thu
+LOI_LINK = "https://docs.google.com/spreadsheets/d/1lJt4ZXVjIPoUYZF73nsPmVfziJSBXBISUWU1ldSxWH4/edit?gid=796427911"
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def loi_data() -> dict:
+    """Đọc sheet 3 nhóm đơn hàng lỗi -> {"ngay": bảng theo ngày, "ds": danh sách đơn, "loi": lý do nếu lỗi}."""
+    try:
+        resp = requests.get(make_csv_url(LOI_LINK), timeout=30)
+        resp.raise_for_status()
+        raw = pd.read_csv(io.BytesIO(resp.content), dtype=str)
+    except Exception as exc:  # noqa: BLE001
+        return {"ngay": pd.DataFrame(), "ds": pd.DataFrame(), "loi": f"{type(exc).__name__}"}
+    raw.columns = [str(c).strip() for c in raw.columns]
+    canon = lambda v: _BC_CANON.get(norm(v), str(v).strip())   # noqa: E731
+    c_ngay, c_bc = pick_col(raw, [["ngay"]], exclude=["ket luan"]), pick_col(raw, [["buu cuc"]])
+    c_n, c_r, c_v = pick_col(raw, [["volume"]]), pick_col(raw, [["ty le loi"]]), pick_col(raw, [["gia tri"]],
+                                                                                          exclude=["ban dau", "dieu chinh"])
+    ngay = pd.DataFrame()
+    if c_ngay and c_bc and c_n and c_r:
+        ngay = pd.DataFrame({"Ngày": parse_dates(raw[c_ngay]), "Bưu Cục": raw[c_bc].map(canon),
+                             "n": _parse_num_col(raw[c_n]).fillna(0), "r": _parse_num_col(raw[c_r]),
+                             "v": _parse_num_col(raw[c_v]).fillna(0) if c_v else 0.0})
+        ngay = ngay.dropna(subset=["Ngày"])
+        ngay = ngay[ngay["Bưu Cục"].str.lower() != "nan"]
+    c_ma = pick_col(raw, [["ma don hang"]])
+    ds = pd.DataFrame()
+    if c_ma:
+        g = lambda keys, ex=(): pick_col(raw, keys, exclude=ex)   # noqa: E731
+        d = raw[raw[c_ma].notna() & (raw[c_ma].str.strip() != "")]
+        c_kl, c_rr, c_ll, c_noi = g([["ngay ket luan"]]), g([["loai rui ro"]]), g([["loai loi"]]), g([["noi vi pham"]])
+        c_bd, c_dc, c_tt = g([["gia tri ban dau"]]), g([["gia tri dieu chinh"]]), g([["da truy thu"]])
+        num = lambda c: _parse_num_col(d[c]).fillna(0) if c else 0.0   # noqa: E731
+        ds = pd.DataFrame({"Mã đơn hàng": d[c_ma].str.strip(),
+                           "Ngày kết luận": parse_dates(d[c_kl]) if c_kl else pd.NaT,
+                           "Nhóm lỗi": d[c_ll].str.strip() if c_ll else "",
+                           "Loại rủi ro": d[c_rr].str.strip() if c_rr else "",
+                           "Bưu Cục": d[c_noi].map(canon) if c_noi else "",
+                           "Giá trị (đ)": num(c_bd) + num(c_dc), "Đã truy thu (đ)": num(c_tt)})
+    return {"ngay": ngay, "ds": ds, "loi": None}
+
+
+def loi_ty_le(ngay: pd.DataFrame, bcs: list[str], a, b):
+    """Tỷ lệ đơn lỗi của các bưu cục `bcs` trong [a, b]: tỷ lệ từng ngày của sheet gộp có trọng số theo số đơn
+    giao thành công (Volume x %GTC của sheet GTC tổng). Trả (tỷ lệ %, số đơn lỗi, giá trị) hoặc (None, 0, 0)."""
+    if ngay is None or ngay.empty:
+        return None, 0, 0.0
+    d = ngay[(ngay["Ngày"] >= a) & (ngay["Ngày"] <= b) & ngay["Bưu Cục"].map(norm).isin([norm(x) for x in bcs])]
+    if d.empty:
+        return None, 0, 0.0
+    g = M_GTC[~M_GTC["Bưu Cục"].map(is_total_row)]
+    w = (g.assign(_w=g["Giá Trị"].fillna(0) * g["Trọng Số"] / 100, _k=g["Bưu Cục"].map(norm))
+          .groupby(["Ngày", "_k"])["_w"].sum())
+    d = d.assign(_w=[w.get((n, norm(x)), np.nan) for n, x in zip(d["Ngày"], d["Bưu Cục"])])
+    d["_w"] = d["_w"].fillna(d["_w"].mean() if d["_w"].notna().any() else 1.0)
+    return wavg(d["r"], d["_w"]), int(d["n"].sum()), float(d["v"].sum())
+
+
 def kpi_cty_bang(thang: int) -> pd.DataFrame:
     """KPI công ty theo bưu cục cho tháng `thang` (sheet KPI công ty, cột ghi '- T11').
     Trả: Bưu Cục | gtc | lost | tra | tham_nien (số người). Thiếu cột tháng đó thì lấy tháng gần nhất có."""
@@ -5408,11 +5469,16 @@ def bc_kpi_bar(g: pd.DataFrame, title: str, hib: bool, ky: str, fmt=lambda v: f"
                              name="Tổng", hovertemplate="%{y}<br>Tổng %{x:,.0f} " + don_vi + "<extra></extra>"))
     nhan = ([f"{fmt(v)}/{fmt(t)} {don_vi}".strip() for v, t in zip(g["v"], g[tong_col])] if tong_col
             else [fmt(v) for v in g["v"]])
-    fig.add_trace(go.Bar(x=g["v"], y=g["Bưu Cục"], orientation="h", name="Thực tế",
-                         marker_color=[PRIMARY if o is None else (SUCCESS if o else DANGER) for o in ok],
-                         # số thực tế ghi TRONG cột, sát gốc (chữ trắng) để không đè lên vạch / nhãn KPI
-                         text=nhan, textposition="inside", insidetextanchor="start",
-                         textfont=dict(color="#FFFFFF", size=13), constraintext="none",
+    # Số thực tế ghi TRONG cột, sát gốc (chữ trắng) để không đè lên vạch / nhãn KPI; cột quá ngắn (hoặc = 0)
+    # thì ghi ngay sau đầu cột, chữ nằm ngang.
+    x_ref = float(max(g["v"].max(), g["kpi"].max() if g["kpi"].notna().any() else 0,
+                      g[tong_col].max() if tong_col else 0)) or 1.0
+    trong = [v / x_ref >= 0.2 for v in g["v"]]
+    mau = [PRIMARY if o is None else (SUCCESS if o else DANGER) for o in ok]
+    fig.add_trace(go.Bar(x=g["v"], y=g["Bưu Cục"], orientation="h", name="Thực tế", marker_color=mau,
+                         text=nhan, textposition=["inside" if t_ else "outside" for t_ in trong],
+                         insidetextanchor="start", textangle=0, cliponaxis=False,
+                         textfont=dict(color=["#FFFFFF" if t_ else m for t_, m in zip(trong, mau)], size=13),
                          hovertemplate="%{y}<br>Thực tế %{text}<extra></extra>"))
     if tong_col:
         fig.update_layout(barmode="overlay")
@@ -5430,6 +5496,42 @@ def bc_kpi_bar(g: pd.DataFrame, title: str, hib: bool, ky: str, fmt=lambda v: f"
     fig.update_layout(title=title, showlegend=False, height=max(300, 120 * len(g) + 130),
                       margin=dict(l=20, r=60, t=90, b=60), bargap=0.5)
     plot_chart(fig, ky=ky, width="stretch")
+
+
+def don_loi_section(bc: str, a, b, t: pd.DataFrame, ky: str, ld: dict) -> None:
+    """Chi tiết 3 nhóm đơn hàng lỗi: số đơn và giá trị theo nhóm, tỷ lệ lỗi từng bưu cục so với KPI Lost Rate,
+    danh sách đơn lỗi kết luận trong kỳ."""
+    section("3 nhóm đơn hàng lỗi")
+    if ld.get("loi"):
+        note(f"Chưa đọc được sheet đơn hàng lỗi ({ld['loi']}).")
+        return
+    ds = ld["ds"]
+    if not ds.empty:
+        ds = ds[(ds["Ngày kết luận"] >= a) & (ds["Ngày kết luận"] <= b)]
+        if bc != "Tất cả":
+            ds = ds[ds["Bưu Cục"].map(norm) == norm(bc)]
+        if USER_BC:
+            ds = ds[ds["Bưu Cục"].map(norm) == norm(USER_BC)]
+    cols = st.columns(3)
+    for col, nhom in zip(cols, ("Hư hỏng", "Mất hàng", "Backlog")):
+        x = ds[ds["Nhóm lỗi"].map(norm) == norm(nhom)] if not ds.empty else ds
+        with col:
+            st.markdown(metric_card(f"{nhom} (đơn)", fmt_int(len(x)), None, "đơn", False,
+                                    sub=f"giá trị {fmt_money(x['Giá trị (đ)'].sum()) if len(x) else '0 đ'}", ky=ky),
+                        unsafe_allow_html=True)
+    g1, g2 = st.columns([1, 1.3])
+    with g1:
+        bc_kpi_bar(t.rename(columns={"loi": "v", "k_lost": "kpi"}), "Tỷ lệ đơn lỗi theo bưu cục (KPI Lost Rate)",
+                   False, ky, fmt=lambda v: f"{v:,.3f}%")
+    with g2:
+        st.markdown(f"**Danh sách đơn lỗi kết luận trong kỳ ({len(ds)} đơn)**")
+        if ds.empty:
+            note("Không có đơn lỗi nào trong khoảng ngày đã chọn.")
+        else:
+            st.dataframe(ds.sort_values("Ngày kết luận", ascending=False), hide_index=True, width="stretch",
+                         column_config={"Ngày kết luận": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                        "Giá trị (đ)": st.column_config.NumberColumn(format="%,d"),
+                                        "Đã truy thu (đ)": st.column_config.NumberColumn(format="%,d")})
 
 
 def kpi_cong_ty(bc: str, a, b) -> None:
@@ -5500,7 +5602,17 @@ def kpi_cong_ty(bc: str, a, b) -> None:
         st.markdown(html, unsafe_allow_html=True)
 
     pct = lambda v: f"{v:,.2f}%"   # noqa: E731
-    c1, c2, c3 = st.columns(3)
+    pct3 = lambda v: f"{v:,.3f}%"   # noqa: E731  (tỷ lệ đơn lỗi rất nhỏ: 0.05%)
+    ld = loi_data()
+    for i, x in enumerate(t["Bưu Cục"]):
+        r_, n_, v_ = loi_ty_le(ld["ngay"], [x], a, b)
+        t.loc[i, "loi"], t.loc[i, "loi_n"], t.loc[i, "loi_v"] = (np.nan if r_ is None else r_), n_, v_
+    v_loi, n_loi, gt_loi = loi_ty_le(ld["ngay"], ds_bc, a, b)
+    if bc == "Tất cả":
+        k_loi = wv("k_lost", "w_vol")
+    else:
+        k_loi = None if pd.isna(t.iloc[0]["k_lost"]) else float(t.iloc[0]["k_lost"])
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         card("%GTC Sameday (ca 1 + ca 2)", v_gtc, k_gtc, True, "%", f"{w_ca_txt} đơn hàng mới",
              spark_of(is_ca12(scope(M_CA, bc)), b), pct)
@@ -5509,11 +5621,14 @@ def kpi_cong_ty(bc: str, a, b) -> None:
     with c3:
         card("NV thâm niên trên 3 tháng (người)", v_tn if n_tn else None, k_tn, True, "người",
              f"trên tổng {fmt_int(n_tn)} NV có làm trong kỳ" if n_tn else "", None, fmt_int)
-    k_lost = t["k_lost"].dropna()
-    lost_txt = (f" (KPI {', '.join(f'{x}: {v:.2f}%' for x, v in zip(t.loc[k_lost.index, 'Bưu Cục'], k_lost))})"
-                if len(k_lost) else "")
-    st.markdown(f"<div class='note-box'>Lost Rate{esc(lost_txt)} và tỷ lệ 3 nhóm đơn hàng lỗi: chưa có số liệu "
-                "thực tế, sẽ bổ sung khi có sheet nguồn.</div>", unsafe_allow_html=True)
+    with c4:
+        sp_loi = None
+        if not ld["ngay"].empty:
+            # xu hướng tỷ lệ lỗi từng ngày (cùng cách gộp như ô số), 7 ngày có số liệu gần nhất
+            ngay_co = sorted(ld["ngay"].loc[ld["ngay"]["Ngày"] <= b, "Ngày"].unique())[-SPARK_DAYS:]
+            sp_loi = [(n, loi_ty_le(ld["ngay"], ds_bc, n, n)[0]) for n in ngay_co]
+        card("Tỷ lệ 3 nhóm đơn lỗi (Lost Rate)", v_loi, k_loi, False, "%",
+             f"{n_loi} đơn lỗi · {fmt_money(gt_loi)}" if v_loi is not None else "", sp_loi, pct3)
 
     g1, g2 = st.columns(2)
     with g1:
@@ -5525,6 +5640,8 @@ def kpi_cong_ty(bc: str, a, b) -> None:
         line_chart(sl(is_ca12(scope(M_CA, bc)), a, b), "Diễn biến %GTC Sameday", PRIMARY, "%", k_gtc)
     with g4:
         line_chart(sl(scope(M_TRA, bc), a, b), "Diễn biến %FD (trả hàng)", DANGER, "%", k_tra)
+
+    don_loi_section(bc, a, b, t, ky, ld)
 
     section("Thâm niên nhân viên trên 3 tháng")
     if ln_all.empty:
