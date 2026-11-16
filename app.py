@@ -872,7 +872,9 @@ BC_KEYS = [["buu cuc"], ["buu"], ["khu vuc"], ["vung"], ["tram"], ["station"], [
 VOL_KEYS = [["san luong"], ["volume"], ["tong don"], ["so don"], ["don"]]
 TEXT_HINTS = ("loai hang", "ca", "nhan vien", "trang thai", "ten", "ma", "tuyen", "cap quan ly", "tham nien",
               # sheet Truy thu
-              "loai truy thu", "hinh thuc", "chuc vu", "noi vi pham", "ma don hang", "ma ticket", "nghi viec")
+              "loai truy thu", "hinh thuc", "chuc vu", "noi vi pham", "ma don hang", "ma ticket", "nghi viec",
+              # "Ngày vào làm" ('4 thg 9, 2025'): giữ dạng chữ để tính thâm niên, không ép thành số
+              "vao lam")
 
 
 def parse_dates(raw: pd.Series) -> pd.Series:
@@ -5322,6 +5324,121 @@ Mốc thưởng %GTC là 80%.""",
                        "sang loại đơn giá thấp, cần soi kỹ trước khi kết luận nhân viên làm kém.")
 
 
+def tham_nien_staff(LN: pd.DataFrame, a, b) -> pd.DataFrame:
+    """Nhân viên có ngày làm trong [a, b] (sheet Lương) kèm ngày vào làm và số tháng thâm niên tính tới b.
+    Cột: MaNV | Nhân viên | Bưu Cục | Vào làm | Tháng | Trên 3 tháng."""
+    cols = ["MaNV", "Nhân viên", "Bưu Cục", "Vào làm", "Tháng", "Trên 3 tháng"]
+    if LN is None or LN.empty:
+        return pd.DataFrame(columns=cols)
+    c_nv, c_vao = pick_col(LN, [["nhan vien"]]), pick_col(LN, [["vao lam"]])
+    if not (c_nv and c_vao):
+        return pd.DataFrame(columns=cols)
+    d = LN[(LN["Ngày"] >= a) & (LN["Ngày"] <= b)]
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    d = d.assign(MaNV=d[c_nv].map(staff_id), _vao=parse_dates(d[c_vao])).sort_values("Ngày")
+    g = d.groupby("MaNV").agg(**{"Nhân viên": (c_nv, "last"), "Bưu Cục": ("Bưu Cục", "last"),
+                                 "Vào làm": ("_vao", "first")}).reset_index()
+    g = g[g["Vào làm"].notna()]
+    moc = pd.Timestamp(b).normalize()
+    g["Tháng"] = ((moc - g["Vào làm"]).dt.days / 30.44).round(1)
+    # "Trên 3 tháng": tính tới ngày cuối của kỳ đã làm đủ 3 tháng lịch (vd. vào 10/08 -> đủ từ 10/11).
+    g["Trên 3 tháng"] = g["Vào làm"] + pd.DateOffset(months=3) <= moc
+    g["Nhân viên"] = g["Nhân viên"].map(staff_label)
+    return g[cols]
+
+
+def kpi_cong_ty(bc: str, a, b) -> None:
+    """Tab KPI công ty: %GTC ca 1 + ca 2, tỷ lệ trả hàng, tỷ lệ NV thâm niên trên 3 tháng,
+    tỷ lệ 3 nhóm đơn hàng lỗi (chưa có dữ liệu thì ghi chờ bổ sung)."""
+    b = min(pd.Timestamp(b), REF_DATE)
+    ky = fmt_ky(a, b)
+    section(f"KPI công ty · {ky}")
+
+    # 1) %GTC chỉ tính hàng mới ca 1 và ca 2 (bỏ hàng tồn), gộp có trọng số theo sản lượng.
+    ca = scope(M_CA, bc)
+    if not ca.empty and "Chiều" in ca.columns:
+        ca = ca[ca["Chiều"].map(norm).str.contains(r"\bca ?[12]\b", regex=True)]
+    ca_k = sl(ca, a, b)
+    t_ca = kpi_target([["gtc ca"], ["ca 1"], ["ca1"]], 0.0, bc=bc, when=b)
+    # 2) Tỷ lệ trả hàng
+    tra = scope(M_TRA, bc)
+    tra_k = sl(tra, a, b)
+    t_tra = kpi_target([["tra hang"], ["tra"]], 0.0, bc=bc, when=b)
+    # 3) Thâm niên trên 3 tháng (sheet Lương: Ngày vào làm)
+    ln = DF_LUONG_NGAY if bc == "Tất cả" else DF_LUONG_NGAY[DF_LUONG_NGAY["Bưu Cục"].map(norm) == norm(bc)]
+    tn = tham_nien_staff(ln, a, b)
+    t_tn = kpi_target([["tham nien"]], 0.0, bc=bc, when=b)
+
+    def o(name, value, target, hib, unit_sub, spark):
+        """Ô chỉ số: có KPI thì ghi chênh lệch so với KPI (xanh đạt / đỏ chưa), chưa có KPI thì chỉ ghi số."""
+        val = f"{value:,.2f}%" if value is not None else NO_DATA
+        if target and value is not None:
+            sub = f"so với KPI {'≥' if hib else '≤'} {target:g}% · {unit_sub}".rstrip(" ·")
+            html = metric_card(name, val, value - target, "%", hib, True, sub=sub, ky=ky, spark=spark)
+        else:
+            html = metric_card(name, val, None, "%", hib,
+                               sub=(unit_sub + " · " if unit_sub else "") + "chưa có KPI trong sheet KPI",
+                               ky=ky, spark=spark)
+        st.markdown(html, unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        o("%GTC ca 1 + ca 2", agg(ca_k, a, b) if not ca_k.empty else None, t_ca, True,
+          f"{fmt_int(ca_k['Trọng Số'].sum())} đơn hàng mới ca 1, ca 2", spark_of(ca, b))
+    with c2:
+        o("Tỷ lệ trả hàng", agg(tra_k, a, b) if not tra_k.empty else None, t_tra, False,
+          "càng thấp càng tốt", spark_of(tra, b))
+    with c3:
+        tl_tn = float(tn["Trên 3 tháng"].mean() * 100) if len(tn) else None
+        o("NV thâm niên trên 3 tháng", tl_tn, t_tn, True,
+          f"{int(tn['Trên 3 tháng'].sum())}/{len(tn)} nhân viên" if len(tn) else "", None)
+    st.markdown("<div class='note-box'>Tỷ lệ 3 nhóm đơn hàng lỗi: chưa có dữ liệu, sẽ bổ sung khi có sheet nguồn.</div>",
+                unsafe_allow_html=True)
+
+    # Diễn biến theo ngày và so sánh giữa bưu cục
+    g1, g2 = st.columns(2)
+    with g1:
+        line_chart(sl(ca, a, b), "Diễn biến %GTC ca 1 + ca 2", PRIMARY, "%", t_ca or None)
+    with g2:
+        ca_bc = M_CA[M_CA["Chiều"].map(norm).str.contains(r"\bca ?[12]\b", regex=True)] if "Chiều" in M_CA.columns else M_CA
+        bc_bar_chart(sl(ca_bc, a, b), t_ca or None, True, "%GTC ca 1 + ca 2 theo bưu cục", ky=ky)
+    g3, g4 = st.columns(2)
+    with g3:
+        line_chart(sl(tra, a, b), "Diễn biến tỷ lệ trả hàng", DANGER, "%", t_tra or None)
+    with g4:
+        bc_bar_chart(sl(M_TRA, a, b), t_tra or None, False, "Tỷ lệ trả hàng theo bưu cục", ky=ky)
+
+    section("Thâm niên nhân viên")
+    if tn.empty:
+        note("Chưa đọc được ngày vào làm của nhân viên (sheet Lương).")
+        return
+    t1, t2 = st.columns([1, 1.3])
+    with t1:
+        g = (tn.groupby("Bưu Cục").agg(n=("MaNV", "size"), tren=("Trên 3 tháng", "sum")).reset_index())
+        g["r"] = g["tren"] / g["n"] * 100
+        g = g.sort_values("r")
+        fig = go.Figure(go.Bar(x=g["r"], y=g["Bưu Cục"], orientation="h", marker_color=SUCCESS,
+                               text=[f"{r:.1f}% ({int(t)}/{int(n)})" for r, t, n in zip(g["r"], g["tren"], g["n"])],
+                               textposition="outside", cliponaxis=False,
+                               hovertemplate="%{y}<br>%{x:.1f}% trên 3 tháng<extra></extra>"))
+        if t_tn:
+            fig.add_vline(x=t_tn, line_dash="dot", line_color=ACCENT, line_width=2)
+        fig.update_xaxes(range=[0, 125], ticksuffix="%")
+        fig.update_layout(title="Tỷ lệ NV thâm niên trên 3 tháng theo bưu cục", showlegend=False,
+                          height=max(300, 110 * len(g) + 130), margin=dict(l=20, r=40, t=90, b=60), bargap=0.45)
+        plot_chart(fig, ky=f"Tính đến {b:%d/%m/%Y}", width="stretch")
+    with t2:
+        moi = tn[~tn["Trên 3 tháng"]].sort_values("Vào làm", ascending=False)
+        st.markdown(f"**Nhân viên chưa đủ 3 tháng ({len(moi)} người)**")
+        if moi.empty:
+            note("Mọi nhân viên đều đã làm trên 3 tháng.")
+        else:
+            st.dataframe(moi[["Nhân viên", "Bưu Cục", "Vào làm", "Tháng"]], hide_index=True, width="stretch",
+                         column_config={"Vào làm": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                        "Tháng": st.column_config.NumberColumn("Số tháng", format="%.1f")})
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 5 — TIẾN ĐỘ HOÀN THÀNH KPI
 # ═══════════════════════════════════════════════════════════════════════
@@ -5371,9 +5488,11 @@ if PAGE == "kpi":
 
         a_gtc, a_tts, a_tra, a_odr, a_opr = (agg_kpi(f) for f in (M_GTC, M_TTS, M_TRA, M_ODR, M_OPR))
 
-        _sub_tab5 = st.tabs(['Thực tế so với KPI', 'Đối chiếu chi tiết', 'Bám KPI theo ngày', 'Nhận định AI'],
-                            key="tabs_kpi")
+        _sub_tab5 = st.tabs(['KPI công ty', 'Thực tế so với KPI', 'Đối chiếu chi tiết', 'Bám KPI theo ngày',
+                             'Nhận định AI'], key="tabs_kpi")
         with _sub_tab5[0]:
+            kpi_cong_ty(bc_kpi, a_kpi, b_kpi)
+        with _sub_tab5[1]:
             section(f"Thực tế so với KPI · {fmt_ky(a_kpi, min(b_kpi, REF_DATE))}")
             tom_tat = st.empty()
             kq = [kpi_progress("%GTC tổng", a_gtc, t_gtc, True),
@@ -5389,7 +5508,7 @@ if PAGE == "kpi":
                 f"Đạt <b>{n_dat}/{len(co_so)}</b> chỉ tiêu KPI. Thanh màu là số thực tế, vạch đen là KPI; "
                 f"nền xanh là vùng đạt, nền đỏ là vùng chưa đạt.</div>", unsafe_allow_html=True)
 
-        with _sub_tab5[1]:
+        with _sub_tab5[2]:
             section("Đối chiếu chi tiết")
             def kpi_row(name, actual, target, hib):
                 if actual is None:
@@ -5408,7 +5527,7 @@ if PAGE == "kpi":
                  kpi_row("ODR TikTok Shop", a_odr, t_odr, True),
                  kpi_row("OPR TikTok Shop", a_opr, t_opr, True)]), unsafe_allow_html=True)
 
-        with _sub_tab5[2]:
+        with _sub_tab5[3]:
             section("Bám KPI theo ngày")
             kpi_series = []
             for frame, name, color, tgt in ((M_GTC, "%GTC Tổng", PRIMARY, t_gtc),
@@ -5460,7 +5579,7 @@ if PAGE == "kpi":
             else:
                 note("Chưa có dữ liệu KPI trong khoảng đã chọn.")
 
-        with _sub_tab5[3]:
+        with _sub_tab5[4]:
             def kpi_ai(name, actual, target, hib) -> str:
                 moc = "KPI tối thiểu" if hib else "KPI tối đa"
                 if actual is None:
