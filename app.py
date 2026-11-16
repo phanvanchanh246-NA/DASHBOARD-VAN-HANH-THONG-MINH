@@ -5713,7 +5713,7 @@ if PAGE == "kpi":
 
         a_gtc, a_tts, a_tra, a_odr, a_opr = (agg_kpi(f) for f in (M_GTC, M_TTS, M_TRA, M_ODR, M_OPR))
 
-        _sub_tab5 = st.tabs(['KPI công ty', 'Thực tế so với KPI', 'Đối chiếu chi tiết', 'Bám KPI theo ngày',
+        _sub_tab5 = st.tabs(['KPI công ty', 'Thực tế so với KPI', 'Bám KPI theo ngày',
                              'Nhận định AI'], key="tabs_kpi")
         with _sub_tab5[0]:
             kpi_cong_ty(bc_kpi, a_kpi, b_kpi)
@@ -5734,25 +5734,6 @@ if PAGE == "kpi":
                 f"nền xanh là vùng đạt, nền đỏ là vùng chưa đạt.</div>", unsafe_allow_html=True)
 
         with _sub_tab5[2]:
-            section("Đối chiếu chi tiết")
-            def kpi_row(name, actual, target, hib):
-                if actual is None:
-                    return [esc(name), NO_DATA, f"{target:,.2f}%", NO_DATA, "<span>Chưa có số liệu</span>"]
-                ok = actual >= target if hib else actual <= target
-                gap = (actual - target) if hib else (target - actual)
-                status = ("<span class='up'>ĐẠT</span>" if ok else "<span class='down'>CHƯA ĐẠT</span>")
-                return [esc(name), f"{actual:,.2f}%", f"{target:,.2f}%",
-                        arrow_span(gap, "%", 2, True), status]
-
-            st.markdown(html_table(
-                ["Chỉ tiêu", "Thực tế", "Mục tiêu", "Chênh lệch", "Trạng thái"],
-                [kpi_row("%GTC Tổng", a_gtc, t_gtc, True),
-                 kpi_row("%GTC TikTok Shop", a_tts, t_tts, True),
-                 kpi_row("%Trả hàng", a_tra, t_tra, False),
-                 kpi_row("ODR TikTok Shop", a_odr, t_odr, True),
-                 kpi_row("OPR TikTok Shop", a_opr, t_opr, True)]), unsafe_allow_html=True)
-
-        with _sub_tab5[3]:
             section("Bám KPI theo ngày")
             kpi_series = []
             for frame, name, color, tgt in ((M_GTC, "%GTC Tổng", PRIMARY, t_gtc),
@@ -5804,7 +5785,7 @@ if PAGE == "kpi":
             else:
                 note("Chưa có dữ liệu KPI trong khoảng đã chọn.")
 
-        with _sub_tab5[4]:
+        with _sub_tab5[3]:
             def kpi_ai(name, actual, target, hib) -> str:
                 moc = "KPI tối thiểu" if hib else "KPI tối đa"
                 if actual is None:
