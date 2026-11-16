@@ -193,6 +193,11 @@ def plot_chart(fig, ky: str | None = None, **kw):
                          tickangle=0 if n <= 14 else (-45 if n <= 40 else -90),
                          tickfont=dict(size=12 if n <= 40 else 10))
     title = fig.layout.title.text if fig.layout.title and fig.layout.title.text else ""
+    if title:
+        # Tiêu đề đặt cách mép trên 16px (không theo % chiều cao): biểu đồ thấp (~300px) đặt y=0.97 thì
+        # chỉ còn ~9px, dấu tiếng Việt (Số, thâm, trên) bị cắt mất phần trên.
+        h = fig.layout.height or 450
+        fig.update_layout(title_y=1 - 16 / h, title_yanchor="top")
     if ky and title and "<br><span class='ky'>" not in title:
         fig.update_layout(title_text=f"{title}<br><span class='ky' style='font-size:12px;color:{MUTED}'>"
                                      f"{esc(ky)}</span>")
@@ -5388,28 +5393,40 @@ def kpi_cty_bang(thang: int) -> pd.DataFrame:
 
 
 def bc_kpi_bar(g: pd.DataFrame, title: str, hib: bool, ky: str, fmt=lambda v: f"{v:,.2f}%",
-               x_suffix: str = "%") -> None:
+               x_suffix: str = "%", tong_col: str | None = None, don_vi: str = "") -> None:
     """Thanh ngang theo bưu cục, mỗi bưu cục một KPI riêng: tô xanh nếu đạt, đỏ nếu chưa; vạch KPI riêng
-    từng bưu cục và nhãn 'KPI x'. `g`: Bưu Cục | v | kpi."""
+    từng bưu cục và nhãn 'KPI x'. `g`: Bưu Cục | v | kpi.
+    `tong_col`: cột tổng (vd. tổng số NV) vẽ thành thanh xám phía sau, nhãn ghi 'v/tổng đơn_vị'."""
     g = g.dropna(subset=["v"]).sort_values("v")
     if g.empty:
         note(f"Chưa có số liệu: {title}")
         return
     ok = [(v >= k) == hib if pd.notna(k) else None for v, k in zip(g["v"], g["kpi"])]
-    fig = go.Figure(go.Bar(x=g["v"], y=g["Bưu Cục"], orientation="h",
-                           marker_color=[PRIMARY if o is None else (SUCCESS if o else DANGER) for o in ok],
-                           # số thực tế ghi TRONG cột, sát gốc (chữ trắng) để không đè lên vạch / nhãn KPI
-                           text=[fmt(v) for v in g["v"]], textposition="inside", insidetextanchor="start",
-                           textfont=dict(color="#FFFFFF", size=13),
-                           hovertemplate="%{y}<br>Thực tế %{text}<extra></extra>"))
+    fig = go.Figure()
+    if tong_col:
+        fig.add_trace(go.Bar(x=g[tong_col], y=g["Bưu Cục"], orientation="h", marker_color="#E9ECEF",
+                             name="Tổng", hovertemplate="%{y}<br>Tổng %{x:,.0f} " + don_vi + "<extra></extra>"))
+    nhan = ([f"{fmt(v)}/{fmt(t)} {don_vi}".strip() for v, t in zip(g["v"], g[tong_col])] if tong_col
+            else [fmt(v) for v in g["v"]])
+    fig.add_trace(go.Bar(x=g["v"], y=g["Bưu Cục"], orientation="h", name="Thực tế",
+                         marker_color=[PRIMARY if o is None else (SUCCESS if o else DANGER) for o in ok],
+                         # số thực tế ghi TRONG cột, sát gốc (chữ trắng) để không đè lên vạch / nhãn KPI
+                         text=nhan, textposition="inside", insidetextanchor="start",
+                         textfont=dict(color="#FFFFFF", size=13), constraintext="none",
+                         hovertemplate="%{y}<br>Thực tế %{text}<extra></extra>"))
+    if tong_col:
+        fig.update_layout(barmode="overlay")
     co_kpi = g[g["kpi"].notna()]
     if not co_kpi.empty:
         fig.add_trace(go.Scatter(x=co_kpi["kpi"], y=co_kpi["Bưu Cục"], mode="markers+text", name="KPI",
                                  marker=dict(symbol="line-ns", size=34, line=dict(width=3, color=TEXT)),
                                  text=[f"<b>KPI {fmt(k)}</b>" for k in co_kpi["kpi"]], textposition="top center",
                                  textfont=dict(size=12, color=TEXT), hoverinfo="skip"))
-    x_max = float(max(g["v"].max(), co_kpi["kpi"].max() if not co_kpi.empty else 0))
+    x_max = float(max(g["v"].max(), co_kpi["kpi"].max() if not co_kpi.empty else 0,
+                      g[tong_col].max() if tong_col else 0))
     fig.update_xaxes(range=[0, x_max * 1.25 or 1], ticksuffix=x_suffix)
+    if not x_suffix:     # số người: vạch trục là số nguyên
+        fig.update_xaxes(tickformat=",d", dtick=max(1, round(x_max / 6)))
     fig.update_layout(title=title, showlegend=False, height=max(300, 120 * len(g) + 130),
                       margin=dict(l=20, r=60, t=90, b=60), bargap=0.5)
     plot_chart(fig, ky=ky, width="stretch")
@@ -5441,7 +5458,8 @@ def kpi_cong_ty(bc: str, a, b) -> None:
         rows.append({"Bưu Cục": x,
                      "gtc": agg(ca, a, b) if not ca.empty else np.nan, "w_ca": float(ca["Trọng Số"].sum()),
                      "tra": agg(tra, a, b) if not tra.empty else np.nan, "w_vol": vol,
-                     "tn": float(tn["Trên 3 tháng"].sum()), "tn_n": float(len(tn)),
+                     # bưu cục không có NV nào trong sheet Lương (vd. vùng "TTB") -> để trống, không vẽ dòng 0
+                     "tn": float(tn["Trên 3 tháng"].sum()) if len(tn) else np.nan, "tn_n": float(len(tn)),
                      "k_gtc": k.get("gtc", np.nan), "k_tra": k.get("tra", np.nan), "k_tn": k.get("tham_nien", np.nan),
                      "k_lost": k.get("lost", np.nan)})
     t = pd.DataFrame(rows)
@@ -5457,7 +5475,7 @@ def kpi_cong_ty(bc: str, a, b) -> None:
         v_tra = agg(tra_t, a, b) if not tra_t.empty else None
         k_gtc = wv("k_gtc", "w_ca")
         k_tra = wv("k_tra", "w_vol")
-        v_tn, n_tn = float(t["tn"].sum()), float(t["tn_n"].sum())
+        v_tn, n_tn = float(t["tn"].fillna(0).sum()), float(t["tn_n"].sum())
         k_tn = float(t["k_tn"].sum()) if t["k_tn"].notna().any() else None
         w_ca_txt = fmt_int(ca_t["Trọng Số"].sum()) if not ca_t.empty else "0"
     else:
@@ -5466,7 +5484,7 @@ def kpi_cong_ty(bc: str, a, b) -> None:
         v_tra = None if pd.isna(r["tra"]) else float(r["tra"])
         k_gtc = None if pd.isna(r["k_gtc"]) else float(r["k_gtc"])
         k_tra = None if pd.isna(r["k_tra"]) else float(r["k_tra"])
-        v_tn, n_tn = float(r["tn"]), float(r["tn_n"])
+        v_tn, n_tn = float(0 if pd.isna(r["tn"]) else r["tn"]), float(r["tn_n"])
         k_tn = None if pd.isna(r["k_tn"]) else float(r["k_tn"])
         w_ca_txt = fmt_int(r["w_ca"])
 
@@ -5515,7 +5533,8 @@ def kpi_cong_ty(bc: str, a, b) -> None:
     t1, t2 = st.columns([1, 1.3])
     with t1:
         bc_kpi_bar(t.rename(columns={"tn": "v", "k_tn": "kpi"}), "Số NV thâm niên trên 3 tháng theo bưu cục", True,
-                   f"Tính đến {b:%d/%m/%Y}", fmt=lambda v: f"{v:,.0f}", x_suffix="")
+                   f"Tính đến {b:%d/%m/%Y} · thanh xám: tổng NV có làm trong kỳ",
+                   fmt=lambda v: f"{v:,.0f}", x_suffix="", tong_col="tn_n", don_vi="người")
     with t2:
         tn = ln_all if bc == "Tất cả" else ln_all[ln_all["Bưu Cục"].map(norm) == norm(bc)]
         moi = tn[~tn["Trên 3 tháng"]].sort_values("Vào làm", ascending=False)
