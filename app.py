@@ -429,6 +429,11 @@ h1, h2, h3, h4 {{
     line-height: 1.1; font-variant-numeric: tabular-nums;
 }}
 .metric-card .m-value.accent {{ color: {ACCENT}; }}
+.metric-card .m-value.ok {{ color: {SUCCESS}; }}
+.metric-card .m-value.bad {{ color: {DANGER}; }}
+.metric-card .m-kpi {{ font-size: calc(14px * var(--fs)); font-weight: 800; margin-top: 4px; }}
+.metric-card .m-kpi.ok {{ color: {SUCCESS}; }}
+.metric-card .m-kpi.bad {{ color: {DANGER}; }}
 .metric-card .m-delta {{ font-size: calc(16px * var(--fs)); font-weight: 700; margin-top: 6px; }}
 .metric-card .m-delta.up {{ color: {SUCCESS}; }}
 .metric-card .m-delta.down {{ color: {DANGER}; }}
@@ -1292,10 +1297,13 @@ def note(msg: str):
 
 def metric_card(title: str, value: str, delta: float | None = None, unit: str = "%",
                 higher_is_better: bool = True, has_prev: bool = True,
-                accent: bool = False, sub: str = "", ky: str = "", spark=None) -> str:
+                accent: bool = False, sub: str = "", ky: str = "", spark=None,
+                target: float | None = None, actual: float | None = None) -> str:
     """Ô số liệu: nền trắng, đổ bóng, bo góc 8px, viền trái màu.
     `ky`: mốc thời gian của con số (vd. 'Ngày 05/11/2026', '01/11 – 05/11/2026'), hiện thành nhãn nhỏ dưới tên.
-    `spark`: chuỗi (ngày, giá trị) của SPARK_DAYS ngày có số liệu gần nhất -> đường xu hướng nhỏ cuối ô."""
+    `spark`: chuỗi (ngày, giá trị) của SPARK_DAYS ngày có số liệu gần nhất -> đường xu hướng nhỏ cuối ô.
+    `target` + `actual`: ô có KPI -> viền trái và màu con số theo ĐẠT/CHƯA ĐẠT KPI (không theo hướng tăng giảm),
+    kèm dòng "KPI ≥ x% · thiếu y%". Dòng ▲▼ vẫn là thay đổi so với kỳ trước. Không có KPI -> viền trung tính."""
     cls, dhtml = "", ""
     if delta is None:
         dhtml = f"<div class='m-delta flat'>{esc(sub)}</div>" if sub else ""
@@ -1305,7 +1313,6 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
         good = (delta > 0) == higher_is_better
         flat = abs(delta) < 1e-9
         dcls = "flat" if flat else ("up" if good else "down")
-        cls = "" if flat else ("ok" if good else "bad")
         arrow = "" if flat else ("▲" if delta > 0 else "▼")
         if unit == "%":
             txt = f"{arrow} {abs(delta):,.2f}%"
@@ -1314,12 +1321,26 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
         else:
             txt = f"{arrow} {fmt_int(abs(delta))}"
         dhtml = f"<div class='m-delta {dcls}'>{txt} {esc(sub)}</div>"
+    vcls, kpihtml = ("accent", "") if accent else ("", "")
     if accent:
         cls = "accent"
-    vcls = "accent" if accent else ""
+    if target is not None and actual is not None and pd.notna(actual):
+        dat = actual >= target if higher_is_better else actual <= target
+        cls = vcls = "ok" if dat else "bad"
+        gap = abs(actual - target)
+        if unit == "%":
+            gtxt = f"{gap:,.2f}%"
+            ktxt = f"{target:g}%"
+        elif unit == "đ":
+            gtxt, ktxt = fmt_money(gap), fmt_money(target)
+        else:
+            gtxt, ktxt = fmt_int(gap), fmt_int(target)
+        kpihtml = (f"<div class='m-kpi {'ok' if dat else 'bad'}'>KPI {'≥' if higher_is_better else '≤'} {ktxt} · "
+                   + (f"{'vượt' if higher_is_better else 'thấp hơn'} {gtxt}" if dat else
+                      f"{'thiếu' if higher_is_better else 'vượt'} {gtxt}") + "</div>")
     kyhtml = f"<div class='m-ky'>{esc(ky)}</div>" if ky else ""
     return (f"<div class='metric-card {cls}'><div class='m-title'>{esc(title)}</div>{kyhtml}"
-            f"<div class='m-value {vcls}'>{value}</div>{dhtml}"
+            f"<div class='m-value {vcls}'>{value}</div>{kpihtml}{dhtml}"
             f"{sparkline_svg(spark, higher_is_better, unit)}</div>")
 
 
@@ -1427,7 +1448,7 @@ def bc_keo_xuong(frame: pd.DataFrame, day, hib: bool, target_of) -> list[dict]:
 
 
 def period_cards(df: pd.DataFrame, ref, unit="%", higher_is_better=True,
-                 how="wavg", label=""):
+                 how="wavg", label="", target: float | None = None):
     """3 ô: Ngày vs N-1, Tuần vs W-1, Tháng vs M-1, tính theo ngày `ref` (ngày cuối của bộ lọc)."""
     p = get_period_data(df, ref, how)
     fmt = (lambda v: f"{v:,.2f}%") if unit == "%" else (
@@ -1442,7 +1463,7 @@ def period_cards(df: pd.DataFrame, ref, unit="%", higher_is_better=True,
             st.markdown(metric_card(f"{label}{don_vi} · {t}".strip(" ·"), fmt(v) if has else NO_DATA,
                                     d if has else None, unit, higher_is_better, hp and has,
                                     sub="" if has else "chưa có số liệu kỳ này", ky=period_ky(ref, k),
-                                    spark=spark),
+                                    spark=spark, target=target or None, actual=v if has else None),
                         unsafe_allow_html=True)
     return p
 
@@ -2711,6 +2732,19 @@ Một câu kêu gọi cho {tiep_theo}, nhắc xem ảnh bảng xếp hạng đí
 LUONG_LOW = {"min": 300_000, "pct": 75, "ngay": 3}   # mặc định cảnh báo lương thấp
 
 
+LUONG_MIN_NGAY = 3    # dưới 3 ngày dữ liệu thì không vẽ biểu đồ theo ngày (cột thành sợi chỉ, trục lệch)
+
+
+def ve_luong_don(g: pd.DataFrame) -> None:
+    """Vẽ biểu đồ tổng lương + đơn GTC/LTC theo ngày; kỳ mới có ít ngày thì ghi chú thay vì vẽ biểu đồ vỡ."""
+    n = int(g["Ngày"].nunique()) if g is not None and not g.empty else 0
+    if n < LUONG_MIN_NGAY:
+        note(f"Kỳ đang xem mới có {n} ngày dữ liệu lương. Biểu đồ theo ngày sẽ hiện khi có từ "
+             f"{LUONG_MIN_NGAY} ngày; số liệu tổng xem ở các ô phía trên.")
+        return
+    plot_chart(luong_don_fig(g), width="stretch")
+
+
 def luong_don_fig(g: pd.DataFrame, title: str = "Tổng lương, đơn GTC và LTC theo ngày"):
     """Tổng lương theo ngày kèm số đơn: cột Đơn GTC và Đơn LTC (trục trái, dải dưới),
     đường Tổng lương (trục phải, dải trên) để nhãn số của cột và của đường không đè nhau.
@@ -2930,11 +2964,11 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
     # (đã đối chiếu: khớp số GTC của sheet Năng suất nhân viên).
     g_day = (d.assign(_g=pd.to_numeric(d["_giao"], errors="coerce"), _l=pd.to_numeric(d["_lay"], errors="coerce"))
                .groupby("Ngày", as_index=False).agg(Lương=("_tong", "sum"), GTC=("_g", "sum"), LTC=("_l", "sum")))
-    by_day = luong_don_fig(g_day)
+    by_day = g_day
     if all_bc:
         cA, cB = st.columns([1.6, 1])
         with cA:
-            plot_chart(by_day, width="stretch")
+            ve_luong_don(by_day)
         with cB:
             g_bc = d.groupby("Bưu Cục", as_index=False)["_tong"].sum().sort_values("_tong")
             fig_bc = px.bar(g_bc, x="_tong", y="Bưu Cục", orientation="h", title="Tổng lương theo bưu cục")
@@ -2948,7 +2982,7 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
         # Chọn một bưu cục: cạnh biểu đồ theo ngày là tổng lương từng nhân viên của bưu cục đó.
         cA, cB = st.columns([1.3, 1])
         with cA:
-            plot_chart(by_day, width="stretch")
+            ve_luong_don(by_day)
         with cB:
             g_nv = d.groupby("MaNV").agg(ten=(c["nv"], "last"), t=("_tong", "sum")).sort_values("t")
             fig_nv = go.Figure(go.Bar(
@@ -4156,7 +4190,7 @@ if PAGE == "tong_quan":
             section(f"Chỉ số nổi bật ngày {REF_DATE:%d/%m/%Y} (N-1)")
             # Bấm vào ô nào thì sang đúng trang/tab chi tiết của chỉ số đó, giữ bưu cục đang xem.
             o_bc = bc_ov
-            def ov_card(title, p, fmt, unit, hib=True, sub="", accent=False, key="n", spark=None):
+            def ov_card(title, p, fmt, unit, hib=True, sub="", accent=False, key="n", spark=None, target=None):
                 """Ô chỉ số Tổng quan; kỳ không có dòng dữ liệu thì ghi "—", không ghi 0.
                 Mỗi ô ghi rõ ngày của con số và kỳ được so sánh."""
                 ky = period_ky(REF_DATE, key)
@@ -4164,7 +4198,8 @@ if PAGE == "tong_quan":
                     return metric_card(title, NO_DATA, None, unit, hib, False, sub="chưa có số liệu", ky=ky,
                                        spark=spark)
                 return metric_card(title, fmt(p[key]), p[key] - p[f"{key}1"], unit, hib, p[f"has_{key}1"],
-                                   sub=sub, accent=accent, ky=ky, spark=spark)
+                                   sub=sub, accent=accent, ky=ky, spark=spark, target=target or None,
+                                   actual=p[key])
 
             pct = lambda v: f"{v:,.2f}%"   # noqa: E731
             # Doanh thu chỉ có ở cấp vùng; xem một bưu cục (hoặc tài khoản NVXL) thì thay bằng %Gán.
@@ -4179,19 +4214,15 @@ if PAGE == "tong_quan":
                 ("vol", ov_card("Sản lượng (đơn)", p_vol, fmt_int, "đơn", accent=True,
                                 spark=spark_of(vol_frame, REF_DATE, "sum")),
                  "van_hanh", "GTC tổng"),
-                ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%", spark=spark_of(g_gtc, REF_DATE)), "van_hanh", "GTC tổng"),
-                ("tts", ov_card("%GTC TikTok", p_tts, pct, "%", spark=spark_of(g_tts, REF_DATE)), "van_hanh", "TikTok Shop"),
+                ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%", spark=spark_of(g_gtc, REF_DATE), target=t_gtc_ov), "van_hanh", "GTC tổng"),
+                ("tts", ov_card("%GTC TikTok", p_tts, pct, "%", spark=spark_of(g_tts, REF_DATE), target=t_tts_ov), "van_hanh", "TikTok Shop"),
                 card4,
-                ("odr", ov_card("ODR TikTok", p_odr, pct, "%", sub=f"· KPI {t_odr_ov:g}%",
-                                        spark=spark_of(g_odr, REF_DATE)), "van_hanh", "TikTok Shop"),
-                ("opr", ov_card("OPR TikTok", p_opr, pct, "%", sub=f"· KPI {t_opr_ov:g}%",
-                                        spark=spark_of(g_opr, REF_DATE)), "van_hanh", "TikTok Shop"),
+                ("odr", ov_card("ODR TikTok", p_odr, pct, "%", spark=spark_of(g_odr, REF_DATE), target=t_odr_ov), "van_hanh", "TikTok Shop"),
+                ("opr", ov_card("OPR TikTok", p_opr, pct, "%", spark=spark_of(g_opr, REF_DATE), target=t_opr_ov), "van_hanh", "TikTok Shop"),
                 # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
-                ("tra", ov_card("Tỷ lệ trả hàng", p_tra, pct, "%", False, sub=f"· KPI tối đa {t_tra_ov:g}%",
-                                spark=spark_of(g_tra, REF_DATE)),
+                ("tra", ov_card("Tỷ lệ trả hàng", p_tra, pct, "%", False, spark=spark_of(g_tra, REF_DATE), target=t_tra_ov),
                  "van_hanh", "Trả hàng & GTB"),
-                ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", sub=f"· KPI {t_gtb_ov:g}%" if t_gtb_ov else "",
-                                spark=spark_of(g_gtb, REF_DATE)),
+                ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", spark=spark_of(g_gtb, REF_DATE), target=t_gtb_ov),
                  "van_hanh", "Trả hàng & GTB"),
             ]
             for row in (cards[:4], cards[4:]):
@@ -4366,8 +4397,8 @@ if PAGE == "tong_quan":
                     co7, cop = p7b is not None and pd.notna(p7b), ppb is not None and pd.notna(ppb)
                     with b1:
                         st.markdown(metric_card("%GTC ngày cuối", f"{r_bc['%GTC ngày cuối']:.2f}%",
-                                                r_bc["%GTC ngày cuối"] - tgt_bc, "%", True, True,
-                                                sub=f"so với KPI {tgt_bc:g}%", ky=fmt_ky(last_bc, last_bc),
+                                                None, "%", True, True, target=tgt_bc, actual=r_bc["%GTC ngày cuối"],
+                                                ky=fmt_ky(last_bc, last_bc),
                                                 spark=spark_of(scope(M_GTC, ten_bc), last_bc)),
                                     unsafe_allow_html=True)
                     with b2:
@@ -4515,7 +4546,7 @@ if PAGE == "van_hanh":
         with _sub_tab2[0]:
             # 2.1 GTC tổng
             section("1. Báo cáo GTC tổng")
-            period_cards(scope(M_GTC, bc_vh), b_vh, "%", True, "wavg", "%GTC")
+            period_cards(scope(M_GTC, bc_vh), b_vh, "%", True, "wavg", "%GTC", target=t_gtc_vh)
             cA, cB = st.columns([1.6, 1])
             with cA:
                 combo_chart(cs(M_GTC), "Sản lượng, %GTC và % gán đơn theo ngày", "Sản lượng", "% GTC", t_gtc_vh,
@@ -4592,7 +4623,7 @@ if PAGE == "van_hanh":
         with _sub_tab2[2]:
             # 2.3 GTC TTS
             section("3. GTC TikTok Shop")
-            period_cards(scope(M_TTS, bc_vh), b_vh, "%", True, "wavg", "%GTC TTS")
+            period_cards(scope(M_TTS, bc_vh), b_vh, "%", True, "wavg", "%GTC TTS", target=t_tts_vh)
             cG, cH = st.columns([1.6, 1])
             with cG:
                 combo_chart(cs(M_TTS), "Sản lượng, %GTC và % gán đơn TikTok Shop", "Sản lượng TTS", "% GTC TTS",
@@ -4602,12 +4633,12 @@ if PAGE == "van_hanh":
 
             # 2.4 ODR TTS
             section("4. ODR TikTok Shop — cam kết giao đúng hạn với sàn")
-            period_cards(scope(M_ODR, bc_vh), b_vh, "%", True, "wavg", "ODR")
+            period_cards(scope(M_ODR, bc_vh), b_vh, "%", True, "wavg", "ODR", target=t_odr_vh)
             line_chart(cs(M_ODR), "Tỷ lệ ODR theo ngày", ACCENT, "%", t_odr_vh)
 
             # 2.4b OPR TTS
             section("5. OPR TikTok Shop — lấy hàng đúng hạn")
-            period_cards(scope(M_OPR, bc_vh), b_vh, "%", True, "wavg", "OPR")
+            period_cards(scope(M_OPR, bc_vh), b_vh, "%", True, "wavg", "OPR", target=t_opr_vh)
             cO, cP = st.columns([1.6, 1])
             with cO:
                 combo_chart(cs(M_OPR), "Đơn lấy thành công và %OPR TikTok Shop", "Đơn lấy thành công", "% OPR",
@@ -4618,7 +4649,7 @@ if PAGE == "van_hanh":
         with _sub_tab2[3]:
             # 2.5 Trả hàng
             section("6. Tỷ lệ trả hàng (càng thấp càng tốt)")
-            period_cards(scope(M_TRA, bc_vh), b_vh, "%", False, "wavg", "%Trả hàng")
+            period_cards(scope(M_TRA, bc_vh), b_vh, "%", False, "wavg", "%Trả hàng", target=t_tra_vh)
             cE, cF = st.columns([1.6, 1])
             with cE:
                 line_chart(cs(M_TRA), "Tỷ lệ trả hàng theo ngày", DANGER, "%", t_tra_vh)
@@ -4627,7 +4658,8 @@ if PAGE == "van_hanh":
 
             # 2.6 GTB thu tiền
             section("7. Tỷ lệ GTB — giao thất bại nhưng thu được tiền")
-            period_cards(scope(M_GTB, bc_vh), b_vh, "%", True, "wavg", "%GTB")
+            period_cards(scope(M_GTB, bc_vh), b_vh, "%", True, "wavg", "%GTB",
+                         target=kpi_target([["gtb"]], 0.0, bc=bc_vh, when=b_vh) or None)
             cQ, cR = st.columns([1.6, 1])
             with cQ:
                 line_chart(cs(M_GTB), "Tỷ lệ GTB thu tiền theo ngày", SUCCESS, "%")
@@ -4726,20 +4758,38 @@ if PAGE == "kinh_doanh":
             with d2:
                 e1, e2, e3 = st.columns(3)
                 with e1:
-                    st.markdown(metric_card("Lũy kế tháng (VNĐ)", fmt_money(p_kd["m"]), None,
-                                            sub=f"đã qua {days_done}/{days_total} ngày", ky=fmt_ky(m_start, b_kd),
-                                            unit="đ", spark=spark_of(dt_scope, b_kd, "sum")),
-                                unsafe_allow_html=True)
+                    # % hoàn thành mục tiêu so với % thời gian đã qua: biết ngay có kịp về đích không
+                    ht = p_kd["m"] / target_dt * 100 if target_dt else 0.0
+                    tg = days_done / days_total * 100
+                    kip = ht >= tg      # % hoàn thành theo kịp % thời gian đã qua thì xanh, chậm hơn thì đỏ
+                    html = metric_card("Lũy kế tháng (VNĐ)", fmt_money(p_kd["m"]), None, "đ",
+                                       sub=f"đạt {ht:.1f}% mục tiêu · thời gian đã qua {tg:.0f}% "
+                                           f"({days_done}/{days_total} ngày) · {'kịp tiến độ' if kip else 'chậm tiến độ'}",
+                                       ky=fmt_ky(m_start, b_kd), spark=spark_of(dt_scope, b_kd, "sum"))
+                    k = "ok" if kip else "bad"
+                    st.markdown(html.replace("class='metric-card ", f"class='metric-card {k} ", 1)
+                                    .replace("class='m-value ", f"class='m-value {k} ", 1), unsafe_allow_html=True)
                 with e2:
                     st.markdown(metric_card("Dự kiến cuối tháng (VNĐ)", fmt_money(forecast_dt), None,
                                             sub="theo tốc độ hiện tại", accent=True,
                                             ky=f"Đến {month_end(m_start):%d/%m/%Y}"),
                                 unsafe_allow_html=True)
                 with e3:
-                    thieu = max(target_dt - forecast_dt, 0)
-                    st.markdown(metric_card("Còn thiếu so với mục tiêu (VNĐ)", fmt_money(thieu), None,
-                                            sub="nếu giữ nguyên tốc độ", ky=f"Tháng {b_kd:%m/%Y}"),
-                                unsafe_allow_html=True)
+                    chenh = forecast_dt - target_dt
+                    tl = forecast_dt / target_dt * 100 if target_dt else 0.0
+                    if chenh >= 0:      # dự kiến vượt: không ghi "Còn thiếu 0 đ" gây hiểu nhầm
+                        html = metric_card("Dự kiến vượt mục tiêu (VNĐ)", "+" + fmt_money(chenh), None,
+                                           sub=f"dự kiến đạt {tl:.0f}% mục tiêu nếu giữ nguyên tốc độ",
+                                           ky=f"Tháng {b_kd:%m/%Y}")
+                        html = html.replace("class='metric-card ", "class='metric-card ok ", 1) \
+                                   .replace("class='m-value ", "class='m-value ok ", 1)
+                    else:
+                        html = metric_card("Còn thiếu so với mục tiêu (VNĐ)", fmt_money(-chenh), None,
+                                           sub=f"dự kiến chỉ đạt {tl:.0f}% mục tiêu nếu giữ nguyên tốc độ",
+                                           ky=f"Tháng {b_kd:%m/%Y}")
+                        html = html.replace("class='metric-card ", "class='metric-card bad ", 1) \
+                                   .replace("class='m-value ", "class='m-value bad ", 1)
+                    st.markdown(html, unsafe_allow_html=True)
 
             section("3. Biểu đồ doanh thu theo ngày")
             # Lọc 1 ngày / vài ngày thì biểu đồ vẫn vẽ 7 ngày gần nhất để thấy diễn biến.
@@ -4833,7 +4883,7 @@ TIẾN ĐỘ THÁNG:
 - Mục tiêu tháng: {fmt_money(target_dt)}
 - Đã qua {days_done}/{days_total} ngày
 - Dự phóng cuối tháng: {fmt_money(forecast_dt)}
-- Còn thiếu so với mục tiêu: {fmt_money(max(target_dt - forecast_dt, 0))}
+- {"Dự kiến vượt mục tiêu" if forecast_dt >= target_dt else "Còn thiếu so với mục tiêu"}: {fmt_money(abs(target_dt - forecast_dt))} (dự kiến đạt {forecast_dt / target_dt * 100 if target_dt else 0:.0f}% mục tiêu)
 
 KHÁCH HÀNG: {len(pheu_df) if not pheu_df.empty else 0} khách trong phễu.""")
 
@@ -5176,7 +5226,7 @@ if PAGE == "nang_suat":
                     tmp["_l"] = pd.to_numeric(tmp[c_ltc_l], errors="coerce") if c_ltc_l else np.nan
                     g_pay = tmp.groupby("Ngày", as_index=False).agg(Lương=("Tổng Lương", "sum"),
                                                                     GTC=("_g", "sum"), LTC=("_l", "sum"))
-                    plot_chart(luong_don_fig(g_pay), width="stretch")
+                    ve_luong_don(g_pay)
                 else:
                     note("Chưa đọc được các cột LHH LTC, LHH GTC, LHH GTBTT.")
 
@@ -5605,9 +5655,8 @@ def kpi_cong_ty(bc: str, a, b) -> None:
     def card(name, value, target, hib, unit, sub, spark, fmtv):
         val = fmtv(value) if value is not None else NO_DATA
         if target is not None and value is not None:
-            moc = f"KPI {'≥' if hib else '≤'} {fmtv(target)}"
-            html = metric_card(name, val, value - target, unit, hib, True, sub=f"so với {moc} · {sub}".rstrip(" ·"),
-                               ky=ky, spark=spark)
+            # viền + màu số theo đạt/chưa KPI, dòng "KPI ≥ x · thiếu y" do metric_card ghi
+            html = metric_card(name, val, None, unit, hib, sub=sub, ky=ky, spark=spark, target=target, actual=value)
         else:
             html = metric_card(name, val, None, unit, hib, sub=(sub + " · " if sub else "") + "chưa có KPI",
                                ky=ky, spark=spark)
@@ -6030,6 +6079,13 @@ if PAGE == "thi_dua":
                 with _sub_tab7[0]:
                     # ── Bục vinh danh ──────────────────────────────────────────────
                     section("Vinh danh top 3")
+                    # Ghi rõ tiêu chí: người %GTC thấp hơn vẫn có thể đứng trên nhờ gán nhiều / cải thiện nhiều.
+                    st.markdown(
+                        "<div class='note-box' style='text-align:left'><b>Cách xếp hạng:</b> điểm xếp hạng = trung bình "
+                        "3 thứ hạng (sản lượng gán, %GTC, mức cải thiện so với kỳ trước), <b>điểm càng nhỏ càng tốt</b>; "
+                        "bằng điểm thì ai %GTC cao hơn xếp trên. <b>Điều kiện nhận thưởng:</b> %GTC kỳ này từ 80% trở lên "
+                        "— chưa đạt thì suất thưởng chuyển cho người đủ điều kiện kế tiếp.</div>",
+                        unsafe_allow_html=True)
                     top3 = bxh[bxh["Hạng Thưởng"].notna()].sort_values("Hạng Thưởng")
                     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
                     pcols = st.columns(3)
@@ -6053,10 +6109,15 @@ if PAGE == "thi_dua":
                     <div class="metric-card" style="border-left-color:{SUCCESS};text-align:center;">
                         <div style="font-size:calc(35.75px * var(--fs));line-height:1;">{medals[hang_thuong]}</div>
                         <div class="m-title" style="margin-top:6px;">{esc(staff_label(row['Nhân Viên']))}</div>
-                        <div class="m-value">{row[col_now]:.2f}%</div>
+                        <div class="m-value">{row['Tổng Điểm']:.2f} <span style="font-size:0.45em">điểm</span></div>
                         <div class="m-delta up">{thuong_txt(hang_thuong)}</div>
+                        <div style="font-size:calc(14px * var(--fs));color:{TEXT};margin-top:6px;font-weight:700;">
+                            Gán #{int(row['Xếp Hạng Gán'])} · %GTC #{int(row['Xếp Hạng %GTC'])}
+                            · Cải thiện #{int(row['Xếp Hạng Cải Thiện'])}
+                        </div>
                         <div style="font-size:calc(14px * var(--fs));color:{MUTED};margin-top:4px;">
-                            {row['Gán']:,.0f} đơn gán · {row['GTC']:,.0f} đơn GTC · {ghi_chu}
+                            %GTC {row[col_now]:.2f}% · {fmt_int(row['Gán'])} đơn gán · {fmt_int(row['GTC'])} đơn GTC
+                            · cải thiện {row['Tỷ Lệ Cải Thiện']:+.2f}% · {ghi_chu}
                         </div>
                     </div>""", unsafe_allow_html=True)
 
