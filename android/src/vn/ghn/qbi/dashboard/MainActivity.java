@@ -2,6 +2,10 @@ package vn.ghn.qbi.dashboard;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.SharedPreferences;
+import android.text.InputType;
+import android.widget.EditText;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
@@ -44,6 +48,7 @@ public class MainActivity extends Activity {
     private static final int ORANGE = Color.parseColor("#FF8C00");
     private static final int MUTED = Color.parseColor("#6C757D");
     private static final String RETRY = "ghnapp://retry";
+    private static final String SET_URL = "ghnapp://seturl";
 
     private WebView web;
     private ProgressBar bar;
@@ -61,9 +66,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        baseUrl = getString(R.string.base_url).trim();
-        while (baseUrl.endsWith("/")) baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
-        baseHost = Uri.parse(baseUrl).getHost();
+        // Địa chỉ dashboard: ghi sẵn lúc build (build.sh <url>); nếu chưa ghi thì hỏi ở lần mở đầu tiên và nhớ lại.
+        String baked = getString(R.string.base_url).trim();
+        String saved = prefs().getString("url", null);
+        setBase(isBaked(baked) ? baked : (saved != null ? saved : ""));
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.WHITE);
@@ -83,7 +89,9 @@ public class MainActivity extends Activity {
         setContentView(root);
         setupWebView();
 
-        if (savedInstanceState != null && web.restoreState(savedInstanceState) != null) {
+        if (baseUrl.isEmpty()) {
+            askUrl();
+        } else if (savedInstanceState != null && web.restoreState(savedInstanceState) != null) {
             hideSplash(0);
         } else {
             web.loadUrl(baseUrl);
@@ -92,6 +100,54 @@ public class MainActivity extends Activity {
         ui.postDelayed(() -> {
             if (!splashHidden) splashStatus.setText("Máy chủ đang khởi động, có thể mất tới 1 phút…");
         }, 12000);
+    }
+
+    private SharedPreferences prefs() {
+        return getSharedPreferences("ghn_dashboard", MODE_PRIVATE);
+    }
+
+    private static boolean isBaked(String u) {
+        return u.startsWith("http") && !u.contains("example.onrender.com");
+    }
+
+    private void setBase(String u) {
+        u = u.trim();
+        while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+        baseUrl = u;
+        baseHost = u.isEmpty() ? null : Uri.parse(u).getHost();
+    }
+
+    /** Hỏi địa chỉ dashboard (chỉ khi APK chưa được ghi sẵn địa chỉ lúc build). */
+    private void askUrl() {
+        final EditText in = new EditText(this);
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        in.setHint("https://ten-app.onrender.com");
+        if (!baseUrl.isEmpty()) in.setText(baseUrl);
+        LinearLayout pad = new LinearLayout(this);
+        pad.setPadding(dp(20), dp(8), dp(20), 0);
+        pad.addView(in, new LinearLayout.LayoutParams(-1, -2));
+        new AlertDialog.Builder(this)
+                .setTitle("Địa chỉ dashboard")
+                .setMessage("Nhập địa chỉ dashboard trên Render (chỉ cần nhập một lần).")
+                .setView(pad)
+                .setCancelable(false)
+                .setPositiveButton("Mở dashboard", (d, w) -> {
+                    String u = in.getText().toString().trim();
+                    if (!u.startsWith("http")) u = "https://" + u;
+                    if (Uri.parse(u).getHost() == null || !u.contains(".")) {
+                        Toast.makeText(this, "Địa chỉ chưa đúng, hãy nhập lại", Toast.LENGTH_SHORT).show();
+                        askUrl();
+                        return;
+                    }
+                    setBase(u);
+                    prefs().edit().putString("url", baseUrl).apply();
+                    pageError = false;
+                    splashHidden = false;
+                    splash.setAlpha(1f);
+                    splash.setVisibility(View.VISIBLE);
+                    web.loadUrl(baseUrl);
+                })
+                .show();
     }
 
     private View buildSplash() {
@@ -195,6 +251,10 @@ public class MainActivity extends Activity {
             web.loadUrl(baseUrl);
             return true;
         }
+        if (url.equals(SET_URL)) {
+            askUrl();
+            return true;
+        }
         String scheme = u.getScheme() == null ? "" : u.getScheme();
         if ((scheme.equals("https") || scheme.equals("http")) && baseHost != null && baseHost.equalsIgnoreCase(u.getHost())) {
             return false;
@@ -224,7 +284,11 @@ public class MainActivity extends Activity {
                 + "<h2>Không kết nối được dashboard</h2>"
                 + "<p>Kiểm tra kết nối mạng (Wi-Fi / 4G) rồi bấm thử lại.<br>"
                 + "Nếu máy chủ vừa khởi động, chờ khoảng 1 phút.</p>"
-                + "<a href='" + RETRY + "'>THỬ LẠI</a></body></html>";
+                + "<a href='" + RETRY + "'>THỬ LẠI</a>"
+                + (isBaked(getString(R.string.base_url).trim()) ? "" :
+                   "<p style='margin-top:28px'><a href='" + SET_URL + "' style='background:#0077B6'>ĐỔI ĐỊA CHỈ</a></p>"
+                   + "<p style='color:#6C757D;font-size:13px'>Đang mở: " + baseUrl + "</p>")
+                + "</body></html>";
         web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
         hideSplash(0);
     }
