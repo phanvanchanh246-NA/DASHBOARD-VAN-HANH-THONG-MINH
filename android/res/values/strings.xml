@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GHN Dashboard</string>
+    <!-- Địa chỉ dashboard trên Render. build.sh ghi đè giá trị này theo tham số khi build. -->
+    <string name="base_url">https://example.onrender.com</string>
+</resources>

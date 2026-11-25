@@ -712,6 +712,16 @@ st.html("""<script>
 })();
 </script>""", unsafe_allow_javascript=True)
 
+def _in_app() -> bool:
+    """Đang mở bằng app Android GHN Dashboard (WebView thêm 'GHNDashboardApp' vào User-Agent)."""
+    try:
+        return "GHNDashboardApp" in (st.context.headers.get("User-Agent") or "")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+IN_APP = _in_app()
+
 APP_INSTALL_GUIDE = """
 **iPhone (Safari)**
 1. Mở dashboard bằng **Safari**.
@@ -3777,8 +3787,9 @@ def login_screen():
                 else:
                     st.error("ID không có quyền truy cập.")
 
-        with st.expander("📱 Cài dashboard lên điện thoại"):
-            st.markdown(APP_INSTALL_GUIDE)
+        if not IN_APP:
+            with st.expander("📱 Cài dashboard lên điện thoại"):
+                st.markdown(APP_INSTALL_GUIDE)
 
 
 if st.session_state.auth is None and not st.session_state.get("_logged_out"):
@@ -4059,8 +4070,9 @@ with st.sidebar:
         st.session_state["_logged_out"] = True        # không tự đăng nhập lại bằng cookie trong phiên này
         st.session_state["_clear_auth_cookie"] = True
         st.rerun()
-    with st.expander("📱 Cài lên điện thoại"):
-        st.markdown(APP_INSTALL_GUIDE)
+    if not IN_APP:
+        with st.expander("📱 Cài lên điện thoại"):
+            st.markdown(APP_INSTALL_GUIDE)
     if APP_VERSION:
         st.caption(f"Phiên bản: {APP_VERSION}")
     cau_hinh_loi = _kiem_tra_nguon()

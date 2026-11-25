@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ghn_blue">#0077B6</color>
+    <color name="ghn_orange">#FF8C00</color>
+
+    <!-- Màn hình chờ hiện ngay khi bấm icon (trước khi app kịp vẽ): nền trắng + logo GHN. -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash</item>
+        <item name="android:statusBarColor">@color/ghn_blue</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:colorPrimary">@color/ghn_blue</item>
+        <item name="android:colorAccent">@color/ghn_orange</item>
+    </style>
+</resources>
