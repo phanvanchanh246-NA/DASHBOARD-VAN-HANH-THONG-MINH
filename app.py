@@ -5201,11 +5201,22 @@ if PAGE == "nang_suat":
         with n1:
             bc_ns = st.selectbox("Bưu cục", ALL_BC, key="bc_ns")
 
-        # Gom danh sách nhân viên từ CẢ HAI sheet, gộp theo mã để không bị trùng dòng.
+        # Chọn khoảng ngày TRƯỚC (ô vẫn nằm ở cột thứ 3) để danh sách nhân viên chỉ gồm người có số liệu
+        # trong khoảng đó — không hiện người đã nghỉ / chưa vào làm / không có đơn trong kỳ đang xem.
+        with n3:
+            ns_pa, ns_pb, _, _, _, _ = pay_period(REF_DATE)
+            a_ns, b_ns = date_range_picker("Khoảng ngày (theo kỳ lương)", ns_pa, ns_pb, "date_ns")
+
+        # Gom danh sách nhân viên từ các sheet, gộp theo mã để không bị trùng dòng.
+        c_gan_ds = pick_col(DF_NSGTC, [["san luong gan"], ["gan"]])
         staff_map: dict[str, str] = {}
         for _df, _col in ((DF_LUONG, nv_col_luong), (DF_NSGTC, nv_col_gtc), (DF_LUONG_NGAY, nv_col_ln)):
             if _col and not _df.empty:
                 _scoped = _df if bc_ns == "Tất cả" else _df[_df["Bưu Cục"].map(norm) == norm(bc_ns)]
+                if "Ngày" in _scoped.columns:
+                    _scoped = _scoped[(_scoped["Ngày"] >= a_ns) & (_scoped["Ngày"] <= b_ns)]
+                if _df is DF_NSGTC and c_gan_ds:      # sheet năng suất: chỉ tính ngày có đơn gán
+                    _scoped = _scoped[pd.to_numeric(_scoped[c_gan_ds], errors="coerce").fillna(0) > 0]
                 for raw in _scoped[_col].dropna().astype(str).str.strip().unique():
                     if not raw or raw == "nan":
                         continue
@@ -5215,12 +5226,13 @@ if PAGE == "nang_suat":
                         staff_map[key_id] = raw
 
         staff_display = {staff_label(v): k for k, v in staff_map.items()}
+        nv_opts = ["Tất cả"] + sorted(staff_display)
+        if st.session_state.get("nv_ns") not in nv_opts:      # người đang chọn không có số liệu trong khoảng mới
+            st.session_state["nv_ns"] = "Tất cả"
         with n2:
-            nv_ns = st.selectbox("Nhân viên", ["Tất cả"] + sorted(staff_display), key="nv_ns")
+            nv_ns = st.selectbox("Nhân viên", nv_opts, key="nv_ns",
+                                 help=f"{len(staff_display)} nhân viên có số liệu trong khoảng ngày đã chọn")
         nv_id = staff_display.get(nv_ns)
-        with n3:
-            ns_pa, ns_pb, _, _, _, _ = pay_period(REF_DATE)
-            a_ns, b_ns = date_range_picker("Khoảng ngày (theo kỳ lương)", ns_pa, ns_pb, "date_ns")
 
         def filter_staff(df, col):
             if df is None or df.empty:
@@ -6518,16 +6530,20 @@ def truy_thu_page() -> None:
         bc_tt = st.selectbox("Bưu cục", ALL_BC, key="bc_tt")
     d = tt if bc_tt == "Tất cả" else tt[tt["Bưu Cục"].map(norm) == norm(bc_tt)]
     d = d.assign(MaNV=d[c["nv"]].map(staff_id))
-    ten_nv = d.groupby("MaNV")[c["nv"]].last().map(staff_label)
-    with r2:
-        nv_tt = st.selectbox("Nhân viên", ["Tất cả"] + sorted(ten_nv), key="nv_tt")
-    with r3:
+    with r3:      # chọn khoảng ngày trước để danh sách nhân viên chỉ gồm người có khoản truy thu trong khoảng đó
         tt_max = tt["Ngày"].max() if tt["Ngày"].notna().any() else REF_DATE
         a_tt, b_tt = date_range_picker("Khoảng ngày kết luận truy thu", tt_max.replace(day=1), tt_max,
                                        "date_tt")
+    d = d[(d["Ngày"] >= a_tt) & (d["Ngày"] <= b_tt)]
+    ten_nv = d.groupby("MaNV")[c["nv"]].last().map(staff_label)
+    tt_opts = ["Tất cả"] + sorted(ten_nv)
+    if st.session_state.get("nv_tt") not in tt_opts:
+        st.session_state["nv_tt"] = "Tất cả"
+    with r2:
+        nv_tt = st.selectbox("Nhân viên", tt_opts, key="nv_tt",
+                             help=f"{len(ten_nv)} nhân viên có khoản truy thu trong khoảng ngày đã chọn")
     if nv_tt != "Tất cả":
         d = d[d["MaNV"].map(ten_nv) == nv_tt]
-    d = d[(d["Ngày"] >= a_tt) & (d["Ngày"] <= b_tt)]
 
     num = lambda k: (pd.to_numeric(d[c[k]], errors="coerce").fillna(0) if c[k]   # noqa: E731
                      else pd.Series(0.0, index=d.index))
