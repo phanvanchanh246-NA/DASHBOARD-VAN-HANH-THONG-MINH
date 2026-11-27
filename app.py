@@ -2937,6 +2937,16 @@ def luong_don_fig(g: pd.DataFrame, title: str = "Tổng lương, đơn GTC và L
     return fig
 
 
+def luong_ngay(ma: str, a, b) -> pd.Series:
+    """Tổng lương từng ngày của một nhân viên trong [a, b] (sheet Lương), index là Ngày."""
+    ln = DF_LUONG_NGAY
+    c_nv, c_t = pick_col(ln, [["nhan vien"]]), pick_col(ln, [["tong luong"]])
+    if ln.empty or not (c_nv and c_t):
+        return pd.Series(dtype=float)
+    x = ln[(ln[c_nv].map(staff_id) == ma) & (ln["Ngày"] >= a) & (ln["Ngày"] <= b)]
+    return pd.to_numeric(x[c_t], errors="coerce").groupby(x["Ngày"]).sum(min_count=1)
+
+
 def luong_staff_chart(ma: str, a, b):
     """Biểu đồ theo ngày của một nhân viên: cột đơn gán, đơn GTC (sheet năng suất) và đường lương ngày
     (sheet Lương). Khoảng ngắn thì kéo về đủ 14 ngày tính tới ngày cuối để thấy diễn biến."""
@@ -2946,12 +2956,7 @@ def luong_staff_chart(ma: str, a, b):
     ns = ns[(ns["MaNV"] == ma) & (ns["Ngày"] >= a) & (ns["Ngày"] <= b)]
     ns = ns.groupby("Ngày")[["Gán", "GTC"]].sum()
     ns = ns[(ns["Gán"] > 0) | (ns["GTC"] > 0)]
-    ln = DF_LUONG_NGAY
-    c_nv, c_t = pick_col(ln, [["nhan vien"]]), pick_col(ln, [["tong luong"]])
-    luong = pd.Series(dtype=float)
-    if c_nv and c_t:
-        x = ln[(ln[c_nv].map(staff_id) == ma) & (ln["Ngày"] >= a) & (ln["Ngày"] <= b)]
-        luong = x.groupby("Ngày")[c_t].sum()
+    luong = luong_ngay(ma, a, b)
     # Chỉ những ngày có đơn hoặc có lương; ngày nghỉ không hiện trên trục.
     days = pd.DatetimeIndex(sorted(set(ns.index) | set(luong.dropna().index))) if len(ns) or len(luong) \
         else pd.DatetimeIndex([b])
@@ -3493,21 +3498,61 @@ YÊU CẦU — CHỈ GHI VIỆC NVXL PHẢI LÀM VÀ HẠN BÁO CÁO:
 
 # ── Chi tiết một nhân viên + hướng dẫn trao đổi 1:1 ─────────────────────
 def hr_staff_chart(daily: pd.DataFrame, ma: str, ref: pd.Timestamp, low: float, days: int = 30):
-    """Biểu đồ 30 ngày của một nhân viên: cột đơn gán, đơn GTC và đường %GTC.
-    Chỉ vẽ những ngày có đơn: ngày nghỉ / vắng không hiện trên trục (số ngày có đơn ghi ở ô bên trên)."""
+    """Biểu đồ 30 ngày của một nhân viên, ba hàng chung trục ngày: %GTC (có ngưỡng cảnh báo), lương ngày
+    (sheet Lương) và cột đơn gán / đơn GTC. Chỉ vẽ những ngày có đơn hoặc có lương: ngày nghỉ không hiện."""
     ref = pd.Timestamp(ref).normalize()
     a = ref - pd.Timedelta(days=days - 1)
     d = daily[(daily["MaNV"] == ma) & (daily["Ngày"] >= a) & (daily["Ngày"] <= ref)]
     d = d.groupby("Ngày", as_index=False)[["Gán", "GTC"]].sum()
-    d = d[(d["Gán"] > 0) | (d["GTC"] > 0)].sort_values("Ngày").reset_index(drop=True)
+    d = d[(d["Gán"] > 0) | (d["GTC"] > 0)]
+    luong = luong_ngay(ma, a, ref).dropna()
+    luong = luong[luong != 0]
+    d = (d.merge(luong.rename("Lương").rename_axis("Ngày").reset_index(), on="Ngày", how="outer")
+          .sort_values("Ngày").reset_index(drop=True))
     if d.empty:     # cả 30 ngày không có đơn: trả khung rỗng, nơi gọi tự báo
-        d = pd.DataFrame({"Ngày": [ref], "Gán": [0], "GTC": [0]})
+        d = pd.DataFrame({"Ngày": [ref], "Gán": [0], "GTC": [0], "Lương": [np.nan]})
+    d[["Gán", "GTC"]] = d[["Gán", "GTC"]].fillna(0)
     d["r"] = np.where(d["Gán"] > 0, d["GTC"] / d["Gán"].where(d["Gán"] > 0) * 100, np.nan)
-    # Hàng trên: %GTC (trục phóng theo dữ liệu) + ngưỡng cảnh báo; hàng dưới: đơn gán / đơn GTC từ 0.
-    fig = two_row_fig(d["Ngày"], [("Đơn gán", d["Gán"], COL_VOL), ("Đơn GTC", d["GTC"], PRIMARY)],
-                      [("% GTC", d["r"], PRIMARY, "circle")], f"Đơn gán · GTC · %GTC — {days} ngày gần nhất",
-                      target=low, height=470)
-    fig.for_each_trace(lambda t: t.update(name=f"Ngưỡng cảnh báo {low:g}%") if t.name.startswith("KPI") else None)
+
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.36, 0.3, 0.34], vertical_spacing=0.06)
+    x = d["Ngày"]
+    # Hàng 1: %GTC + ngưỡng cảnh báo (trục phóng theo dữ liệu)
+    fig.add_trace(go.Scatter(x=x, y=d["r"], name="% GTC", mode="lines+markers+text", line=dict(color=PRIMARY, width=3),
+                             marker=dict(size=7, line=dict(width=1.5, color="#FFF")),
+                             text=key_labels(d["r"], pct_label, low, True), textposition="top center",
+                             textfont=dict(color=PRIMARY, **LABEL_FONT), cliponaxis=False,
+                             hovertemplate="%{x|%d/%m}<br>%GTC %{y:.2f}%<extra></extra>"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=[x.iloc[0], x.iloc[-1]], y=[low, low], mode="lines", hoverinfo="skip",
+                             name=f"Ngưỡng cảnh báo {low:g}%", line=KPI_LINE), row=1, col=1)
+    rng = zoom_range(list(d["r"]) + [low], True)
+    fig.update_yaxes(title_text="%GTC", ticksuffix="%", row=1, col=1, **({"range": rng} if rng else {}))
+    # Hàng 2: lương ngày (sheet Lương)
+    fig.add_trace(go.Scatter(x=x, y=d["Lương"], name="Lương ngày (đ)", mode="lines+markers+text",
+                             line=dict(color=SUCCESS, width=3), connectgaps=True,
+                             marker=dict(size=7, symbol="diamond", line=dict(width=1.5, color="#FFF")),
+                             text=key_labels(d["Lương"], lambda v: f"{v / 1000:,.0f}k".replace(",", ".")),
+                             textposition="top center",
+                             textfont=dict(color=SUCCESS, **LABEL_FONT), cliponaxis=False,
+                             hovertemplate="%{x|%d/%m}<br>Lương %{y:,.0f} đ<extra></extra>"), row=2, col=1)
+    rng_l = zoom_range(list(d["Lương"]), False)
+    fig.update_yaxes(title_text="Lương (nghìn đ)", row=2, col=1, **({"range": rng_l} if rng_l else {}))
+    if rng_l:
+        # vạch tròn số (bước 50k / 100k / 200k…) ghi kiểu "300k"
+        buoc = next((b for b in (50_000, 100_000, 200_000, 500_000, 1_000_000) if (rng_l[1] - rng_l[0]) / b <= 4),
+                    2_000_000)
+        tv = [v for v in np.arange(np.ceil(rng_l[0] / buoc) * buoc, rng_l[1], buoc)]
+        fig.update_yaxes(tickvals=tv, ticktext=[f"{v / 1000:,.0f}k".replace(",", ".") for v in tv], row=2, col=1)
+    # Hàng 3: đơn gán / đơn GTC, trục từ 0
+    nhieu = len(d) > 10
+    for name, y, color in (("Đơn gán", d["Gán"], COL_VOL), ("Đơn GTC", d["GTC"], PRIMARY)):
+        fig.add_trace(go.Bar(x=x, y=y, name=name, marker_color=color, marker_line_width=0,
+                             text=point_labels(y, num_label), textposition="outside", cliponaxis=False,
+                             textangle=-90 if nhieu else 0, textfont=dict(color=MUTED, **LABEL_FONT),
+                             hovertemplate="%{x|%d/%m}<br>" + name + " %{y:,.0f}<extra></extra>"), row=3, col=1)
+    bmax = float(np.nan_to_num(max(d["Gán"].max(), d["GTC"].max()))) or 1.0
+    fig.update_yaxes(title_text="Số đơn", row=3, col=1, range=[0, bmax * 1.35])
+    fig.update_layout(title=f"Đơn gán · GTC · %GTC · Lương — {days} ngày gần nhất", height=640,
+                      barmode="group", bargap=0.25)
     return fig, d
 
 
@@ -5221,7 +5266,7 @@ if PAGE == "canh_bao_ns":
                         section(f"Chi tiết: {r_nv['Nhân viên']}")
                         fig_nv, d_nv = hr_staff_chart(hr_day, r_nv["_ma"], hr_ref, hr_low)
                         co_lam = d_nv[d_nv["Gán"] > 0]
-                        m1, m2, m3, m4 = st.columns(4)
+                        m1, m2, m3, m5, m4 = st.columns(5)
                         p7, p_prev = r_nv["%GTC 7 ngày"], r_nv["%GTC 7 ngày trước"]
                         co_p7, co_prev = p7 is not None and pd.notna(p7), p_prev is not None and pd.notna(p_prev)
                         with m1:
@@ -5244,6 +5289,16 @@ if PAGE == "canh_bao_ns":
                                                     sub=f"làm gần nhất {pd.Timestamp(r_nv['Ngày làm cuối']):%d/%m}",
                                                     ky=fmt_ky(hr_ref - timedelta(days=29), hr_ref)),
                                         unsafe_allow_html=True)
+                        with m5:
+                            l30 = (d_nv.set_index("Ngày")["Lương"].dropna() if "Lương" in d_nv
+                                   else pd.Series(dtype=float))
+                            st.markdown(metric_card("Lương 30 ngày (VNĐ)", fmt_money(l30.sum()) if len(l30) else "—",
+                                                    None, "đ",
+                                                    sub=(f"TB {fmt_money(l30.mean())}/ngày · {len(l30)} ngày có lương"
+                                                         if len(l30) else "chưa có số trong sheet Lương"),
+                                                    ky=fmt_ky(hr_ref - timedelta(days=29), hr_ref),
+                                                    spark=spark_by_day(l30) if len(l30) else None, spark_fmt="%d/%m"),
+                                        unsafe_allow_html=True)
                         with m4:
                             st.markdown(metric_card("Mức cảnh báo", str(r_nv["Mức"]), None,
                                                     sub=r_nv["_tags"].replace("|", " · "), accent=r_nv["Mức"] == "Cao",
@@ -5254,8 +5309,9 @@ if PAGE == "canh_bao_ns":
                         section("Hướng dẫn NVXL trao đổi 1:1")
                         def hr_prompt() -> str:
                             ngay_txt = "\n".join(
-                                f"  {x['Ngày']:%d/%m}: {int(x['Gán'])} / {int(x['GTC'])} / {x['r']:.1f}%"
-                                if x["Gán"] > 0 else f"  {x['Ngày']:%d/%m}: không có đơn"
+                                (f"  {x['Ngày']:%d/%m}: {int(x['Gán'])} / {int(x['GTC'])} / {x['r']:.1f}%"
+                                 if x["Gán"] > 0 else f"  {x['Ngày']:%d/%m}: không có đơn")
+                                + (f" · lương {fmt_money(x['Lương'])}" if pd.notna(x.get("Lương")) else "")
                                 for _, x in d_nv.tail(14).iterrows())
                             return hr_1on1_prompt(r_nv, hr_low, ngay_txt)
 
