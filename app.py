@@ -1370,7 +1370,7 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
         dcls = "flat" if flat else ("up" if good else "down")
         arrow = "" if flat else ("▲" if delta > 0 else "▼")
         if unit == "%":
-            txt = f"{arrow} {abs(delta):,.2f} điểm %"
+            txt = f"{arrow} {abs(delta):,.2f}%"
         elif unit == "đ":
             txt = f"{arrow} {fmt_money(abs(delta))}"
         else:
@@ -1384,7 +1384,7 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
         cls = vcls = "ok" if dat else "bad"
         gap = abs(actual - target)
         if unit == "%":
-            gtxt = f"{gap:,.2f} điểm %"
+            gtxt = f"{gap:,.2f}%"
             ktxt = f"{target:g}%"
         elif unit == "đ":
             gtxt, ktxt = fmt_money(gap), fmt_money(target)
@@ -1660,16 +1660,9 @@ def point_labels(values, fmt, max_labels: int = 16, offset: int = 0) -> list[str
 
 
 def key_labels(values, fmt, target: float | None = None, hib: bool = True) -> list[str]:
-    """Nhãn cho biểu đồ ĐƯỜNG: chỉ ghi điểm cuối, điểm cao nhất, thấp nhất và các điểm không đạt KPI
-    (còn lại di chuột / chạm để xem). Ghi mọi điểm làm nhãn chồng lên nhau, khó đọc."""
-    vals = [None if v is None or pd.isna(v) else float(v) for v in values]
-    co = [i for i, v in enumerate(vals) if v is not None]
-    if not co:
-        return [""] * len(vals)
-    giu = {co[-1], max(co, key=lambda i: vals[i]), min(co, key=lambda i: vals[i])}
-    if target:
-        giu |= {i for i in co if (vals[i] < target if hib else vals[i] > target)}
-    return [fmt(v) if i in giu and v is not None else "" for i, v in enumerate(vals)]
+    """Nhãn cho biểu đồ đường: ghi số ở TỪNG ngày (theo yêu cầu hiển thị đầy đủ số liệu các ngày).
+    `target`, `hib` giữ cho tương thích chỗ gọi cũ."""
+    return [fmt(v) if v is not None and pd.notna(v) else "" for v in values]
 
 
 def zoom_range(values, pct: bool = True, pad_min: float = 2.0) -> list[float] | None:
@@ -1872,8 +1865,8 @@ def kpi_progress(name: str, value: float | None, target: float, hib: bool = True
         return None
     ok = value >= target if hib else value <= target
     gap = abs(value - target)
-    chip = (f"<span class='kpi-chip ok'>ĐẠT · {'vượt' if hib else 'thấp hơn'} {gap:,.2f} điểm %</span>" if ok else
-            f"<span class='kpi-chip bad'>CHƯA ĐẠT · {'thiếu' if hib else 'vượt'} {gap:,.2f} điểm %</span>")
+    chip = (f"<span class='kpi-chip ok'>ĐẠT · {'vượt' if hib else 'thấp hơn'} {gap:,.2f}%</span>" if ok else
+            f"<span class='kpi-chip bad'>CHƯA ĐẠT · {'thiếu' if hib else 'vượt'} {gap:,.2f}%</span>")
     with c1:
         st.markdown(f"<div class='kpi-box {'ok' if ok else 'bad'}'><div class='kpi-name'>{esc(name)}</div>"
                     f"<div class='kpi-val {'ok' if ok else 'bad'}'>{value:,.2f}%</div>"
@@ -2186,7 +2179,7 @@ def render_improve_image(rows: pd.DataFrame, title: str, subtitle: str, footer: 
     d.text((r_now, mid), now_label.upper(), font=f_th, fill=c_primary, anchor="rm")
     d.text((bar_c - 12 * S, mid), "GIẢM", font=f_th, fill=c_bad, anchor="rm")
     d.text((bar_c + 12 * S, mid), "TĂNG", font=f_th, fill=c_ok, anchor="lm")
-    d.text((r_val, mid), "ĐIỂM %", font=f_th, fill=c_primary, anchor="rm")
+    d.text((r_val, mid), "CẢI THIỆN", font=f_th, fill=c_primary, anchor="rm")
     y += TH_H
 
     for i, r in enumerate(rows.itertuples(index=False)):
@@ -2218,7 +2211,7 @@ def render_improve_image(rows: pd.DataFrame, title: str, subtitle: str, footer: 
             box = ([bar_c, cy - bh // 2, bar_c + w, cy + bh // 2] if v >= 0
                    else [bar_c - w, cy - bh // 2, bar_c, cy + bh // 2])
             d.rounded_rectangle(box, radius=6 * S, fill=c_ok if v >= 0 else c_bad)
-            d.text((r_val, cy), f"{v:+.2f}", font=f_tdb, fill=c_ok if v >= 0 else c_bad, anchor="rm")
+            d.text((r_val, cy), f"{v:+.2f}%", font=f_tdb, fill=c_ok if v >= 0 else c_bad, anchor="rm")
         else:
             d.text((r_val, cy), "Mới", font=f_td, fill=c_muted, anchor="rm")
         y += ROW_H
@@ -2237,7 +2230,7 @@ def improve_notice_prompt(ky: str, ky_truoc: str, pham_vi: str, n_total: int, n_
 SỐ LIỆU THẬT (chỉ dùng đúng những số này):
 - Kỳ đánh giá: {ky}, so với {ky_truoc}. Phạm vi: {pham_vi}.
 - {n_total} nhân viên có số liệu cả hai kỳ: {n_up} người tăng, {n_down} người giảm.
-  Mức thay đổi trung bình: {avg:+.2f} điểm %.
+  Mức thay đổi trung bình: {avg:+.2f}%.
 - Cải thiện nhiều nhất:
 {tang_txt or "  (không có ai tăng)"}
 - Giảm nhiều nhất:
@@ -2249,8 +2242,8 @@ YÊU CẦU:
 - Bố cục, giữa các phần có MỘT DÒNG TRỐNG:
   1) Tiêu đề ngắn kèm kỳ đánh giá.
   2) Nhận xét chung 1–2 câu: bao nhiêu người tăng/giảm, xu hướng chung.
-  3) Tuyên dương: mỗi người cải thiện tốt một dòng "▲ Tên: +x,xx điểm % (a% → b%)".
-  4) Cần cố gắng: mỗi người giảm một dòng "▼ Tên: -x,xx điểm % (a% → b%)" kèm MỘT gợi ý ngắn, cụ thể
+  3) Tuyên dương: mỗi người cải thiện tốt một dòng "▲ Tên: +x,xx% (a% → b%)".
+  4) Cần cố gắng: mỗi người giảm một dòng "▼ Tên: -x,xx% (a% → b%)" kèm MỘT gợi ý ngắn, cụ thể
      (ví dụ gọi khách trước khi giao, sắp tuyến hợp lý, báo NVXL đơn khó). Giọng xây dựng, không chê bai.
   5) Một câu chốt động viên cả đội cho kỳ tới.
 - Giữ nguyên cách viết tên như trong số liệu (bỏ mã số). Không bịa thêm số liệu hay thưởng phạt.
@@ -3275,8 +3268,8 @@ def hr_warnings(daily: pd.DataFrame, ref: pd.Timestamp, low: float = 70.0, strea
         if (p_rec is not None and p_prev is not None and rec["Gán"].sum() >= 30
                 and prev["Gán"].sum() >= 30 and p_prev - p_rec >= drop):
             flags.append("drop")
-            tags.append(f"Giảm {p_prev - p_rec:.1f} điểm %")
-            desc.append(f"%GTC giảm {p_prev - p_rec:.1f} điểm % ({p_prev:.1f}% → {p_rec:.1f}%)")
+            tags.append(f"Giảm {p_prev - p_rec:.1f}%")
+            desc.append(f"%GTC giảm {p_prev - p_rec:.1f}% ({p_prev:.1f}% → {p_rec:.1f}%)")
             score += 2 if p_prev - p_rec >= 2 * drop else 1
         med = med_bc.get(bc)
         if ma in per_staff.index and med and avg_gan is not None and avg_gan < med * ratio / 100:
@@ -3670,7 +3663,7 @@ def bc_1on1_guide(r, extra: dict) -> str:
     tgt = r["KPI"]
     so_lieu = [f"%GTC dưới KPI {tgt:g}% liên tục {r['Số ngày liên tiếp dưới KPI']} ngày "
                f"(từ {pd.Timestamp(r['_tu_ngay']):%d/%m} đến {pd.Timestamp(r['Ngày dữ liệu cuối']):%d/%m})",
-               f"%GTC ngày cuối: {r['%GTC ngày cuối']:.2f}% — thấp hơn KPI {tgt - r['%GTC ngày cuối']:.2f} điểm %"]
+               f"%GTC ngày cuối: {r['%GTC ngày cuối']:.2f}% — thấp hơn KPI {tgt - r['%GTC ngày cuối']:.2f}%"]
     if r["%GTC 7 ngày"] is not None and pd.notna(r["%GTC 7 ngày"]):
         so_lieu.append(f"%GTC 7 ngày: {r['%GTC 7 ngày']:.2f}%"
                        + (f" (7 ngày trước: {r['%GTC 7 ngày trước']:.2f}%)"
@@ -4380,7 +4373,7 @@ if PAGE == "tong_quan":
                         link_box(
                             f"<div class='ghn-alert {cls}'><span class='a-tag {tag}'>{label}</span>"
                             f"<b>{esc(name)}</b> <b>{actual:,.2f}%</b> · KPI {'' if hib else 'tối đa '}{target:,.2f}% · "
-                            f"lệch <b>{abs(gap):,.2f} điểm %</b>.{bc_note(name, hib)}</div>",
+                            f"lệch <b>{abs(gap):,.2f}%</b>.{bc_note(name, hib)}</div>",
                             f"ovw_{norm(name).replace(' ', '_')}", "van_hanh", tab_of.get(name), o_bc)
                 else:
                     st.markdown(
@@ -5335,7 +5328,7 @@ if PAGE == "nang_suat":
                 ky_row("Đơn giá trung bình", avg_price, lambda v: f"{v:,.3f} đ", L_cur, L_prev, " đ", 3),
                 # Sản lượng GTC = Đơn GTC + Đơn GTBTT, lấy từ sheet Đơn Giá - Lương.
                 ky_row("Sản lượng GTC", sum_gtc, lambda v: f"{v:,.0f} đơn", L_cur, L_prev, " đơn", 0),
-                ky_row("%GTC", pct_gtc, lambda v: f"{v:,.2f}%", G_cur, G_prev, " điểm %", 2),
+                ky_row("%GTC", pct_gtc, lambda v: f"{v:,.2f}%", G_cur, G_prev, "%", 2),
                 ky_row("Tổng lương", total_salary, fmt_money, L_cur, L_prev, " đ", 0),
             ]
             st.markdown(html_table(["Chỉ tiêu", cur_name, prev_name, "Chênh lệch"], rows_ky),
@@ -5991,7 +5984,7 @@ if PAGE == "kpi":
 
 Đã qua {(b_kpi - a_kpi).days + 1} ngày trong kỳ theo dõi.""",
             extra_note="Hãy ước lượng khả năng về đích của từng chỉ số nếu giữ nguyên tốc độ hiện tại, "
-                       "và nói rõ cần kéo thêm bao nhiêu điểm % (chênh lệch giữa hai tỷ lệ ghi là điểm %).")
+                       "và nói rõ cần kéo thêm bao nhiêu % (ghi chênh lệch tỷ lệ bằng %).")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -6233,7 +6226,7 @@ if PAGE == "thi_dua":
                         </div>
                         <div style="font-size:calc(14px * var(--fs));color:{MUTED};margin-top:4px;">
                             %GTC {row[col_now]:.2f}% · {fmt_int(row['Gán'])} đơn gán · {fmt_int(row['GTC'])} đơn GTC
-                            · cải thiện {row['Tỷ Lệ Cải Thiện']:+.2f} điểm % · {ghi_chu}
+                            · cải thiện {row['Tỷ Lệ Cải Thiện']:+.2f}% · {ghi_chu}
                         </div>
                     </div>""", unsafe_allow_html=True)
 
@@ -6307,7 +6300,7 @@ if PAGE == "thi_dua":
                             "GTC": st.column_config.NumberColumn("Tổng Đơn GTC", format="%,d"),
                             col_now: st.column_config.NumberColumn(col_now, format="%.2f%%"),
                             col_prev: st.column_config.NumberColumn(col_prev, format="%.2f%%"),
-                            "Tỷ Lệ Cải Thiện": st.column_config.NumberColumn("Cải Thiện (điểm %)", format="%+.2f"),
+                            "Tỷ Lệ Cải Thiện": st.column_config.NumberColumn("Cải Thiện", format="%+.2f%%"),
                             "Tổng Điểm": st.column_config.NumberColumn("Tổng Điểm", format="%.2f"),
                         })
                     ti1, ti2, ti3 = st.columns([1.3, 1, 1], vertical_alignment="bottom")
@@ -6364,7 +6357,7 @@ if PAGE == "thi_dua":
                                            for v in chart_td["Tỷ Lệ Cải Thiện"]]),
                         text=[f"{v:+.2f}" for v in chart_td["Tỷ Lệ Cải Thiện"]],
                         textposition="outside", textfont=dict(size=12), cliponaxis=False,
-                        hovertemplate="%{y}<br>Cải thiện %{x:+.2f} điểm %<extra></extra>"))
+                        hovertemplate="%{y}<br>Cải thiện %{x:+.2f}%<extra></extra>"))
                     fig_td.add_vline(x=0, line_color=MUTED, line_width=1)
                     lim = float(max(abs(chart_td["Tỷ Lệ Cải Thiện"].min()),
                                     abs(chart_td["Tỷ Lệ Cải Thiện"].max()), 1)) * 1.35
@@ -6420,7 +6413,7 @@ if PAGE == "thi_dua":
                             return re.sub(r"^\d+\s*·\s*", "", staff_label(x))
 
                         def dong(r):
-                            return (f"  - {ten_ci(r['Nhân Viên'])} ({r['Bưu Cục']}): {r['_imp']:+.2f} điểm % "
+                            return (f"  - {ten_ci(r['Nhân Viên'])} ({r['Bưu Cục']}): {r['_imp']:+.2f}% "
                                     f"({r[col_prev]:.2f}% → {r[col_now]:.2f}%)")
                         co = ci[ci["_imp"].notna()]
                         tang = co[co["_imp"] > 0].head(5)
@@ -6476,13 +6469,13 @@ if PAGE == "thi_dua":
                     top_txt = "\n".join(
                         f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
                         f"({r['Bưu Cục']}) — gán {r['Gán']:,.0f}, GTC {r['GTC']:,.0f}, "
-                        f"%GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} điểm %, "
+                        f"%GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f}%, "
                         f"tổng điểm {r['Tổng Điểm']:.2f}, "
                         f"{'ĐƯỢC THƯỞNG hạng ' + str(int(r['Hạng Thưởng'])) if pd.notna(r['Hạng Thưởng']) else ('đủ điều kiện nhưng ngoài top 3' if r[col_now] >= 80 else 'CHƯA đủ điều kiện 80%')}"
                         for _, r in bxh.head(10).iterrows())
                     cuoi_txt = "\n".join(
                         f"- Hạng {int(r['Xếp Hạng Tổng'])}: {staff_label(r['Nhân Viên'])} "
-                        f"— %GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f} điểm %"
+                        f"— %GTC {r[col_now]:.2f}%, cải thiện {r['Tỷ Lệ Cải Thiện']:+.2f}%"
                         for _, r in bxh.tail(5).iterrows())
 
                     ai_advisor(
