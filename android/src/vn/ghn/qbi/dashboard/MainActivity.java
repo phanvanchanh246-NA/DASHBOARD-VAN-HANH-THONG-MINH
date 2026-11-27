@@ -57,6 +57,7 @@ public class MainActivity extends Activity {
     private String baseUrl;
     private String baseHost;
     private boolean pageError = false;
+    private boolean clearHistoryNext = false;
     private boolean splashHidden = false;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -223,6 +224,11 @@ public class MainActivity extends Activity {
                 CookieManager.getInstance().flush();
                 // Streamlit vẽ giao diện sau khi trang tải xong: chờ thêm chút cho khỏi thấy màn trắng.
                 if (!pageError && url != null && url.startsWith("http")) hideSplash(1500);
+                // Vừa thử lại thành công: xóa trang lỗi khỏi lịch sử để nút Quay lại không về lại trang lỗi.
+                if (clearHistoryNext && !pageError && url != null && url.startsWith("http")) {
+                    clearHistoryNext = false;
+                    view.clearHistory();
+                }
             }
 
             @Override
@@ -248,6 +254,7 @@ public class MainActivity extends Activity {
         String url = u.toString();
         if (url.equals(RETRY)) {
             pageError = false;
+            clearHistoryNext = true;
             web.loadUrl(baseUrl);
             return true;
         }
@@ -287,7 +294,7 @@ public class MainActivity extends Activity {
                 + "<a href='" + RETRY + "'>THỬ LẠI</a>"
                 + (isBaked(getString(R.string.base_url).trim()) ? "" :
                    "<p style='margin-top:28px'><a href='" + SET_URL + "' style='background:#0077B6'>ĐỔI ĐỊA CHỈ</a></p>"
-                   + "<p style='color:#6C757D;font-size:13px'>Đang mở: " + baseUrl + "</p>")
+                   + "<p style='color:#6C757D;font-size:13px'>Đang mở: " + android.text.TextUtils.htmlEncode(baseUrl) + "</p>")
                 + "</body></html>";
         web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
         hideSplash(0);
