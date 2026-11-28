@@ -2926,14 +2926,56 @@ def ve_luong_don(g: pd.DataFrame) -> None:
 
 
 def luong_don_fig(g: pd.DataFrame, title: str = "Tổng lương, đơn GTC và LTC theo ngày"):
-    """Tổng lương theo ngày kèm số đơn: cột Đơn GTC và Đơn LTC (trục trái, dải dưới),
-    đường Tổng lương (trục phải, dải trên) để nhãn số của cột và của đường không đè nhau.
-    `g`: Ngày | Lương | GTC | LTC (mỗi ngày một dòng, chỉ những ngày có dữ liệu)."""
+    """Tổng lương theo ngày kèm số đơn, mỗi loại số một hàng riêng chung trục ngày (nhãn không đè nhau).
+    `g`: Ngày | Lương | GTC | LTC [| Gán] (mỗi ngày một dòng, chỉ những ngày có dữ liệu).
+    Có cột Gán thì vẽ 3 hàng: %GTC (= đơn GTC ÷ đơn gán), Tổng lương, cột Đơn gán / GTC / LTC."""
     g = g.sort_values("Ngày")
+    if "Gán" in g.columns and pd.to_numeric(g["Gán"], errors="coerce").fillna(0).sum() > 0:
+        return _luong_gan_fig(g, "%GTC, tổng lương, đơn gán, GTC và LTC theo ngày"
+                              if title == "Tổng lương, đơn GTC và LTC theo ngày" else title)
     # Hàng trên: tổng lương (trục tiền phóng theo dữ liệu); hàng dưới: đơn GTC và đơn LTC từ 0.
     fig = two_row_fig(g["Ngày"], [("Đơn GTC", g["GTC"], PRIMARY), ("Đơn LTC", g["LTC"], COL_LTC)],
                       [("Tổng lương (đ)", g["Lương"], SUCCESS, "circle")], title,
                       line_pct=False, line_title="Tổng lương (đ)", height=480)
+    return fig
+
+
+def _luong_gan_fig(g: pd.DataFrame, title: str):
+    """3 hàng chung trục ngày: %GTC, Tổng lương, cột Đơn gán / Đơn GTC / Đơn LTC."""
+    x = g["Ngày"]
+    gan = pd.to_numeric(g["Gán"], errors="coerce")
+    r = np.where(gan > 0, pd.to_numeric(g["GTC"], errors="coerce") / gan.where(gan > 0) * 100, np.nan)
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.3, 0.3, 0.4], vertical_spacing=0.06)
+    # Hàng 1: %GTC (trục phóng theo dữ liệu)
+    fig.add_trace(go.Scatter(x=x, y=r, name="% GTC", mode="lines+markers+text", line=dict(color=PRIMARY, width=3),
+                             marker=dict(size=7, line=dict(width=1.5, color="#FFF")),
+                             text=key_labels(r, pct_label), textposition="top center", cliponaxis=False,
+                             textfont=dict(color=PRIMARY, **LABEL_FONT),
+                             hovertemplate="%{x|%d/%m}<br>%GTC %{y:.2f}%<extra></extra>"), row=1, col=1)
+    rng = zoom_range(r, True)
+    fig.update_yaxes(title_text="%GTC", ticksuffix="%", row=1, col=1, **({"range": rng} if rng else {}))
+    # Hàng 2: tổng lương
+    fig.add_trace(go.Scatter(x=x, y=g["Lương"], name="Tổng lương (đ)", mode="lines+markers+text",
+                             line=dict(color=SUCCESS, width=3), marker=dict(size=7, line=dict(width=1.5, color="#FFF")),
+                             text=key_labels(g["Lương"], money_label), textposition="top center", cliponaxis=False,
+                             textfont=dict(color=SUCCESS, **LABEL_FONT),
+                             hovertemplate="%{x|%d/%m}<br>Tổng lương %{y:,.0f} đ<extra></extra>"), row=2, col=1)
+    rng_l = zoom_range(g["Lương"], False)
+    fig.update_yaxes(title_text="Tổng lương", row=2, col=1, **({"range": rng_l} if rng_l else {}))
+    if rng_l:
+        tv = list(np.linspace(rng_l[0], rng_l[1], 4))[1:]
+        fig.update_yaxes(tickvals=tv, ticktext=[money_label(v) for v in tv], row=2, col=1)
+    # Hàng 3: số đơn, trục từ 0
+    nhieu = len(g) > 10
+    cot = [("Đơn gán", gan, COL_VOL), ("Đơn GTC", g["GTC"], PRIMARY), ("Đơn LTC", g["LTC"], COL_LTC)]
+    for name, y, color in cot:
+        fig.add_trace(go.Bar(x=x, y=y, name=name, marker_color=color, marker_line_width=0,
+                             text=point_labels(y, num_label), textposition="outside", cliponaxis=False,
+                             textangle=-90 if nhieu else 0, textfont=dict(color=MUTED, **LABEL_FONT),
+                             hovertemplate="%{x|%d/%m}<br>" + name + " %{y:,.0f}<extra></extra>"), row=3, col=1)
+    bmax = max(float(np.nan_to_num(pd.to_numeric(pd.Series(list(y)), errors="coerce").max())) for _, y, _ in cot) or 1.0
+    fig.update_yaxes(title_text="Số đơn", row=3, col=1, range=[0, bmax * 1.35])
+    fig.update_layout(title=title, height=640, barmode="group", bargap=0.2)
     return fig
 
 
@@ -3105,8 +3147,11 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
 
     # Đơn GTC = "Đơn giao tính lương", Đơn LTC = "Đơn lấy tính lương" của chính sheet Lương
     # (đã đối chiếu: khớp số GTC của sheet Năng suất nhân viên).
-    g_day = (d.assign(_g=pd.to_numeric(d["_giao"], errors="coerce"), _l=pd.to_numeric(d["_lay"], errors="coerce"))
-               .groupby("Ngày", as_index=False).agg(Lương=("_tong", "sum"), GTC=("_g", "sum"), LTC=("_l", "sum")))
+    # Đơn gán = "Số đơn gán Giao" của sheet Lương; %GTC = đơn GTC ÷ đơn gán (cùng sheet, cùng người, cùng ngày).
+    g_day = (d.assign(_g=pd.to_numeric(d["_giao"], errors="coerce"), _l=pd.to_numeric(d["_lay"], errors="coerce"),
+                      _n=pd.to_numeric(d["_gan"], errors="coerce"))
+               .groupby("Ngày", as_index=False).agg(Lương=("_tong", "sum"), GTC=("_g", "sum"), LTC=("_l", "sum"),
+                                                    Gán=("_n", "sum")))
     by_day = g_day
     if all_bc:
         # Biểu đồ theo ngày rộng hết khung; tổng lương theo bưu cục nằm NGAY BÊN DƯỚI.
