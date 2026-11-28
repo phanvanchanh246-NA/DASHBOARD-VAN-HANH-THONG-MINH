@@ -571,6 +571,8 @@ h1, h2, h3, h4 {{
     line-height: 1.1; font-variant-numeric: tabular-nums;
 }}
 .metric-card .m-value.accent {{ color: {PRIMARY}; }}
+/* số dài (vd. 152.612.466 đ) trong hàng 5 ô: nhỏ lại một chút cho khỏi xuống dòng */
+.metric-card .m-value.dai {{ font-size: calc(28px * var(--fs)); white-space: nowrap; }}
 .metric-card .m-value.ok {{ color: {SUCCESS}; }}
 .metric-card .m-value.bad {{ color: {DANGER}; }}
 .metric-card .m-kpi {{ font-size: calc(14px * var(--fs)); font-weight: 800; margin-top: 4px; }}
@@ -853,6 +855,7 @@ header[data-testid="stHeader"] button {{ pointer-events: auto; }}
     }}
     .metric-card .m-spark {{ display: none; }}
     .metric-card .m-value {{ font-size: 22px; }}
+    .metric-card .m-value.dai {{ font-size: 20px; }}
     .metric-card .m-title {{ font-size: 11px; }}
     .metric-card .m-ky {{ font-size: 10px; }}
     /* Tổng quan: khối Cảnh báo lên trước khối ô số — quản lý cần thấy cảnh báo đầu tiên */
@@ -1509,7 +1512,8 @@ def metric_card(title: str, value: str, delta: float | None = None, unit: str = 
                       f"{'thiếu' if higher_is_better else 'vượt'} {gtxt}") + "</div>")
     kyhtml = f"<div class='m-ky'>{esc(ky)}</div>" if ky else ""
     return (f"<div class='metric-card {cls}'><div class='m-title'>{esc(title)}</div>{kyhtml}"
-            f"<div class='m-value {vcls}'>{value}</div>{kpihtml}{dhtml}"
+            f"<div class='m-value {vcls}{' dai' if len(re.sub(r'<[^>]+>', '', str(value))) >= 12 else ''}'>"
+            f"{value}</div>{kpihtml}{dhtml}"
             f"{sparkline_svg(spark, higher_is_better, unit, spark_fmt)}</div>")
 
 
@@ -3227,9 +3231,11 @@ def cung_ky(a, b) -> tuple[pd.Timestamp, pd.Timestamp]:
     return pd.Timestamp(a) - pd.DateOffset(months=1), pd.Timestamp(b) - pd.DateOffset(months=1)
 
 
-def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool, LN_ck: pd.DataFrame | None = None) -> None:
+def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool, LN_ck: pd.DataFrame | None = None,
+              mot_nv: bool = False) -> None:
     """Tab Lương: số liệu từ sheet Lương (mỗi dòng là lương 1 nhân viên trong 1 ngày).
-    `LN_ck`: số liệu CÙNG KỲ tháng trước (cùng bộ lọc) để ghi tăng / giảm ở các ô và bảng nhân viên."""
+    `LN_ck`: số liệu CÙNG KỲ tháng trước (cùng bộ lọc) để ghi tăng / giảm ở các ô và bảng nhân viên.
+    `mot_nv`: đang lọc một nhân viên -> ô "Số nhân viên" đổi thành "Số ngày công"."""
     section(f"Lương nhân viên {a:%d/%m/%Y} – {b:%d/%m/%Y}")
     c = {k: pick_col(LN, keys) for k, keys in {
         "nv": [["nhan vien"]], "tn": [["tham nien"]], "tong": [["tong luong"]],
@@ -3258,7 +3264,7 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool, LN_ck: pd.DataFrame | None =
         ck["MaNV"] = ck[c["nv"]].map(staff_id)
         num_ck = lambda k: pd.to_numeric(ck[c[k]], errors="coerce").fillna(0) if c[k] and c[k] in ck else 0  # noqa: E731
         ck["_tong"], ck["_ngay"] = num_ck("tong"), (num_ck("ngay") if c["ngay"] else 1)
-        ck["_giao"] = num_ck("giao")
+        ck["_giao"], ck["_lay"] = num_ck("giao"), num_ck("lay")
     co_ck = not ck.empty
     tong_ck = float(ck["_tong"].sum()) if co_ck else 0.0
     ngay_ck = float(ck["_ngay"].sum()) if co_ck else 0.0
@@ -3268,6 +3274,9 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool, LN_ck: pd.DataFrame | None =
         "tb": (tong / ngay_cong if ngay_cong else 0.0, tong_ck / ngay_ck if ngay_ck else 0.0),
         "gtc": (float(pd.to_numeric(d["_giao"], errors="coerce").sum()),
                 float(ck["_giao"].sum()) if co_ck else 0.0),
+        "ltc": (float(pd.to_numeric(d["_lay"], errors="coerce").sum()),
+                float(ck["_lay"].sum()) if co_ck else 0.0),
+        "ngay": (ngay_cong, ngay_ck),
     }
 
     ky_ck = f"{pa:%d/%m}–{pb:%d/%m}"
@@ -3280,16 +3289,23 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool, LN_ck: pd.DataFrame | None =
             return None, f"chưa có số cùng kỳ {ky_ck}"
         return nay - truoc, f"({(nay - truoc) / truoc * 100:+.1f}%) so với cùng kỳ {ky_ck}"
 
-    k1, k2, k3, k4 = st.columns(4)
-    for col, (t, k, v, them, sp, u) in zip((k1, k2, k3, k4), (
+    theo_ngay["l"] = d.assign(_l=pd.to_numeric(d["_lay"], errors="coerce")).groupby("Ngày")["_l"].sum()
+    # Lọc một nhân viên: "Số nhân viên" luôn là 1 nên thay bằng "Số ngày công" của người đó.
+    o_nv = (("Số ngày công (ngày)", "ngay", fmt_int(ngay_cong), "", spark_by_day(theo_ngay["n"]), "ngày")
+            if mot_nv else
+            ("Số nhân viên (người)", "nv", fmt_int(d['MaNV'].nunique()), f"{fmt_int(ngay_cong)} ngày công",
+             spark_by_day(theo_ngay["nv"]), "người"))
+    cot = st.columns(5)
+    for col, (t, k, v, them, sp, u) in zip(cot, (
             ("Tổng lương (VNĐ)", "tong", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu",
              spark_by_day(theo_ngay["t"]), "đ"),
-            ("Số nhân viên (người)", "nv", fmt_int(d['MaNV'].nunique()), f"{fmt_int(ngay_cong)} ngày công",
-             spark_by_day(theo_ngay["nv"]), "người"),
+            o_nv,
             ("Lương TB / ngày công (VNĐ)", "tb", fmt_money(tong / ngay_cong if ngay_cong else 0), "",
              spark_by_day(theo_ngay["t"] / theo_ngay["n"].where(theo_ngay["n"] > 0)), "đ"),
-            ("Đơn GTC tính lương (đơn)", "gtc", fmt_int(d['_giao'].sum()), f"LTC {fmt_int(d['_lay'].sum())}",
-             spark_by_day(theo_ngay["g"]), "đơn"))):
+            ("Đơn GTC tính lương (đơn)", "gtc", fmt_int(d['_giao'].sum()), "",
+             spark_by_day(theo_ngay["g"]), "đơn"),
+            ("Đơn LTC tính lương (đơn)", "ltc", fmt_int(d['_lay'].sum()), "",
+             spark_by_day(theo_ngay["l"]), "đơn"))):
         delta, sub = so_sanh(k, them)
         with col:
             st.markdown(metric_card(t, v, delta, u, True, delta is not None, sub=sub,
@@ -5801,7 +5817,8 @@ if PAGE == "nang_suat":
 
         with _sub_tab4[1]:
             luong_tab(cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), a_ns, b_ns), a_ns, b_ns,
-                      bc_ns == "Tất cả", cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), *cung_ky(a_ns, b_ns)))
+                      bc_ns == "Tất cả", cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), *cung_ky(a_ns, b_ns)),
+                      mot_nv=nv_ns != "Tất cả")
 
         with _sub_tab4[2]:
             luong_low_warning(cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), a_ns, b_ns), a_ns, b_ns)
