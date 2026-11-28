@@ -195,6 +195,114 @@ def _zoom_lines(fig) -> None:
         fig.update_yaxes(range=r)
 
 
+def _tach_nhan(fig) -> None:
+    """Xếp nhãn số của biểu đồ ĐƯỜNG cho khỏi đè lên nhau (áp dụng chung khi vẽ mọi biểu đồ đường có nhãn).
+    Mỗi nhãn chọn ghi PHÍA TRÊN hay PHÍA DƯỚI điểm của nó:
+    - ưu tiên: cùng ngày có nhiều đường thì đường cao nhất ghi trên, thấp nhất ghi dưới, đường giữa ghi về phía
+      còn chỗ; một đường thì điểm đỉnh ghi trên, điểm đáy ghi dưới;
+    - nếu phía ưu tiên chạm nhãn đã đặt (của bất kỳ đường nào, kể cả nhãn cách vài ngày) thì sang phía kia;
+      cả hai phía đều chạm thì bỏ nhãn đó (vẫn xem được số khi rê chuột).
+    Biểu đồ nhiều ngày thì chữ nhãn nhỏ lại một cỡ. Chỉ xếp đường có nhãn đặt mặc định "top center";
+    nhãn đã đặt chỗ riêng (vạch KPI, cột...) giữ nguyên."""
+    lay = fig.layout
+    cao = (lay.height or 450) - (lay.margin.t if lay.margin.t is not None else 90) - \
+        (lay.margin.b if lay.margin.b is not None else 70)
+    nhom: dict[tuple[str, str], list[int]] = {}
+    for i, t in enumerate(fig.data):
+        if (t.type != "scatter" or "text" not in (t.mode or "") or t.text is None or t.y is None
+                or isinstance(t.text, str) or len(t.text) != len(t.y)
+                or not (t.textposition is None or t.textposition == "top center")
+                or sum(1 for x in t.text if x) < 2):
+            continue
+        nhom.setdefault((t.xaxis or "x", t.yaxis or "y"), []).append(i)
+    for (xa, ya), ids in nhom.items():
+        ax_y = lay[("yaxis" + ya[1:]) if len(ya) > 1 else "yaxis"]
+        ax_x = lay[("xaxis" + xa[1:]) if len(xa) > 1 else "xaxis"]
+        diem = []        # (x số, y, trace, chỉ số điểm)
+        xs_goc = [x for i in ids for x in fig.data[i].x]
+        # trục ngày -> số ngày; trục số giữ nguyên; trục chữ (tên bưu cục...) -> thứ tự xuất hiện
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ngay_x = (pd.to_datetime(pd.Series(xs_goc, dtype=object), errors="coerce") if xs_goc
+                      else pd.Series(dtype=object))
+        la_ngay = len(xs_goc) > 0 and ngay_x.notna().all() and not all(
+            isinstance(x, (int, float, np.integer, np.floating)) for x in xs_goc)
+        thu_tu = {x: n for n, x in enumerate(dict.fromkeys(map(str, xs_goc)))}
+
+        def so_x(x):
+            if la_ngay:
+                return pd.Timestamp(x).value / 86_400e9
+            if isinstance(x, (int, float, np.integer, np.floating)):
+                return float(x)
+            return float(thu_tu[str(x)])
+        for i in ids:
+            t = fig.data[i]
+            for k, (x, y, tx) in enumerate(zip(t.x, t.y, t.text)):
+                if tx and y is not None and pd.notna(y):
+                    diem.append((so_x(x), float(y), i, k))
+        if not diem:
+            continue
+        ys = [d[1] for d in diem]
+        lo, hi = (ax_y.range if ax_y.range is not None else (min(ys), max(ys)))
+        dom_y = ax_y.domain if ax_y.domain is not None else (0, 1)
+        dom_x = ax_x.domain if ax_x.domain is not None else (0, 1)
+        px_y = max(cao * (dom_y[1] - dom_y[0]), 60) / max(float(hi) - float(lo), 1e-9)
+        x_min, x_max = min(d[0] for d in diem), max(d[0] for d in diem)
+        # Bề ngang ước tính (px), cố ý thiên về HẸP (biểu đồ hay nằm trong cột): nhãn liền ngày tự xen kẽ
+        # trên / dưới; màn rộng thì thừa chỗ chứ không đè.
+        rong = 560.0 * (dom_x[1] - dom_x[0])
+        px_x = rong / max(x_max - x_min, 1e-9)
+        nho = max(len(fig.data[i].y) for i in ids) > 20
+        cao_chu = 12.0 if nho else 13.5               # chiều cao 1 nhãn (px)
+        rong_chu = 5.6 if nho else 6.2                # bề ngang 1 ký tự (px)
+        # ưu tiên trên/dưới
+        uu_tien: dict[tuple[int, int], list[str]] = {}
+        theo_x: dict[float, list] = {}
+        for d in diem:
+            theo_x.setdefault(d[0], []).append(d)
+        for x, ds in theo_x.items():
+            ds.sort(key=lambda d: -d[1])
+            for r, (_, y, i, k) in enumerate(ds):
+                if len(ds) == 1:          # một đường tại ngày này: đỉnh ghi trên, đáy ghi dưới
+                    t = fig.data[i]
+                    ben = [float(t.y[j]) for j in (k - 1, k + 1)
+                           if 0 <= j < len(t.y) and t.y[j] is not None and pd.notna(t.y[j])]
+                    tren = not ben or y >= sum(ben) / len(ben)
+                elif r == 0:
+                    tren = True
+                elif r == len(ds) - 1:
+                    tren = False
+                else:
+                    tren = (ds[r - 1][1] - y) >= (y - ds[r + 1][1])
+                uu_tien[(i, k)] = ["top center", "bottom center"] if tren else ["bottom center", "top center"]
+        # đặt nhãn lần lượt theo ngày; mỗi nhãn tránh mọi nhãn đã đặt (và chính các điểm của đường khác)
+        hop: list[tuple[float, float, float]] = []     # (tâm x px, tâm y px, nửa bề ngang)
+        chon: dict[tuple[int, int], str | None] = {}
+        # chấm điểm của mọi đường: nhãn cũng tránh đè lên chấm của đường khác
+        cham_diem = [((x - x_min) * px_x, (y - float(lo)) * px_y, i) for x, y, i, _ in diem]
+        for x, y, i, k in sorted(diem, key=lambda d: (d[0], -d[1])):
+            cx, cy = (x - x_min) * px_x, (y - float(lo)) * px_y
+            nua = rong_chu * len(str(fig.data[i].text[k])) / 2
+            dat = None
+            for vt in uu_tien[(i, k)]:
+                ty = cy + (cao_chu * 0.8 if vt == "top center" else -cao_chu * 0.8)
+                cham = (any(abs(cx - hx) < nua + hn + 2 and abs(ty - hy) < cao_chu for hx, hy, hn in hop)
+                        or any(j != i and abs(cx - mx) < nua + 3 and abs(ty - my) < cao_chu / 2 + 4
+                               for mx, my, j in cham_diem))
+                if not cham:
+                    dat = vt
+                    hop.append((cx, ty, nua))
+                    break
+            chon[(i, k)] = dat
+        for i in ids:
+            t = fig.data[i]
+            vt = [chon.get((i, k), "top center") for k in range(len(t.text))]
+            t.update(text=[tx if vt[k] is not None else "" for k, tx in enumerate(t.text)],
+                     textposition=[v or "top center" for v in vt])
+            if nho:
+                t.update(textfont_size=min(t.textfont.size or 11, 10))
+
+
 def plot_chart(fig, ky: str | None = None, **kw):
     """Vẽ biểu đồ, kèm dòng thời gian dưới tiêu đề để người xem biết số liệu của khoảng nào.
     Biểu đồ theo ngày tự lấy khoảng từ dữ liệu; biểu đồ theo bưu cục / nhân viên phải truyền `ky`.
@@ -204,6 +312,10 @@ def plot_chart(fig, ky: str | None = None, **kw):
         ky = fmt_ky(*rng) if rng else ""
     fig = go.Figure(fig)        # biểu đồ có thể lấy từ bộ nhớ đệm dùng chung: không sửa bản gốc
     _zoom_lines(fig)
+    try:
+        _tach_nhan(fig)
+    except Exception:  # noqa: BLE001  (xếp nhãn chỉ để dễ đọc; lỗi thì vẽ như cũ)
+        pass
     ngay = _data_dates(fig) if rng and _x_is_date(fig) else []
     if ngay:
         # Trục ngày ghi nhãn ĐÚNG những ngày có số liệu: đủ từng ngày có dữ liệu, KHÔNG ghi ngày trống
