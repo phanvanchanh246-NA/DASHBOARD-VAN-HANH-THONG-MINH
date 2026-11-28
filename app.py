@@ -7284,7 +7284,7 @@ def event_data() -> dict:
         out["ngay_xem"] = grid_param(tu, "Ngày xem")
         out["tuyen_params"] = {lb: grid_param(tu, lb) for lb in (
             "Tải tăng mạnh khi đơn gán gấp ngày thường", "Còn dư tải khi đơn gán dưới (so với ngưỡng bưu cục)",
-            "Kỳ thường từ ngày", "Số ngày")}
+            "Kỳ thường từ ngày", "Số ngày", "Số ngày tính ngưỡng nhân viên")}
     if not cap.empty:
         # Bảng phẳng: Ngày | Thứ | <một cột mỗi bưu cục> | Tổng 3 BC | Ngày lấy | Loại → dạng dài.
         hd = list(cap.iloc[0])
@@ -7409,8 +7409,11 @@ def ev_tuyen_params(ev: dict) -> dict:
     tang = parse_num(tp.get("Tải tăng mạnh khi đơn gán gấp ngày thường", "")) or 130.0
     du = parse_num(tp.get("Còn dư tải khi đơn gán dưới (so với ngưỡng bưu cục)", "")) or 60.0
     tu = pd.to_datetime(tp.get("Kỳ thường từ ngày", ""), format="%d/%m/%Y", errors="coerce")
-    so = _so_nguyen(tp.get("Số ngày"), 5)
-    return {"tang": tang, "du": du, "tu": tu, "so": so}
+    so = _so_nguyen(tp.get("Số ngày"), 14)
+    # Sheet mới: kỳ thường = <so> ngày liền trước ngày xem (B8 = ngày xem − số ngày); ngưỡng tải riêng từng NV
+    # = đơn gán cao nhất trong <ng> ngày trước ngày xem mà vẫn đạt %GTC tối thiểu.
+    ng = _so_nguyen(tp.get("Số ngày tính ngưỡng nhân viên"), 0)
+    return {"tang": tang, "du": du, "tu": tu, "so": so, "nguong_ngay": ng, "lui": bool(ng) or pd.isna(tu)}
 
 
 def ev_tuyen_df(ev: dict, ngay, gtc_min: float) -> pd.DataFrame:
@@ -7433,12 +7436,21 @@ def ev_tuyen_df(ev: dict, ngay, gtc_min: float) -> pd.DataFrame:
     d = d[d["Ngày"].notna() & ~d["Tên"].map(is_total_row) & (d["Tên"] != "") & (d["Tên"] != "nan")]
     d["MaNV"] = d["Tên"].map(staff_id)
     p = ev_tuyen_params(ev)
-    thuong = pd.Series(dtype=float)
-    if pd.notna(p["tu"]):
-        # như AVERAGEIFS của sheet: trung bình mọi dòng của nhân viên trong kỳ thường
-        k = d[(d["Ngày"] >= p["tu"]) & (d["Ngày"] <= p["tu"] + pd.Timedelta(days=p["so"] - 1))]
-        thuong = k.groupby(["MaNV", "Ngày"])["Gán"].sum().groupby("MaNV").mean()
-    x = d[(d["Ngày"] == pd.Timestamp(ngay)) & (d["Gán"].fillna(0) > 0)]
+    ngay = pd.Timestamp(ngay)
+    # kỳ thường: <so> ngày liền trước ngày xem (sheet mới); sheet cũ ghi ngày cố định thì dùng ngày đó
+    tu = ngay - pd.Timedelta(days=p["so"]) if p["lui"] else p["tu"]
+    # như AVERAGEIFS của sheet: trung bình mọi dòng của nhân viên trong kỳ thường
+    k = d[(d["Ngày"] >= tu) & (d["Ngày"] <= tu + pd.Timedelta(days=p["so"] - 1))]
+    thuong = k.groupby(["MaNV", "Ngày"])["Gán"].sum().groupby("MaNV").mean()
+    # ngưỡng tải riêng từng nhân viên: đơn gán cao nhất trong <nguong_ngay> ngày trước ngày xem mà %GTC ngày đó
+    # vẫn đạt mức tối thiểu (MAXIFS của sheet); chưa có ngày đạt thì dùng định mức bưu cục.
+    nguong_nv = pd.Series(dtype=float)
+    if p["nguong_ngay"]:
+        w = d[(d["Ngày"] >= ngay - pd.Timedelta(days=p["nguong_ngay"])) & (d["Ngày"] < ngay)]
+        w = w.groupby(["MaNV", "Ngày"])[["Gán", "GTC"]].sum().reset_index()
+        w = w[(w["Gán"] > 0) & (w["GTC"] / w["Gán"].where(w["Gán"] > 0) * 100 >= gtc_min - 1e-9)]
+        nguong_nv = w.groupby("MaNV")["Gán"].max()
+    x = d[(d["Ngày"] == ngay) & (d["Gán"].fillna(0) > 0)]
     if x.empty:
         return pd.DataFrame()
     x = x.groupby("MaNV").agg(**{"Bưu Cục": ("Bưu Cục", "last"), "Tên": ("Tên", "last"), "Đơn gán": ("Gán", "sum"),
@@ -7449,6 +7461,11 @@ def ev_tuyen_df(ev: dict, ngay, gtc_min: float) -> pd.DataFrame:
     x["Đơn gán ngày thường"] = x["MaNV"].map(thuong).round(0)
     x["Tải so với ngày thường"] = x["Đơn gán"] / x["Đơn gán ngày thường"].where(x["Đơn gán ngày thường"] > 0) * 100
     x["Ngưỡng tải bưu cục"] = x["Bưu Cục"].map(lambda b: hv.get(norm(b), np.nan))
+    if p["nguong_ngay"]:
+        rieng = x["MaNV"].map(nguong_nv)
+        x["Cách tính ngưỡng"] = np.where(rieng.notna(), f"Cao nhất {p['nguong_ngay']} ngày đạt GTC",
+                                         "Định mức bưu cục (chưa có ngày đạt)")
+        x["Ngưỡng tải bưu cục"] = rieng.fillna(x["Ngưỡng tải bưu cục"])
 
     # bưu cục có tuyến vượt ngưỡng: chỉ khi đó tuyến ít đơn mới là "Còn dư tải" (có chỗ nhận đơn chuyển sang)
     qua_nguong = set(x.loc[x["Đơn gán"] > x["Ngưỡng tải bưu cục"], "Bưu Cục"])
@@ -7476,6 +7493,9 @@ def ev_tuyen_df(ev: dict, ngay, gtc_min: float) -> pd.DataFrame:
     x["Nhân viên (tuyến)"] = x["Tên"].map(staff_label)
     cols = ["Bưu Cục", "Nhân viên (tuyến)", "Đơn gán", "GTC", "%GTC", "Leadtime", "Chuyến", "Đơn gán ngày thường",
             "Tải so với ngày thường", "Ngưỡng tải bưu cục", "Cảnh báo", "Hướng xử lý"]
+    if "Cách tính ngưỡng" in x:
+        x = x.rename(columns={"Ngưỡng tải bưu cục": "Ngưỡng tải nhân viên"})
+        cols = [c.replace("Ngưỡng tải bưu cục", "Ngưỡng tải nhân viên") for c in cols] + ["Cách tính ngưỡng"]
     return x.sort_values(["Bưu Cục", "%GTC"]).reset_index(drop=True)[cols]
 
 
@@ -7724,9 +7744,15 @@ def event_page() -> None:
             st.dataframe(tu, hide_index=True, width="stretch", column_config={
                 "%GTC": pct, "Tải so với ngày thường": pct, "Leadtime": st.column_config.NumberColumn(format="%.2f"),
                 "Ngưỡng tải bưu cục": st.column_config.NumberColumn(format="%.0f"),
+                "Ngưỡng tải nhân viên": st.column_config.NumberColumn(format="%.0f"),
                 **{k: so for k in ("Đơn gán", "GTC", "Chuyến", "Đơn gán ngày thường")}})
             tp = ev_tuyen_params(ev)
-            if pd.notna(tp["tu"]):
+            if tp["nguong_ngay"]:
+                st.caption(f"Ngày thường: đơn gán TB/ngày của từng nhân viên trong {tp['so']} ngày liền trước ngày xem. "
+                           f"Ngưỡng tải nhân viên: đơn gán cao nhất người đó đã chạy trong {tp['nguong_ngay']} ngày "
+                           f"trước ngày xem mà vẫn đạt %GTC ≥ {kpi_txt(gtc_min)}%; chưa có ngày đạt thì lấy định mức "
+                           "hàng về/NV của bưu cục.")
+            elif pd.notna(tp["tu"]):
                 st.caption(f"Ngày thường: đơn gán TB/ngày của từng nhân viên từ {tp['tu']:%d/%m/%Y} trong "
                            f"{tp['so']} ngày. Ngưỡng tải bưu cục: hàng về mỗi NV giao được (năng suất thực tế).")
 
