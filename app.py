@@ -3222,8 +3222,14 @@ def luong_low_warning(LN: pd.DataFrame, a, b) -> None:
         plot_chart(luong_staff_chart(low.index[dong[0]], a, b), width="stretch")
 
 
-def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
-    """Tab Lương: số liệu từ sheet Lương (mỗi dòng là lương 1 nhân viên trong 1 ngày)."""
+def cung_ky(a, b) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Cùng kỳ tháng trước: cùng khoảng ngày lùi 1 tháng (16–27/11 -> 16–27/10; 31/03 -> 28 hoặc 29/02)."""
+    return pd.Timestamp(a) - pd.DateOffset(months=1), pd.Timestamp(b) - pd.DateOffset(months=1)
+
+
+def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool, LN_ck: pd.DataFrame | None = None) -> None:
+    """Tab Lương: số liệu từ sheet Lương (mỗi dòng là lương 1 nhân viên trong 1 ngày).
+    `LN_ck`: số liệu CÙNG KỲ tháng trước (cùng bộ lọc) để ghi tăng / giảm ở các ô và bảng nhân viên."""
     section(f"Lương nhân viên {a:%d/%m/%Y} – {b:%d/%m/%Y}")
     c = {k: pick_col(LN, keys) for k, keys in {
         "nv": [["nhan vien"]], "tn": [["tham nien"]], "tong": [["tong luong"]],
@@ -3243,19 +3249,52 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
     tong, ngay_cong = float(d["_tong"].sum()), float(d["_ngay"].sum())
     theo_ngay = d.assign(_g=pd.to_numeric(d["_giao"], errors="coerce")).groupby("Ngày").agg(
         t=("_tong", "sum"), n=("_ngay", "sum"), nv=("MaNV", "nunique"), g=("_g", "sum"))
+
+    # ── Cùng kỳ tháng trước: cùng cách tính, cùng bộ lọc ─────────────────
+    pa, pb = cung_ky(a, b)
+    ck = pd.DataFrame()
+    if LN_ck is not None and not LN_ck.empty and c["nv"] and c["tong"] and c["tong"] in LN_ck.columns:
+        ck = LN_ck.copy()
+        ck["MaNV"] = ck[c["nv"]].map(staff_id)
+        num_ck = lambda k: pd.to_numeric(ck[c[k]], errors="coerce").fillna(0) if c[k] and c[k] in ck else 0  # noqa: E731
+        ck["_tong"], ck["_ngay"] = num_ck("tong"), (num_ck("ngay") if c["ngay"] else 1)
+        ck["_giao"] = num_ck("giao")
+    co_ck = not ck.empty
+    tong_ck = float(ck["_tong"].sum()) if co_ck else 0.0
+    ngay_ck = float(ck["_ngay"].sum()) if co_ck else 0.0
+    gia_tri = {
+        "tong": (tong, tong_ck),
+        "nv": (float(d["MaNV"].nunique()), float(ck["MaNV"].nunique()) if co_ck else 0.0),
+        "tb": (tong / ngay_cong if ngay_cong else 0.0, tong_ck / ngay_ck if ngay_ck else 0.0),
+        "gtc": (float(pd.to_numeric(d["_giao"], errors="coerce").sum()),
+                float(ck["_giao"].sum()) if co_ck else 0.0),
+    }
+
+    ky_ck = f"{pa:%d/%m}–{pb:%d/%m}"
+
+    def so_sanh(k: str, them: str) -> tuple[float | None, str]:
+        """(chênh lệch so với cùng kỳ, dòng phụ "(+x%) so với cùng kỳ dd/mm–dd/mm"). Dòng này tô xanh/đỏ theo
+        tăng giảm nên chỉ ghi phần so sánh, không ghép thông tin khác vào."""
+        nay, truoc = gia_tri[k]
+        if not co_ck or not truoc:
+            return None, f"chưa có số cùng kỳ {ky_ck}"
+        return nay - truoc, f"({(nay - truoc) / truoc * 100:+.1f}%) so với cùng kỳ {ky_ck}"
+
     k1, k2, k3, k4 = st.columns(4)
-    for col, (t, v, sub, sp, u) in zip((k1, k2, k3, k4), (
-            ("Tổng lương (VNĐ)", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu",
+    for col, (t, k, v, them, sp, u) in zip((k1, k2, k3, k4), (
+            ("Tổng lương (VNĐ)", "tong", fmt_money(tong), f"{d['Ngày'].nunique()} ngày có dữ liệu",
              spark_by_day(theo_ngay["t"]), "đ"),
-            ("Số nhân viên (người)", fmt_int(d['MaNV'].nunique()), f"{fmt_int(ngay_cong)} ngày công",
+            ("Số nhân viên (người)", "nv", fmt_int(d['MaNV'].nunique()), f"{fmt_int(ngay_cong)} ngày công",
              spark_by_day(theo_ngay["nv"]), "người"),
-            ("Lương TB / ngày công (VNĐ)", fmt_money(tong / ngay_cong if ngay_cong else 0), "Tổng lương ÷ ngày công",
+            ("Lương TB / ngày công (VNĐ)", "tb", fmt_money(tong / ngay_cong if ngay_cong else 0), "",
              spark_by_day(theo_ngay["t"] / theo_ngay["n"].where(theo_ngay["n"] > 0)), "đ"),
-            ("Đơn GTC tính lương (đơn)", fmt_int(d['_giao'].sum()), f"đơn LTC tính lương {fmt_int(d['_lay'].sum())}",
+            ("Đơn GTC tính lương (đơn)", "gtc", fmt_int(d['_giao'].sum()), f"LTC {fmt_int(d['_lay'].sum())}",
              spark_by_day(theo_ngay["g"]), "đơn"))):
+        delta, sub = so_sanh(k, them)
         with col:
-            st.markdown(metric_card(t, v, None, u, sub=sub, accent=t.startswith("Tổng lương"), ky=fmt_ky(a, b),
-                                    spark=sp), unsafe_allow_html=True)
+            st.markdown(metric_card(t, v, delta, u, True, delta is not None, sub=sub,
+                                    accent=t.startswith("Tổng lương"), ky=fmt_ky(a, b), spark=sp),
+                        unsafe_allow_html=True)
 
     # Đơn GTC = "Đơn giao tính lương", Đơn LTC = "Đơn lấy tính lương" của chính sheet Lương
     # (đã đối chiếu: khớp số GTC của sheet Năng suất nhân viên).
@@ -3310,17 +3349,23 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
     t["Nhân viên"] = t["Nhân viên"].map(staff_label)
     t["Giao TB/ngày"] = np.where(t["Ngày công"] > 0, t["Đơn giao tính lương"] / t["Ngày công"], 0)
     t["Lương TB/ngày"] = np.where(t["Ngày công"] > 0, t["Tổng lương"] / t["Ngày công"], 0)
+    ma = d.sort_values("Ngày").groupby("MaNV")[c["nv"]].last().map(staff_label)
+    luong_ck = ck.groupby("MaNV")["_tong"].sum() if co_ck else pd.Series(dtype=float)
+    t["Cùng kỳ"] = t["Nhân viên"].map({v: luong_ck.get(k_, np.nan) for k_, v in ma.items()})
+    t["Tăng/giảm"] = t["Tổng lương"] - t["Cùng kỳ"]
     t = t.sort_values("Tổng lương", ascending=False).reset_index(drop=True)
     t.insert(0, "Hạng", range(1, len(t) + 1))
     # Cột quan trọng (tổng lương, lương TB/ngày) đứng ngay sau tên; tên nhân viên ghim bên trái khi cuộn ngang;
     # tên cột rút gọn để bảng không bị cắt trên màn hình nhỏ.
-    order = ["Hạng", "Nhân viên", "Tổng lương", "Lương TB/ngày", "Ngày công", "Bưu cục"] + (
+    order = ["Hạng", "Nhân viên", "Tổng lương", "Cùng kỳ", "Tăng/giảm", "Lương TB/ngày", "Ngày công", "Bưu cục"] + (
         ["Thâm niên"] if c["tn"] else []) + [
         "Đơn gán giao", "Đơn giao tính lương", "Giao TB/ngày", "Đơn lấy tính lương", "Lương đảm bảo"]
     t = t[order].rename(columns={"Tổng lương": "Tổng lương (đ)", "Lương TB/ngày": "Lương TB/ngày (đ)",
+                                 "Cùng kỳ": f"Cùng kỳ {pa:%d/%m}–{pb:%d/%m} (đ)", "Tăng/giảm": "Tăng/giảm (đ)",
                                  "Lương đảm bảo": "Lương đảm bảo (đ)", "Đơn gán giao": "Gán giao",
                                  "Đơn giao tính lương": "Giao TL", "Đơn lấy tính lương": "Lấy TL"})
-    for k in ("Tổng lương (đ)", "Lương TB/ngày (đ)", "Lương đảm bảo (đ)"):
+    for k in ("Tổng lương (đ)", "Lương TB/ngày (đ)", "Lương đảm bảo (đ)", "Tăng/giảm (đ)",
+              f"Cùng kỳ {pa:%d/%m}–{pb:%d/%m} (đ)"):
         t[k] = t[k].round(0)
     so = st.column_config.NumberColumn(format="localized")
     st.dataframe(t, hide_index=True, width="stretch", column_config={
@@ -3328,7 +3373,8 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
         | {"Giao TB/ngày": st.column_config.NumberColumn(format="%.1f"),
            "Nhân viên": st.column_config.TextColumn(pinned=True),
            "Hạng": st.column_config.NumberColumn(pinned=True, width="small")})
-    st.caption("TL = tính lương. Bảng cuộn ngang được, cột Nhân viên luôn giữ bên trái.")
+    st.caption(f"Cùng kỳ: cùng khoảng ngày của tháng trước ({fmt_ky(pa, pb)}); trống là nhân viên chưa có lương "
+               "trong kỳ đó (vd. mới vào làm). TL = tính lương. Bảng cuộn ngang được, cột Nhân viên luôn giữ bên trái.")
 
 
 _MEDALS = ("🥇", "🥈", "🥉")
@@ -5755,7 +5801,7 @@ if PAGE == "nang_suat":
 
         with _sub_tab4[1]:
             luong_tab(cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), a_ns, b_ns), a_ns, b_ns,
-                      bc_ns == "Tất cả")
+                      bc_ns == "Tất cả", cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), *cung_ky(a_ns, b_ns)))
 
         with _sub_tab4[2]:
             luong_low_warning(cut(filter_staff(DF_LUONG_NGAY, nv_col_ln), a_ns, b_ns), a_ns, b_ns)
