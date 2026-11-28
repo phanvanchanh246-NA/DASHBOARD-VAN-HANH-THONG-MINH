@@ -6893,33 +6893,51 @@ KSH_LINK = "https://docs.google.com/spreadsheets/d/1tq_tuyeSePUs2vtVMINEnfiiDr4q
 KSH_BC = "(QBI) Đồng Thuận"
 
 
+def ksh_ngay(raw: pd.Series) -> pd.Series:
+    """Ngày của sheet kiểm soát hàng LUÔN là ngày/tháng/năm ("01/11/2026"). Không dùng parse_dates chung:
+    hàm đó thử tháng/ngày trước, nên khi sheet mới có ngày 1–12 thì "01/11" bị đọc thành 11/01.
+    Ô thiếu năm ("22/11"), ngày không có thật ("31/11/2026") hoặc năm vô lý -> NaT (báo riêng)."""
+    s = raw.fillna("").astype(str).str.strip()
+    p = pd.to_datetime(s, format="%d/%m/%Y", errors="coerce")
+    for fmt in ("%d/%m/%y", "%d-%m-%Y", "%Y-%m-%d"):
+        p = p.fillna(pd.to_datetime(s, format=fmt, errors="coerce"))
+    hop_ly = p.dt.year.between(2020, TODAY_VN.year + 1)
+    return p.where(hop_ly)
+
+
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
-def ksh_data() -> tuple[pd.DataFrame, str | None]:
-    """Đọc sheet kiểm soát hàng, giữ nguyên chữ (mã đơn, trạng thái, ghi chú). Trả (bảng, lý do lỗi)."""
+def ksh_data() -> dict:
+    """Đọc sheet kiểm soát hàng, giữ nguyên chữ (mã đơn, trạng thái, ghi chú).
+    Trả {"d": các dòng có mã đơn và ngày đọc được, "loi_ngay": dòng có mã đơn nhưng ngày không đọc được,
+    "loi": lý do nếu không đọc được sheet}."""
+    rong = {"d": pd.DataFrame(), "loi_ngay": pd.DataFrame(), "loi": None}
     try:
         resp = requests.get(make_csv_url(KSH_LINK), timeout=30)
         resp.raise_for_status()
         raw = pd.read_csv(io.BytesIO(resp.content), dtype=str)
     except Exception as exc:  # noqa: BLE001
-        return pd.DataFrame(), type(exc).__name__
+        return {**rong, "loi": type(exc).__name__}
     raw.columns = [str(c).strip() for c in raw.columns]
     g = lambda keys, ex=(): pick_col(raw, keys, exclude=ex)   # noqa: E731
     c_ngay, c_nv, c_ma = g([["ngay"]]), g([["nhan vien"], ["ten"]]), g([["ma don"], ["ma"]])
     if not (c_ngay and c_nv and c_ma):
-        return pd.DataFrame(), "thiếu cột NGÀY / TÊN NHÂN VIÊN / MÃ ĐƠN"
+        return {**rong, "loi": "thiếu cột NGÀY / TÊN NHÂN VIÊN / MÃ ĐƠN"}
     c_cod, c_tt, c_gc, c_note, c_bc = g([["cod"]]), g([["trang thai"]]), g([["ghi chu"]]), g([["note"]]), g([["buu cuc"]])
-    txt = lambda c: raw[c].fillna("").astype(str).str.strip() if c else ""   # noqa: E731
-    d = pd.DataFrame({"Ngày": parse_dates(raw[c_ngay]), "NV": txt(c_nv), "Mã đơn": txt(c_ma).str.upper(),
-                      "COD": _parse_num_col(raw[c_cod]) if c_cod else np.nan, "Trạng thái": txt(c_tt),
-                      "Ghi chú": (txt(c_gc) + " " + txt(c_note)).str.strip() if (c_gc or c_note) else "",
-                      "Bưu Cục": (raw[c_bc].fillna("").astype(str).str.strip()
-                                  .map(lambda v: _BC_CANON.get(norm(v), v) or KSH_BC) if c_bc else KSH_BC)})
-    # bỏ dòng tiêu đề ngày ("1/11") và dòng trống: chỉ giữ dòng có mã đơn
-    d = d[(d["Mã đơn"] != "") & d["Ngày"].notna()].reset_index(drop=True)
-    return d, None
+    txt = lambda c: raw[c].fillna("").astype(str).str.strip() if c else pd.Series("", index=raw.index)  # noqa: E731
+    d = pd.DataFrame({
+        "_i": np.arange(len(raw)), "Ngày": ksh_ngay(raw[c_ngay]), "Ngày ghi": txt(c_ngay), "NV": txt(c_nv),
+        # mã đơn: bỏ MỌI khoảng trắng ("AAA 333" = "AAA333"), viết hoa
+        "Mã đơn": txt(c_ma).str.replace(r"\s+", "", regex=True).str.upper(),
+        "COD": pd.to_numeric(_parse_num_col(raw[c_cod]), errors="coerce") if c_cod else np.nan,
+        "Trạng thái": txt(c_tt),
+        "Ghi chú": (txt(c_gc) + " " + txt(c_note)).str.strip(),
+        "Bưu Cục": (txt(c_bc).map(lambda v: _BC_CANON.get(norm(v), v) or KSH_BC) if c_bc else KSH_BC)})
+    d = d[d["Mã đơn"] != ""]        # bỏ dòng tiêu đề ngày ("1/11") và dòng trống
+    return {"d": d[d["Ngày"].notna()].reset_index(drop=True),
+            "loi_ngay": d[d["Ngày"].isna()].reset_index(drop=True), "loi": None}
 
 
-_DAU_THANH = {"\u0300", "\u0301", "\u0303", "\u0309", "\u0323"}     # huyền, sắc, ngã, hỏi, nặng
+_DAU_THANH = {"̀", "́", "̃", "̉", "̣"}     # huyền, sắc, ngã, hỏi, nặng
 
 
 def ten_co_dau(text: str) -> str:
@@ -6933,134 +6951,181 @@ def ten_co_dau(text: str) -> str:
     return " ".join(out)
 
 
-def ksh_ten_nv(d: pd.DataFrame) -> dict[str, str]:
-    """Tên gọi trên sheet ("Như", "Thanh Sơn", "Hoạ") -> "mã · họ tên" của nhân viên cùng bưu cục
-    (sheet Lương / Năng suất). Tên gọi khớp nhiều người thì bỏ người đã khớp một tên gọi dài hơn
-    (vd. "Sơn" không lấy "Hồ Thanh Sơn" vì đã có "Thanh Sơn"); vẫn còn nhiều người thì giữ tên gọi."""
-    ds = []
+def ksh_ten_nv(d: pd.DataFrame) -> dict[tuple[str, str], str]:
+    """(bưu cục, tên gọi trên sheet) -> "mã · họ tên" của nhân viên CÙNG bưu cục (sheet Lương / Năng suất).
+    Ghép theo từng bưu cục: cùng tên gọi "Phương" ở hai bưu cục là hai người khác nhau.
+    - So giữ dấu trước (Phương ≠ Phượng), không ai khớp mới so bỏ dấu.
+    - Khớp nhiều người: bỏ người khớp đúng một tên gọi dài hơn có trên sheet ("Sơn" bỏ "Hồ Thanh Sơn" vì có
+      "Thanh Sơn"); còn nhiều người thì chọn người có làm trong khoảng ngày của sheet.
+    - Vẫn không xác định được: giữ tên gọi, các cách viết khác nhau ("Thuỷ"/"Thủy", "BÌnh") gộp về một cách viết."""
+    ds, co_lam = [], set()
     for f in (DF_LUONG_NGAY, DF_NSGTC):
         c = pick_col(f, [["nhan vien"]])
-        if c and not f.empty and "Bưu Cục" in f.columns:
+        if not c or f.empty:
+            continue
+        if "Bưu Cục" in f.columns:
             ds += list(f[[c, "Bưu Cục"]].dropna().itertuples(index=False, name=None))
-    out = {}
-    ngan = {norm(x) for x in d["NV"].unique() if norm(x)}
-    # người có làm trong khoảng ngày của sheet: dùng để chọn khi trùng họ tên (vd. hai "Hoàng Thị Thủy")
-    co_lam = set()
-    for f in (DF_LUONG_NGAY, DF_NSGTC):
-        c = pick_col(f, [["nhan vien"]])
-        if c and not f.empty and "Ngày" in f.columns:
+        if "Ngày" in f.columns and not d.empty:
             m = (f["Ngày"] >= d["Ngày"].min()) & (f["Ngày"] <= d["Ngày"].max())
             co_lam |= set(f.loc[m, c].map(staff_id))
+    bo_ma = lambda t: re.sub(r"^\d+\s*[_\-]\s*", "", str(t))   # noqa: E731
+    out: dict[tuple[str, str], str] = {}
     for bc in d["Bưu Cục"].unique():
-        nv_bc = {}
+        nv_bc: dict[str, str] = {}
         for ten, b in ds:
             if norm(b) == norm(bc):
                 nv_bc.setdefault(staff_id(ten), ten)
-        bo_ma = lambda t: re.sub(r"^\d+\s*[_\-]\s*", "", str(t))   # noqa: E731
-        # so giữ dấu trước (phân biệt Phương / Phượng); không ai khớp thì mới so bỏ dấu
-        for khoa, ngan_k in ((ten_co_dau, {ten_co_dau(x) for x in d["NV"].unique() if x.strip()}),
-                             (norm, ngan)):
+        goi_bc = [x for x in d.loc[d["Bưu Cục"] == bc, "NV"].unique() if x.strip()]
+        for khoa in (ten_co_dau, norm):
+            ngan_k = {khoa(x) for x in goi_bc}
             ho_ten = {t: khoa(bo_ma(t)) for t in nv_bc.values()}
-            for goi in d.loc[d["Bưu Cục"] == bc, "NV"].unique():
+            for goi in goi_bc:
                 k = khoa(goi)
-                if not k or goi in out:
+                if not k or (bc, goi) in out:
                     continue
                 ung = [t for t, ht in ho_ten.items() if ht.endswith(" " + k)]
-                # bỏ người khớp đúng một tên gọi dài hơn có trên sheet ("Sơn" bỏ "Hồ Thanh Sơn" vì có "Thanh Sơn")
                 gon = [t for t in ung if not any(o != k and o.endswith(" " + k) and ho_ten[t].endswith(" " + o)
                                                  for o in ngan_k)]
                 ung = gon or ung
                 if len(ung) > 1:
                     ung = [t for t in ung if staff_id(t) in co_lam] or ung
                 if len(ung) == 1:
-                    out[goi] = staff_label(ung[0])
-        for goi in d.loc[d["Bưu Cục"] == bc, "NV"].unique():
-            out.setdefault(goi, goi.strip())
+                    out[(bc, goi)] = staff_label(ung[0])
+        # chưa ghép được: gộp các cách viết của cùng một tên gọi, lấy cách viết gặp nhiều nhất
+        con = [x for x in d.loc[d["Bưu Cục"] == bc, "NV"] if x.strip() and (bc, x) not in out]
+        cach_viet: dict[str, Counter] = {}
+        for x in con:
+            cach_viet.setdefault(ten_co_dau(x), Counter())[x.strip()] += 1
+        for x in set(con):
+            cv = cach_viet[ten_co_dau(x)]
+            out[(bc, x)] = max(cv, key=lambda v: (cv[v], v == v.title()))
     return out
+
+
+def _md_text(s: str) -> str:
+    """Chữ người dùng gõ đưa vào st.caption/markdown: thoát ký tự định dạng để hiện đúng nguyên văn."""
+    return re.sub(r"([\\`*_{}\[\]()#+\-.!<>|~$])", r"\\\1", str(s))
+
+
+def _csv_an_toan(df: pd.DataFrame) -> bytes:
+    """CSV tải về: ô chữ bắt đầu bằng = + - @ thêm dấu ' để Excel không chạy như công thức."""
+    out = df.copy()
+    for c in out.columns:
+        if out[c].dtype == object:
+            out[c] = out[c].map(lambda v: "'" + v if isinstance(v, str) and v[:1] in "=+-@" else v)
+    return out.to_csv(index=False).encode("utf-8-sig")
+
+
+def _gop_trung(d: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Cùng mã đơn ghi nhiều lần trong MỘT ngày (cùng bưu cục) là nhập trùng: gộp thành 1 dòng.
+    Trạng thái lấy dòng có trạng thái ghi SAU CÙNG trên sheet; COD lấy ô đầu tiên có số; ghi chú gộp lại;
+    nhân viên lấy người ghi đầu tiên (cột "Người ghi" liệt kê đủ). Trả (bảng đã gộp, bảng các nhóm trùng)."""
+    d = d.sort_values("_i")
+    khoa = ["Bưu Cục", "Ngày", "Mã đơn"]
+    noi = lambda s: ", ".join(dict.fromkeys(x for x in s if x))   # noqa: E731
+    g = d.groupby(khoa, sort=False).agg(
+        _i=("_i", "min"), NV=("NV", "first"), **{"Nhân viên": ("Nhân viên", "first")},
+        **{"Người ghi": ("Nhân viên", noi)},
+        **{"Trạng thái": ("Trạng thái", lambda s: next((x for x in reversed(list(s)) if x), ""))},
+        COD=("COD", "first"), **{"Ghi chú": ("Ghi chú", noi)}, **{"Số lần nhập": ("_i", "size")}).reset_index()
+    g["_lk"] = g["Trạng thái"].map(lambda v: "luu kho" in norm(v))
+    return g, g[g["Số lần nhập"] > 1]
 
 
 def kiem_soat_page() -> None:
     """Trang Kiểm soát hàng: số đơn ghi kiểm soát theo ngày, theo nhân viên, đơn tồn nhiều ngày, lưu kho chờ trả."""
-    d, loi = ksh_data()
-    if loi:
-        note(f"Chưa đọc được sheet kiểm soát hàng ({loi}).")
+    kq = ksh_data()
+    if kq["loi"]:
+        note(f"Chưa đọc được sheet kiểm soát hàng ({kq['loi']}).")
         return
-    if d.empty:
-        note("Sheet kiểm soát hàng chưa có dòng nào có mã đơn.")
-        return
+    d, loi_ngay = kq["d"], kq["loi_ngay"]
     if USER_BC:
         d = d[d["Bưu Cục"].map(norm) == norm(USER_BC)]
-    d = d.assign(**{"Nhân viên": d["NV"].map(ksh_ten_nv(d)).fillna(d["NV"].str.strip())})
-    d = d.assign(_lk=d["Trạng thái"].map(lambda v: "luu kho" in norm(v)))
-    # Cùng mã đơn ghi nhiều lần trong MỘT ngày là nhập trùng: chỉ tính 1 lần (giữ dòng có trạng thái).
-    d = d.sort_values(["Ngày", "Mã đơn", "Trạng thái"], ascending=[True, True, False])
-    trung = d[d.duplicated(["Ngày", "Mã đơn"], keep=False)]
-    d = d.drop_duplicates(["Ngày", "Mã đơn"], keep="first")
+        loi_ngay = loi_ngay[loi_ngay["Bưu Cục"].map(norm) == norm(USER_BC)]
+    if d.empty:
+        note(f"Sheet kiểm soát hàng chưa có số liệu{' của ' + USER_BC if USER_BC else ''}. "
+             f"Hiện sheet đang ghi cho {KSH_BC}.")
+        return
+    ten = ksh_ten_nv(d)
+    d = d.assign(**{"Nhân viên": [ten.get((b, x), x.strip()) for b, x in zip(d["Bưu Cục"], d["NV"])]})
 
     r1, r2, r3 = st.columns([1.1, 1.3, 1.3])
     with r1:
         bc_k = st.selectbox("Bưu cục", ALL_BC, key="bc_ksh")
     if bc_k != "Tất cả":
         d = d[d["Bưu Cục"].map(norm) == norm(bc_k)]
+        loi_ngay = loi_ngay[loi_ngay["Bưu Cục"].map(norm) == norm(bc_k)]
     if d.empty:
         note(f"Sheet kiểm soát hàng chưa có số liệu của {bc_k}. Hiện sheet đang ghi cho {KSH_BC}.")
         return
+    d, trung = _gop_trung(d)
     k_max = d["Ngày"].max()
     with r3:
         a_k, b_k = date_range_picker("Khoảng ngày", k_max.replace(day=1), k_max, "date_ksh", max_d=k_max)
-    dk = d[(d["Ngày"] >= a_k) & (d["Ngày"] <= b_k)]
-    nv_opts = ["Tất cả"] + sorted(dk["Nhân viên"].unique())
+    dk_all = d[(d["Ngày"] >= a_k) & (d["Ngày"] <= b_k)]          # mọi nhân viên trong khoảng ngày
+    nv_opts = ["Tất cả"] + sorted(dk_all["Nhân viên"].unique())
     if st.session_state.get("nv_ksh") not in nv_opts:
         st.session_state["nv_ksh"] = "Tất cả"
     with r2:
         nv_k = st.selectbox("Nhân viên", nv_opts, key="nv_ksh",
                             help=f"{len(nv_opts) - 1} nhân viên có đơn kiểm soát trong khoảng ngày đã chọn")
-    if nv_k != "Tất cả":
-        dk = dk[dk["Nhân viên"] == nv_k]
-        d = d[d["Nhân viên"] == nv_k]
+    cua_nv = (lambda f: f) if nv_k == "Tất cả" else (lambda f: f[f["Nhân viên"] == nv_k])   # noqa: E731
+    dk, d_nv = cua_nv(dk_all), cua_nv(d)
     ky = fmt_ky(a_k, b_k)
+
+    if not loi_ngay.empty:
+        with st.expander(f"⚠️ {len(loi_ngay)} dòng có mã đơn nhưng ô NGÀY không đọc được (thiếu năm, sai ngày) "
+                         "— chưa được tính, cần sửa lại trên sheet"):
+            st.dataframe(loi_ngay[["Ngày ghi", "Mã đơn", "NV", "Trạng thái"]].rename(
+                columns={"Ngày ghi": "Ô NGÀY trên sheet", "NV": "Tên nhân viên"}), hide_index=True, width="stretch")
     if dk.empty:
         note("Không có đơn kiểm soát nào trong khoảng ngày đã chọn.")
         return
 
     # ── Ô số ────────────────────────────────────────────────────────────
-    theo_ngay = d.groupby("Ngày").agg(n=("Mã đơn", "size"), lk=("_lk", "sum"))
-    ngay_co = sorted(dk["Ngày"].unique())
-    n_moi = ngay_co[-1]
-    truoc = [x for x in theo_ngay.index if x < n_moi]
+    # Chuỗi theo ngày trên MỌI ngày sheet có ghi (ngày nhân viên đang lọc không có đơn = 0), để đường xu hướng
+    # và "so với ngày trước" không nhảy cóc qua ngày trống.
+    ngay_sheet = pd.DatetimeIndex(sorted(d["Ngày"].unique()))
+    theo_ngay = (d_nv.groupby("Ngày").agg(n=("Mã đơn", "size"), lk=("_lk", "sum"))
+                 .reindex(ngay_sheet, fill_value=0))
+    n_moi = pd.Timestamp(dk["Ngày"].max())
+    truoc = [x for x in ngay_sheet if x < n_moi]
     n_hom = int(theo_ngay.loc[n_moi, "n"])
     n_truoc = int(theo_ngay.loc[truoc[-1], "n"]) if truoc else None
-    so_ngay = dk.groupby("Mã đơn")["Ngày"].nunique()
-    lap = so_ngay[so_ngay >= 2]
+    trong_ky = theo_ngay.loc[(theo_ngay.index >= a_k) & (theo_ngay.index <= n_moi)]
+    # Đơn ghi từ 2 ngày trở lên: đếm số ngày trên MỌI người ghi (một đơn có thể do nhiều người ghi),
+    # rồi lấy những đơn của nhân viên đang lọc.
+    so_ngay = dk_all.groupby("Mã đơn")["Ngày"].nunique()
+    ma_nv = dk["Mã đơn"].unique()
+    lap = so_ngay[so_ngay.index.isin(ma_nv) & (so_ngay >= 2)]
     lk_ma = dk.loc[dk["_lk"], "Mã đơn"].nunique()
-    sp = spark_by_day(theo_ngay["n"].loc[:n_moi])
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(metric_card("Đơn kiểm soát · ngày (đơn)", fmt_int(n_hom),
                                 (n_hom - n_truoc) if n_truoc is not None else None, "đơn", False, n_truoc is not None,
-                                sub=f"so với {pd.Timestamp(truoc[-1]):%d/%m}" if truoc else "",
-                                ky=f"Ngày {pd.Timestamp(n_moi):%d/%m/%Y}", spark=sp), unsafe_allow_html=True)
+                                sub=(f"so với {pd.Timestamp(truoc[-1]):%d/%m}" if truoc
+                                     else "chưa có ngày trước để so sánh"),
+                                ky=f"Ngày {n_moi:%d/%m/%Y}", spark=spark_by_day(theo_ngay["n"].loc[:n_moi])),
+                    unsafe_allow_html=True)
     with k2:
-        st.markdown(metric_card("Lượt đơn kiểm soát (lượt)", fmt_int(len(dk)), None, "đơn", accent=True,
-                                sub=f"{fmt_int(dk['Mã đơn'].nunique())} mã đơn · {len(ngay_co)} ngày", ky=ky,
-                                spark=sp), unsafe_allow_html=True)
+        st.markdown(metric_card("Lượt đơn kiểm soát (lượt)", fmt_int(len(dk)), None, "đơn", False, accent=True,
+                                sub=f"{fmt_int(len(ma_nv))} mã đơn · {dk['Ngày'].nunique()} ngày", ky=ky,
+                                spark=spark_by_day(trong_ky["n"])), unsafe_allow_html=True)
     with k3:
-        st.markdown(metric_card("Đơn ghi từ 2 ngày trở lên (đơn)", fmt_int(len(lap)), None, "đơn",
+        st.markdown(metric_card("Đơn ghi từ 2 ngày trở lên (đơn)", fmt_int(len(lap)), None, "đơn", False,
                                 sub=(f"lâu nhất {int(lap.max())} ngày · "
-                                     f"{len(lap) / max(len(so_ngay), 1) * 100:.0f}% số mã đơn") if len(lap) else
+                                     f"{len(lap) / max(len(ma_nv), 1) * 100:.0f}% số mã đơn") if len(lap) else
                                 "không có đơn tồn nhiều ngày", ky=ky), unsafe_allow_html=True)
     with k4:
-        st.markdown(metric_card("Lưu kho chờ trả (đơn)", fmt_int(lk_ma), None, "đơn",
+        st.markdown(metric_card("Lưu kho chờ trả (đơn)", fmt_int(lk_ma), None, "đơn", False,
                                 sub=f"{fmt_int(int(dk['_lk'].sum()))} lượt ghi trạng thái này", ky=ky,
-                                spark=spark_by_day(theo_ngay["lk"].loc[:n_moi])), unsafe_allow_html=True)
+                                spark=spark_by_day(trong_ky["lk"])), unsafe_allow_html=True)
 
-    tr_k = trung[(trung["Ngày"] >= a_k) & (trung["Ngày"] <= b_k)]
-    if nv_k != "Tất cả":
-        tr_k = tr_k[tr_k["Nhân viên"] == nv_k]
+    tr_k = cua_nv(trung[(trung["Ngày"] >= a_k) & (trung["Ngày"] <= b_k)])
     if not tr_k.empty:
-        n_du = len(tr_k) - tr_k[["Ngày", "Mã đơn"]].drop_duplicates().shape[0]
+        n_du = int((tr_k["Số lần nhập"] - 1).sum())
         with st.expander(f"Sheet có {n_du} dòng nhập trùng (cùng mã đơn, cùng ngày), dashboard chỉ tính 1 lần"):
-            st.dataframe(tr_k.groupby(["Ngày", "Mã đơn", "Nhân viên"]).size().rename("Số lần nhập").reset_index()
+            st.dataframe(tr_k[["Ngày", "Mã đơn", "Người ghi", "Trạng thái", "Số lần nhập"]]
                          .sort_values("Ngày", ascending=False), hide_index=True, width="stretch",
                          column_config={"Ngày": st.column_config.DateColumn(format="DD/MM/YYYY")})
 
@@ -7068,64 +7133,73 @@ def kiem_soat_page() -> None:
     section(f"Đơn kiểm soát theo ngày và theo nhân viên · {ky}")
     g = dk.groupby("Ngày").agg(n=("Mã đơn", "size"), lk=("_lk", "sum")).reset_index()
     g["khac"] = g["n"] - g["lk"]
+    nhieu = len(g) > 10
     fig = go.Figure()
     fig.add_trace(go.Bar(x=g["Ngày"], y=g["khac"], name="Đơn kiểm soát khác", marker_color=COL_VOL,
                          hovertemplate="%{x|%d/%m}<br>Khác %{y:,.0f} đơn<extra></extra>"))
+    # nhãn tổng ghi trên đỉnh cột (trace trên cùng), nhiều ngày thì xoay dọc cho khỏi đè nhau
     fig.add_trace(go.Bar(x=g["Ngày"], y=g["lk"], name="Lưu kho chờ trả", marker_color=DANGER,
+                         text=[fmt_int(v) for v in g["n"]], textposition="outside", cliponaxis=False,
+                         textangle=-90 if nhieu else 0, textfont=dict(color=TEXT, **LABEL_FONT),
                          hovertemplate="%{x|%d/%m}<br>Lưu kho chờ trả %{y:,.0f} đơn<extra></extra>"))
-    fig.add_trace(go.Scatter(x=g["Ngày"], y=g["n"], mode="text", text=[fmt_int(v) for v in g["n"]],
-                             textposition="top center", textfont=dict(color=TEXT, **LABEL_FONT), cliponaxis=False,
-                             hoverinfo="skip", showlegend=False))
-    fig.update_yaxes(title_text="Số đơn", range=[0, float(g["n"].max()) * 1.2 or 1])
+    fig.update_yaxes(title_text="Số đơn", range=[0, float(g["n"].max()) * (1.3 if nhieu else 1.2) or 1])
     fig.update_layout(title="Số đơn kiểm soát theo ngày", barmode="stack", height=400, bargap=0.3,
-                      legend=dict(orientation="h", y=-0.25), margin=dict(l=70, r=30, b=100))
+                      uniformtext_minsize=8, legend=dict(orientation="h", y=-0.25), margin=dict(l=70, r=30, b=100))
     plot_chart(fig, width="stretch")
 
     nv = (dk.groupby("Nhân viên").agg(n=("Mã đơn", "size"), lk=("_lk", "sum"), ma=("Mã đơn", "nunique"))
             .reset_index().sort_values("n"))
+    ten_hien = nv["Nhân viên"].map(esc)      # tên lấy từ sheet: không cho Plotly hiểu thẻ HTML
     fig_nv = go.Figure()
-    fig_nv.add_trace(go.Bar(x=nv["n"] - nv["lk"], y=nv["Nhân viên"], orientation="h", name="Đơn kiểm soát khác",
+    fig_nv.add_trace(go.Bar(x=nv["n"] - nv["lk"], y=ten_hien, orientation="h", name="Đơn kiểm soát khác",
                             marker_color=COL_VOL, hovertemplate="%{y}<br>Khác %{x:,.0f} lượt<extra></extra>"))
-    fig_nv.add_trace(go.Bar(x=nv["lk"], y=nv["Nhân viên"], orientation="h", name="Lưu kho chờ trả",
+    fig_nv.add_trace(go.Bar(x=nv["lk"], y=ten_hien, orientation="h", name="Lưu kho chờ trả",
                             marker_color=DANGER, hovertemplate="%{y}<br>Lưu kho chờ trả %{x:,.0f} lượt<extra></extra>"))
-    fig_nv.add_trace(go.Scatter(x=nv["n"], y=nv["Nhân viên"], mode="text", hoverinfo="skip", showlegend=False,
+    fig_nv.add_trace(go.Scatter(x=nv["n"], y=ten_hien, mode="text", hoverinfo="skip", showlegend=False,
                                 text=[f" {fmt_int(a)} · {fmt_int(m)} mã" for a, m in zip(nv["n"], nv["ma"])],
                                 textposition="middle right", textfont=dict(color=TEXT, size=12), cliponaxis=False))
     fig_nv.update_xaxes(title_text=None, range=[0, float(nv["n"].max()) * 1.45 or 1])
     fig_nv.update_yaxes(automargin=True, tickfont=dict(size=12))
-    fig_nv.update_layout(title="Số đơn kiểm soát theo nhân viên (lượt · số mã đơn)", barmode="stack", showlegend=True, bargap=0.3,
-                         height=max(300, 34 * len(nv) + 160), legend=dict(orientation="h", y=-0.12),
-                         margin=dict(l=10, r=40, t=80, b=60))
+    fig_nv.update_layout(title="Số đơn kiểm soát theo nhân viên (lượt · số mã đơn)", barmode="stack",
+                         showlegend=True, bargap=0.3, height=max(300, 34 * len(nv) + 160),
+                         legend=dict(orientation="h", y=-0.12), margin=dict(l=10, r=40, t=80, b=60))
     plot_chart(fig_nv, ky=ky, width="stretch")
+
+    cao = lambda n, tran: min(38 + 35 * n + 3, tran)   # noqa: E731  (chiều cao bảng vừa đủ số dòng)
 
     # ── Đơn tồn nhiều ngày ──────────────────────────────────────────────
     section(f"Đơn ghi kiểm soát từ 2 ngày trở lên ({fmt_int(len(lap))} đơn)")
     if lap.empty:
         note("Không có đơn nào bị ghi kiểm soát từ 2 ngày trở lên trong khoảng ngày đã chọn.")
     else:
-        x = dk[dk["Mã đơn"].isin(lap.index)].sort_values("Ngày")
+        x = dk_all[dk_all["Mã đơn"].isin(lap.index)].sort_values(["Ngày", "_i"])
         tt_cuoi = x[x["Trạng thái"] != ""].groupby("Mã đơn")["Trạng thái"].last()
         bl = (x.groupby("Mã đơn").agg(**{"Số ngày": ("Ngày", "nunique"), "Ngày đầu": ("Ngày", "min"),
-                                          "Ngày cuối": ("Ngày", "max"), "Nhân viên": ("Nhân viên", "last")})
+                                          "Ngày cuối": ("Ngày", "max"),
+                                          "Nhân viên": ("Người ghi", lambda s: ", ".join(
+                                              dict.fromkeys(y for v in s for y in v.split(", ") if y)))})
                 .assign(**{"Trạng thái": lambda t: t.index.map(tt_cuoi).fillna("")})
                 .sort_values(["Số ngày", "Ngày cuối"], ascending=[False, False]).reset_index())
-        st.dataframe(bl, hide_index=True, width="stretch", height=min(72 + 35 * len(bl), 420),
+        st.dataframe(bl, hide_index=True, width="stretch", height=cao(len(bl), 420),
                      column_config={"Mã đơn": st.column_config.TextColumn(pinned=True),
                                     "Ngày đầu": st.column_config.DateColumn(format="DD/MM/YYYY"),
                                     "Ngày cuối": st.column_config.DateColumn(format="DD/MM/YYYY")})
 
     # ── Danh sách chi tiết ──────────────────────────────────────────────
     section("Danh sách đơn kiểm soát")
-    q = st.text_input("Tìm mã đơn", key="ksh_q", placeholder="Gõ một phần mã đơn, vd. GYMA").strip().upper()
+    q = re.sub(r"\s+", "", st.text_input("Tìm mã đơn", key="ksh_q",
+                                         placeholder="Gõ một phần mã đơn, vd. GYMA")).upper()
     ct = dk if not q else dk[dk["Mã đơn"].str.contains(re.escape(q), na=False)]
+    ct = ct.sort_values(["Ngày", "Nhân viên", "_i"], ascending=[False, True, True]).assign(
+        COD=lambda t: t["COD"].map(lambda v: fmt_int(v) if pd.notna(v) else ""))   # 1.250.000, ô trống để trống
     cols = ["Ngày", "Mã đơn", "Nhân viên", "Trạng thái", "COD", "Ghi chú"]
-    cols = [c for c in cols if c not in ("COD", "Ghi chú") or ct[c].replace("", np.nan).notna().any()]
-    ct = ct.sort_values(["Ngày", "Nhân viên"], ascending=[False, True])[cols]
-    st.caption(f"{fmt_int(len(ct))} dòng" + (f" có mã chứa '{q}'" if q else ""))
-    st.dataframe(ct, hide_index=True, width="stretch", height=min(72 + 35 * len(ct), 460),
+    cols = [c for c in cols if c not in ("COD", "Ghi chú") or (ct[c] != "").any()]
+    ct = ct[cols]
+    st.caption(f"{fmt_int(len(ct))} dòng" + (f" có mã chứa \"{_md_text(q)}\"" if q else ""))
+    st.dataframe(ct, hide_index=True, width="stretch", height=cao(len(ct), 460),
                  column_config={"Ngày": st.column_config.DateColumn(format="DD/MM/YYYY"),
-                                "COD": st.column_config.NumberColumn(format="%,d")})
-    st.download_button("TẢI CSV DANH SÁCH", ct.to_csv(index=False).encode("utf-8-sig"),
+                                "Mã đơn": st.column_config.TextColumn(width="medium", pinned=True)})
+    st.download_button("TẢI CSV DANH SÁCH", _csv_an_toan(ct),
                        f"kiem_soat_hang_{a_k:%Y%m%d}_{b_k:%Y%m%d}.csv", "text/csv", key="dl_ksh",
                        on_click="ignore")
 
