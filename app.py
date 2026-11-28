@@ -3125,21 +3125,22 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
                              margin=dict(t=80, b=60, r=80), bargap=0.4)
         plot_chart(fig_bc, ky=fmt_ky(a, b), width="stretch")
     else:
-        # Chọn một bưu cục: cạnh biểu đồ theo ngày là tổng lương từng nhân viên của bưu cục đó.
-        cA, cB = st.columns([1.3, 1])
-        with cA:
-            ve_luong_don(by_day)
-        with cB:
-            g_nv = d.groupby("MaNV").agg(ten=(c["nv"], "last"), t=("_tong", "sum")).sort_values("t")
-            fig_nv = go.Figure(go.Bar(
-                x=g_nv["t"], y=g_nv["ten"].map(staff_label), orientation="h", marker_color=SUCCESS,
-                text=[money_label(v) for v in g_nv["t"]], textposition="outside", cliponaxis=False,
-                hovertemplate="%{y}<br>%{x:,.0f} đ<extra></extra>"))
-            fig_nv.update_layout(title="Tổng lương theo nhân viên", showlegend=False,
-                                 height=max(340, 30 * len(g_nv) + 130), margin=dict(l=10, r=90, t=70, b=50))
-            fig_nv.update_xaxes(title_text="VNĐ")
-            fig_nv.update_yaxes(automargin=True, tickfont=dict(size=13))
-            plot_chart(fig_nv, ky=fmt_ky(a, b), width="stretch")
+        # Chọn một bưu cục: biểu đồ theo ngày rộng hết khung, tổng lương từng nhân viên nằm NGAY BÊN DƯỚI
+        # (cùng bố cục với khi xem tất cả bưu cục).
+        ve_luong_don(by_day)
+        g_nv = d.groupby("MaNV").agg(ten=(c["nv"], "last"), t=("_tong", "sum")).sort_values("t")
+        fig_nv = go.Figure(go.Bar(
+            x=g_nv["t"], y=g_nv["ten"].map(staff_label), orientation="h", marker_color=SUCCESS,
+            text=[money_label(v) for v in g_nv["t"]], textposition="outside", cliponaxis=False,
+            hovertemplate="%{y}<br>%{x:,.0f} đ<extra></extra>"))
+        x_max = float(g_nv["t"].max() or 0) or 1.0
+        tv = list(np.linspace(0, x_max * 1.15, 5))
+        fig_nv.update_layout(title="Tổng lương theo nhân viên", showlegend=False, bargap=0.3,
+                             height=max(340, 30 * len(g_nv) + 130), margin=dict(l=10, r=90, t=70, b=50))
+        fig_nv.update_xaxes(title_text="Tổng lương", range=[0, x_max * 1.15], tickvals=tv,
+                            ticktext=[money_label(v) for v in tv])
+        fig_nv.update_yaxes(automargin=True, tickfont=dict(size=13))
+        plot_chart(fig_nv, ky=fmt_ky(a, b), width="stretch")
 
     section("Bảng lương theo nhân viên")
     agg_cols = {"Nhân viên": (c["nv"], "last"), "Bưu cục": ("Bưu Cục", "last"),
