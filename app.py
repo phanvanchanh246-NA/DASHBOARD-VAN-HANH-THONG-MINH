@@ -4420,21 +4420,19 @@ if PAGE == "tong_quan":
                                    actual=p[key])
 
             pct = lambda v: f"{v:,.2f}%"   # noqa: E731
-            # Doanh thu chỉ có ở cấp vùng; xem một bưu cục (hoặc tài khoản NVXL) thì thay bằng %Gán.
-            if not g_dt.empty:
-                card4 = ("dt", ov_card("Doanh thu tháng (VNĐ)", p_dt, fmt_money, "đ", key="m",
-                                       spark=spark_period(g_dt, REF_DATE, "sum", "M")), "kinh_doanh", "Doanh thu")
-            else:
-                card4 = ("gan", ov_card("%Gán", get_period_data(scope(M_GAN, bc_ov), REF_DATE), pct, "%",
-                                        spark=spark_of(scope(M_GAN, bc_ov), REF_DATE)),
-                         "van_hanh", "GTC tổng")
-            cards = [
+            # %Gán luôn có (cả khi xem "Tất cả"); Doanh thu chỉ có ở cấp vùng nên chỉ hiện khi sheet có số.
+            card_gan = ("gan", ov_card("%Gán", get_period_data(scope(M_GAN, bc_ov), REF_DATE), pct, "%",
+                                       spark=spark_of(scope(M_GAN, bc_ov), REF_DATE)),
+                        "van_hanh", "GTC tổng")
+            card_dt = (("dt", ov_card("Doanh thu tháng (VNĐ)", p_dt, fmt_money, "đ", key="m",
+                                      spark=spark_period(g_dt, REF_DATE, "sum", "M")), "kinh_doanh", "Doanh thu")
+                       if not g_dt.empty else None)
+            cards = [card_gan] + ([card_dt] if card_dt else []) + [
                 ("vol", ov_card("Sản lượng (đơn)", p_vol, fmt_int, "đơn", accent=True,
                                 spark=spark_of(vol_frame, REF_DATE, "sum")),
                  "van_hanh", "GTC tổng"),
                 ("gtc", ov_card("%GTC tổng", p_gtc, pct, "%", spark=spark_of(g_gtc, REF_DATE), target=t_gtc_ov), "van_hanh", "GTC tổng"),
                 ("tts", ov_card("%GTC TikTok", p_tts, pct, "%", spark=spark_of(g_tts, REF_DATE), target=t_tts_ov), "van_hanh", "TikTok Shop"),
-                card4,
                 ("odr", ov_card("ODR TikTok", p_odr, pct, "%", spark=spark_of(g_odr, REF_DATE), target=t_odr_ov), "van_hanh", "TikTok Shop"),
                 ("opr", ov_card("OPR TikTok", p_opr, pct, "%", spark=spark_of(g_opr, REF_DATE), target=t_opr_ov), "van_hanh", "TikTok Shop"),
                 # Trả hàng: càng thấp càng tốt nên tăng là xấu (đỏ)
@@ -4443,19 +4441,22 @@ if PAGE == "tong_quan":
                 ("gtb", ov_card("GTB - Thu tiền", p_gtb, pct, "%", spark=spark_of(g_gtb, REF_DATE), target=t_gtb_ov),
                  "van_hanh", "Trả hàng & GTB"),
             ]
-            # Gom ô theo nhóm có tiêu đề nhỏ; trong mỗi nhóm, ô CHƯA ĐẠT KPI đứng trước.
-            nhom = [("Vận hành", ("vol", "gtc", "tra", "gtb", "gan")), ("TikTok Shop", ("tts", "odr", "opr")),
+            # Gom ô theo nhóm có tiêu đề nhỏ, thứ tự CỐ ĐỊNH: Sản lượng → %Gán → %GTC → các chỉ số khác.
+            # Nhóm 5 ô xếp 5 cột, còn lại 4 cột/hàng và tự xuống hàng (trước đây ô thứ 5 bị bỏ mất).
+            nhom = [("Vận hành", ("vol", "gan", "gtc", "tra", "gtb")), ("TikTok Shop", ("tts", "odr", "opr")),
                     ("Kinh doanh", ("dt",))]
+            by_key = {c[0]: c for c in cards}
             with box_cards:
                 for ten_nhom, keys in nhom:
-                    ds = [c for c in cards if c[0] in keys]
+                    ds = [by_key[k] for k in keys if k in by_key]
                     if not ds:
                         continue
-                    ds.sort(key=lambda c: 0 if "metric-card bad" in c[1] else 1)
                     st.markdown(f"<div class='card-group'>{esc(ten_nhom)}</div>", unsafe_allow_html=True)
-                    for col, (k, html, page, tab) in zip(st.columns(4), ds):
-                        with col:
-                            link_box(html, f"ov_{k}", page, tab, o_bc)
+                    n_cot = 5 if len(ds) == 5 else 4        # 5 ô vận hành nằm gọn một hàng
+                    for i in range(0, len(ds), n_cot):
+                        for col, (k, html, page, tab) in zip(st.columns(n_cot), ds[i:i + n_cot]):
+                            with col:
+                                link_box(html, f"ov_{k}", page, tab, o_bc)
 
             with box_alerts:
                 section("Cảnh báo — chỉ số chưa đạt KPI")
