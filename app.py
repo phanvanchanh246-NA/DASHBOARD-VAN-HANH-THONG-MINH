@@ -3109,18 +3109,21 @@ def luong_tab(LN: pd.DataFrame, a, b, all_bc: bool) -> None:
                .groupby("Ngày", as_index=False).agg(Lương=("_tong", "sum"), GTC=("_g", "sum"), LTC=("_l", "sum")))
     by_day = g_day
     if all_bc:
-        cA, cB = st.columns([1.6, 1])
-        with cA:
-            ve_luong_don(by_day)
-        with cB:
-            g_bc = d.groupby("Bưu Cục", as_index=False)["_tong"].sum().sort_values("_tong")
-            fig_bc = px.bar(g_bc, x="_tong", y="Bưu Cục", orientation="h", title="Tổng lương theo bưu cục")
-            fig_bc.update_traces(marker_color=SUCCESS, text=[money_label(v) for v in g_bc["_tong"]],
-                                 textposition="outside", cliponaxis=False)
-            fig_bc.update_xaxes(title_text="VNĐ")
-            fig_bc.update_yaxes(title_text="")
-            fig_bc.update_layout(height=340, showlegend=False, margin=dict(t=80, b=60, r=80))
-            plot_chart(fig_bc, ky=fmt_ky(a, b), width="stretch")
+        # Biểu đồ theo ngày rộng hết khung; tổng lương theo bưu cục nằm NGAY BÊN DƯỚI.
+        ve_luong_don(by_day)
+        g_bc = d.groupby("Bưu Cục", as_index=False)["_tong"].sum().sort_values("_tong")
+        fig_bc = px.bar(g_bc, x="_tong", y="Bưu Cục", orientation="h", title="Tổng lương theo bưu cục")
+        fig_bc.update_traces(marker_color=SUCCESS, text=[money_label(v) for v in g_bc["_tong"]],
+                             textposition="outside", cliponaxis=False,
+                             hovertemplate="%{y}<br>%{x:,.0f} đ<extra></extra>")
+        x_max = float(g_bc["_tong"].max() or 0) or 1.0
+        tv = list(np.linspace(0, x_max * 1.15, 5))
+        fig_bc.update_xaxes(title_text="Tổng lương", range=[0, x_max * 1.15], tickvals=tv,
+                            ticktext=[money_label(v) for v in tv])
+        fig_bc.update_yaxes(title_text="")
+        fig_bc.update_layout(height=max(260, 70 * len(g_bc) + 150), showlegend=False,
+                             margin=dict(t=80, b=60, r=80), bargap=0.4)
+        plot_chart(fig_bc, ky=fmt_ky(a, b), width="stretch")
     else:
         # Chọn một bưu cục: cạnh biểu đồ theo ngày là tổng lương từng nhân viên của bưu cục đó.
         cA, cB = st.columns([1.3, 1])
