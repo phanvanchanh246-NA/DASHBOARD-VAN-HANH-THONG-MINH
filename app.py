@@ -4141,7 +4141,32 @@ def _build_frames() -> dict:
     return {"M_GTC": M_GTC, "M_GAN": M_GAN, "M_GAN_TTS": M_GAN_TTS, "M_LEAD": M_LEAD, "M_CA": M_CA, "M_TRA": M_TRA, "M_GTB": M_GTB, "M_TTS": M_TTS, "M_ODR": M_ODR, "M_OPR": M_OPR, "M_DT": M_DT, "DF_KPI": DF_KPI, "DF_KHM": DF_KHM, "DF_PHEU": DF_PHEU, "DF_LUONG": DF_LUONG, "DF_NSGTC": DF_NSGTC, "DF_NS_PREV": DF_NS_PREV, "DF_LUONG_NGAY": DF_LUONG_NGAY, "DF_TRUY_THU": DF_TRUY_THU}
 
 
-with st.spinner("Đang đồng bộ dữ liệu từ 12 Google Sheets..."):
+# Màn chờ khi vào trang: nền trắng phủ kín (che trang đăng nhập mờ phía sau), logo GHN ở giữa và thanh chạy,
+# không có chữ. Chỉ hiện ở lượt chạy đầu của phiên hoặc khi còn sheet chưa tải; bấm qua lại các mục thì không hiện
+# (số liệu đã có sẵn, hiện màn chờ chỉ gây nháy).
+_man_cho = st.empty()
+if not st.session_state.get("_da_vao") or any(k not in _SHEET_CACHE for k in SHEET_LINKS):
+    _logo_cho = (f"<img src='{logo_uri()}' alt='GiaoHangNhanh'>" if logo_uri()
+                 else "<div class='ghn-wait-text'>GHN</div>")
+    _man_cho.markdown(f"""<style>
+    .ghn-wait {{ position: fixed; inset: 0; z-index: 999999; background: #FFFFFF;
+                 display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+                 animation: ghnHide .4s ease 25s forwards; }}
+    .ghn-wait img {{ width: min(72vw, 340px); height: auto; animation: ghnPulse 1.6s ease-in-out infinite; }}
+    .ghn-wait-text {{ font: 900 56px Montserrat, sans-serif; color: {PRIMARY}; }}
+    .ghn-wait-bar {{ width: min(48vw, 220px); height: 4px; border-radius: 4px; background: #EEF4F8; overflow: hidden; }}
+    .ghn-wait-bar::after {{ content: ""; display: block; width: 40%; height: 100%; border-radius: 4px;
+                            background: {ACCENT}; animation: ghnSlide 1.1s ease-in-out infinite; }}
+    @keyframes ghnSlide {{ 0% {{ transform: translateX(-100%); }} 100% {{ transform: translateX(250%); }} }}
+    @keyframes ghnPulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: .72; }} }}
+    /* phòng trang lỗi giữa chừng: sau 25 giây màn chờ tự mờ, không kẹt màn hình trắng */
+    @keyframes ghnHide {{ to {{ opacity: 0; visibility: hidden; pointer-events: none; }} }}
+    [data-testid="stStatusWidget"] {{ display: none !important; }}
+    </style><div class="ghn-wait"><div>{_logo_cho}</div><div class="ghn-wait-bar"></div></div>""",
+                      unsafe_allow_html=True)
+st.session_state["_da_vao"] = True
+
+if True:      # (khối tải dữ liệu, giữ thụt lề cũ)
     prefetch_sheets()
     # Dựng lại các bảng số liệu chỉ khi sheet có bản mới (hoặc lỗi đọc đổi); nếu không thì dùng lại,
     # khỏi tốn CPU mỗi lần bấm. Bản sao nông để không lượt chạy nào sửa được bảng dùng chung.
@@ -7779,3 +7804,4 @@ st.markdown(
     f"text-align:center;color:{MUTED};font-size: calc(15.25px * var(--fs));font-weight:600;'>"
     f"TRUNG TÂM VẬN HÀNH - KINH DOANH — GHN &nbsp;·&nbsp; Designed by AM Phan Van Chanh</div>",
     unsafe_allow_html=True)
+_man_cho.empty()      # trang đã vẽ xong: bỏ màn chờ logo
